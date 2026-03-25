@@ -29,11 +29,7 @@ BATCH_SIZE = 100  # postcodes.io max per request
 
 
 def get_connection():
-    url = os.environ.get(
-        "DATABASE_URL",
-        "postgresql://fuelfinder:fuelfinder@localhost:5432/fuelfinder",
-    )
-    return psycopg2.connect(url)
+    return psycopg2.connect(os.environ["DATABASE_URL"])
 
 
 def get_postcodes_to_lookup(conn, refresh_all=False):

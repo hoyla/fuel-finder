@@ -128,15 +128,16 @@ def upsert_stations(conn, stations):
 
 # Plausible price range in pence per litre.
 # Anything outside this is almost certainly a data entry error.
-PRICE_FLOOR = 80.0    # Below 80p hasn't happened since ~2004
-PRICE_CEILING = 300.0  # Above 300p would be unprecedented
+PRICE_FLOOR = Decimal("80.0")    # Below 80p hasn't happened since ~2004
+PRICE_CEILING = Decimal("300.0")  # Above 300p would be unprecedented
 
 # A single price change of more than this % is suspicious.
-MAX_CHANGE_PCT = 30.0
+MAX_CHANGE_PCT = Decimal("30.0")
 
 
 def _detect_anomalies(price, fuel_type, previous_price):
     """Return a list of anomaly flag strings, or None if price looks normal."""
+    price = Decimal(str(price))
     flags = []
 
     if price < PRICE_FLOOR:
@@ -152,7 +153,8 @@ def _detect_anomalies(price, fuel_type, previous_price):
 
     # Large jump from previous price
     if previous_price and previous_price > 0:
-        change_pct = abs(price - float(previous_price)) / float(previous_price) * 100
+        prev = Decimal(str(previous_price))
+        change_pct = abs(price - prev) / prev * 100
         if change_pct > MAX_CHANGE_PCT:
             flags.append(f"large_change:{change_pct:.1f}%_from_{previous_price}")
 

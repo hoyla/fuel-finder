@@ -107,7 +107,7 @@ class TestLargeJumps:
     def test_just_over_threshold(self):
         """Change of exactly MAX_CHANGE_PCT + 1% should be flagged."""
         prev = 100.0
-        new_price = prev * (1 + (MAX_CHANGE_PCT + 1) / 100)
+        new_price = prev * (1 + (float(MAX_CHANGE_PCT) + 1) / 100)
         flags = _detect_anomalies(new_price, "E10", prev)
         assert flags is not None
         assert any("large_change" in f for f in flags)
@@ -115,7 +115,7 @@ class TestLargeJumps:
     def test_just_under_threshold(self):
         """Change of MAX_CHANGE_PCT - 1% should NOT be flagged."""
         prev = 100.0
-        new_price = prev * (1 + (MAX_CHANGE_PCT - 1) / 100)
+        new_price = prev * (1 + (float(MAX_CHANGE_PCT) - 1) / 100)
         flags = _detect_anomalies(new_price, "E10", prev)
         # Should either be None or not contain large_change
         if flags is not None:

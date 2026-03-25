@@ -11,6 +11,7 @@ from typing import Optional
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2.pool import SimpleConnectionPool
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -18,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
-# Database pool (simple: one connection per request, fine for low traffic)
+# Database connection pool
 # ---------------------------------------------------------------------------
 
 DATABASE_URL = os.environ.get(
@@ -26,13 +27,20 @@ DATABASE_URL = os.environ.get(
     "postgresql://fuelfinder:fuelfinder@localhost:5432/fuelfinder",
 )
 
+_pool = SimpleConnectionPool(
+    minconn=2,
+    maxconn=int(os.environ.get("DB_POOL_MAX", "10")),
+    dsn=DATABASE_URL,
+    cursor_factory=RealDictCursor,
+)
+
 
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = _pool.getconn()
     try:
         yield conn
     finally:
-        conn.close()
+        _pool.putconn(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -60,9 +68,11 @@ async def require_auth(request: Request):
 
 app = FastAPI(title="Fuel Finder", version="1.0.0")
 
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten in production
+    allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
