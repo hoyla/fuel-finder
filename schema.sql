@@ -83,6 +83,16 @@ CREATE TABLE IF NOT EXISTS station_brand_overrides (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Regional grouping via postcode area prefix.
+-- Maps the 1-2 letter prefix of a postcode to an ONS-style region.
+-- Seeded from seed_postcode_regions.sql.
+
+CREATE TABLE IF NOT EXISTS postcode_regions (
+    postcode_area       TEXT PRIMARY KEY,
+    region              TEXT NOT NULL,
+    region_group        TEXT NOT NULL
+);
+
 -- Materialised view: current price per station + fuel type.
 -- The last-reported price IS the current price, regardless of how old it is.
 -- Uses canonical brand: override > alias > raw brand_name.
@@ -106,6 +116,8 @@ SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
     s.county,
     s.country,
     s.postcode,
+    pr.region,
+    pr.region_group,
     s.latitude,
     s.longitude,
     s.is_motorway_service_station,
@@ -115,6 +127,12 @@ FROM fuel_prices fp
 JOIN stations s ON s.node_id = fp.node_id
 LEFT JOIN brand_aliases ba ON ba.raw_brand_name = s.brand_name
 LEFT JOIN station_brand_overrides sbo ON sbo.node_id = fp.node_id
+LEFT JOIN postcode_regions pr ON pr.postcode_area = (
+    CASE
+        WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{2}$' THEN LEFT(s.postcode, 2)
+        ELSE LEFT(s.postcode, 1)
+    END
+)
 ORDER BY fp.node_id, fp.fuel_type, fp.observed_at DESC;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_current_prices_node_fuel
@@ -125,3 +143,6 @@ CREATE INDEX IF NOT EXISTS idx_current_prices_fuel_price
 
 CREATE INDEX IF NOT EXISTS idx_current_prices_postcode
     ON current_prices (postcode);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_region
+    ON current_prices (region, fuel_type);

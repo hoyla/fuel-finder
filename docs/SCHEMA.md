@@ -90,13 +90,23 @@ Per-station brand overrides for edge cases where the raw brand is wrong or the a
 | `notes` | `TEXT` | Why this override exists |
 | `created_at` | `TIMESTAMPTZ` | |
 
+### `postcode_regions`
+
+Maps UK postcode area prefixes (1-2 letters) to ONS-style regions. Used for regional aggregations and comparisons. Seeded from `seed_postcode_regions.sql`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `postcode_area` | `TEXT PK` | 1-2 letter prefix, e.g. `SW`, `M`, `BT` |
+| `region` | `TEXT` | ONS-style region: London, North West, Scotland, etc. |
+| `region_group` | `TEXT` | Broader grouping: North, Midlands, South, London, Wales, Scotland, Northern Ireland |
+
 ## Materialised View
 
 ### `current_prices`
 
 The **current price snapshot** — one row per (station, fuel_type), always the most recently observed price regardless of age. Refreshed after each scrape run.
 
-Joins station info and resolves canonical brand names via: `station_override > brand_alias > raw_brand_name`.
+Joins station info, resolves canonical brand names via `station_override > brand_alias > raw_brand_name`, and includes region via postcode area lookup.
 
 | Column | Source | Notes |
 |---|---|---|
@@ -113,6 +123,8 @@ Joins station info and resolves canonical brand names via: `station_override > b
 | `county` | `stations` | |
 | `country` | `stations` | |
 | `postcode` | `stations` | |
+| `region` | `postcode_regions` | e.g. London, North West, Scotland |
+| `region_group` | `postcode_regions` | e.g. North, South, Midlands, London |
 | `latitude` | `stations` | |
 | `longitude` | `stations` | |
 | `is_motorway_service_station` | `stations` | |
