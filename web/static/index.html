@@ -94,6 +94,30 @@
         .pagination .info { font-size: 0.85rem; color: var(--muted); }
 
         .loading { text-align: center; padding: 3rem; color: var(--muted); }
+
+        /* Admin */
+        .btn-delete {
+            padding: 0.25rem 0.6rem; border: 1px solid var(--red); border-radius: 4px;
+            background: #fff; color: var(--red); cursor: pointer; font-size: 0.8rem;
+        }
+        .btn-delete:hover { background: var(--red); color: #fff; }
+        .category-tag {
+            display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+            font-size: 0.8rem; font-weight: 500;
+        }
+        .category-tag.supermarket { background: #d4edda; color: #155724; }
+        .category-tag.major-oil { background: #cce5ff; color: #004085; }
+        .category-tag.motorway { background: #f8d7da; color: #721c24; }
+        .category-tag.fuel-group { background: #e2e3e5; color: #383d41; }
+        .category-tag.convenience { background: #fff3cd; color: #856404; }
+        .category-tag.independent { background: #f5f6f7; color: var(--muted); }
+        .status-msg {
+            padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 1rem;
+            font-size: 0.9rem; display: none;
+        }
+        .status-msg.success { display: block; background: #d4edda; color: #155724; }
+        .status-msg.error { display: block; background: #f8d7da; color: #721c24; }
+
         @media (max-width: 768px) {
             .chart-row { grid-template-columns: 1fr; }
             main { padding: 1rem; }
@@ -114,6 +138,7 @@
     <div class="tab" data-panel="trends">Trends</div>
     <div class="tab" data-panel="search">Search</div>
     <div class="tab" data-panel="anomalies">Anomalies</div>
+    <div class="tab" data-panel="data">Data</div>
 </div>
 
 <main>
@@ -125,6 +150,12 @@
                 <h3>Average price by region (E10 Unleaded)</h3>
                 <canvas id="chart-region"></canvas>
             </div>
+            <div class="chart-container">
+                <h3>Average price by forecourt type (E10 Unleaded)</h3>
+                <canvas id="chart-category"></canvas>
+            </div>
+        </div>
+        <div class="chart-row">
             <div class="chart-container">
                 <h3>Cheapest brands (E10 Unleaded)</h3>
                 <canvas id="chart-brand"></canvas>
@@ -204,13 +235,26 @@
                 <label><input type="checkbox" id="search-supermarket"> Supermarket only</label>
                 <label><input type="checkbox" id="search-motorway"> Motorway only</label>
             </div>
+            <div class="control">
+                <label>Category</label>
+                <select id="search-category">
+                    <option value="">All</option>
+                    <option>Supermarket</option>
+                    <option>Major Oil</option>
+                    <option>Motorway Operator</option>
+                    <option>Fuel Group</option>
+                    <option>Convenience</option>
+                    <option>Independent</option>
+                    <option>Motorway</option>
+                </select>
+            </div>
             <button class="primary" onclick="doSearch()">Search</button>
         </div>
         <div class="table-wrap">
             <table id="search-table">
                 <thead>
                     <tr>
-                        <th>Station</th><th>Brand</th><th>City</th>
+                        <th>Station</th><th>Brand</th><th>Category</th><th>City</th>
                         <th>Postcode</th><th>Region</th><th>Price (p)</th>
                         <th>Fuel</th><th>Last seen</th>
                     </tr>
@@ -233,6 +277,142 @@
                 </thead>
                 <tbody id="anomaly-body"></tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- ============ DATA / ADMIN ============ -->
+    <div class="panel" id="panel-data">
+        <div class="controls" style="margin-bottom: 1rem;">
+            <div class="control">
+                <label>Section</label>
+                <select id="data-section" onchange="switchDataSection()">
+                    <option value="report">Normalisation Report</option>
+                    <option value="aliases">Brand Aliases</option>
+                    <option value="categories">Brand Categories</option>
+                    <option value="overrides">Station Overrides</option>
+                </select>
+            </div>
+            <button class="primary" id="btn-refresh-view" onclick="refreshView()" style="margin-left: auto;">
+                Refresh View
+            </button>
+        </div>
+
+        <!-- Normalisation Report -->
+        <div id="data-report">
+            <div class="controls">
+                <div class="control">
+                    <label>Filter</label>
+                    <select id="report-filter">
+                        <option value="">All</option>
+                        <option value="aliased">Aliased</option>
+                        <option value="overridden">Overridden</option>
+                        <option value="unmapped">Unmapped (no alias, no category)</option>
+                    </select>
+                </div>
+                <div class="control">
+                    <label>Brand search</label>
+                    <input id="report-brand" placeholder="e.g. Shell" />
+                </div>
+                <button class="primary" onclick="loadReport()">Filter</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Raw Brand</th><th>Alias →</th><th>Override →</th>
+                            <th>Final Brand</th><th>Category</th><th>Method</th><th>Stations</th>
+                        </tr>
+                    </thead>
+                    <tbody id="report-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Brand Aliases -->
+        <div id="data-aliases" style="display:none;">
+            <div class="controls">
+                <div class="control">
+                    <label>Raw brand name</label>
+                    <input id="alias-raw" placeholder="e.g. TESCO PFS" />
+                </div>
+                <div class="control">
+                    <label>Canonical brand</label>
+                    <input id="alias-canonical" placeholder="e.g. Tesco" />
+                </div>
+                <button class="primary" onclick="saveAlias()">Add / Update</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Raw Brand Name</th><th>→ Canonical Brand</th><th>Created</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="alias-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Brand Categories -->
+        <div id="data-categories" style="display:none;">
+            <div class="controls">
+                <div class="control">
+                    <label>Canonical brand</label>
+                    <input id="cat-brand" placeholder="e.g. Tesco" />
+                </div>
+                <div class="control">
+                    <label>Forecourt type</label>
+                    <select id="cat-type">
+                        <option>Supermarket</option>
+                        <option>Major Oil</option>
+                        <option>Motorway Operator</option>
+                        <option>Fuel Group</option>
+                        <option>Convenience</option>
+                        <option>Independent</option>
+                    </select>
+                </div>
+                <button class="primary" onclick="saveCategory()">Add / Update</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Canonical Brand</th><th>Forecourt Type</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="category-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Station Overrides -->
+        <div id="data-overrides" style="display:none;">
+            <div class="controls">
+                <div class="control">
+                    <label>Station node ID</label>
+                    <input id="override-node" placeholder="e.g. abc123" />
+                </div>
+                <div class="control">
+                    <label>Canonical brand</label>
+                    <input id="override-brand" placeholder="e.g. Shell" />
+                </div>
+                <div class="control">
+                    <label>Notes (optional)</label>
+                    <input id="override-notes" placeholder="reason for override" />
+                </div>
+                <button class="primary" onclick="saveOverride()">Add / Update</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Node ID</th><th>Station</th><th>Raw Brand</th>
+                            <th>→ Override Brand</th><th>Notes</th><th>Created</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="override-body"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 </main>
@@ -260,6 +440,7 @@ tabs.forEach(t => t.addEventListener('click', () => {
         if (id === 'map') initMap();
         if (id === 'trends') loadTrends();
         if (id === 'anomalies') loadAnomalies();
+        if (id === 'data') loadReport();
     }
 }));
 
@@ -273,6 +454,18 @@ async function apiFetch(path) {
 }
 
 function ppl(v) { return v != null ? Number(v).toFixed(1) + 'p' : '—'; }
+
+function escHtml(s) {
+    if (s == null) return '';
+    const d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
+}
+
+function categoryTag(type) {
+    const cls = (type || 'independent').toLowerCase().replace(/ /g, '-');
+    return `<span class="category-tag ${cls}">${escHtml(type) || 'Independent'}</span>`;
+}
 
 const COLOURS = [
     '#1d70b8','#d4351c','#00703c','#f47738','#5694ca',
@@ -343,6 +536,35 @@ async function loadDashboard() {
     renderBarChart('chart-region', regionData.map(r => r.region), regionData.map(r => r.avg_price),
         'Avg pence/litre', '#1d70b8');
 
+    // Category chart
+    const catData = await apiFetch('/prices/by-category?fuel_type=E10');
+    const catColours = catData.map(c => {
+        const m = { 'Supermarket':'#00703c', 'Major Oil':'#1d70b8', 'Motorway':'#d4351c',
+                    'Motorway Operator':'#f47738', 'Fuel Group':'#505a5f',
+                    'Convenience':'#b58840', 'Independent':'#5694ca' };
+        return m[c.forecourt_type] || '#999';
+    });
+    if (charts['chart-category']) charts['chart-category'].destroy();
+    const catCtx = document.getElementById('chart-category').getContext('2d');
+    charts['chart-category'] = new Chart(catCtx, {
+        type: 'bar',
+        data: {
+            labels: catData.map(c => `${c.forecourt_type} (${c.station_count})`),
+            datasets: [{
+                label: 'Avg pence/litre',
+                data: catData.map(c => c.avg_price),
+                backgroundColor: catColours.map(c => c + '99'),
+                borderColor: catColours,
+                borderWidth: 1,
+            }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: false } }
+        }
+    });
+
     // Brand chart
     const brandData = await apiFetch('/prices/by-brand?fuel_type=E10&limit=15');
     renderBarChart('chart-brand', brandData.map(b => b.brand_name), brandData.map(b => b.avg_price),
@@ -407,7 +629,7 @@ async function loadMapPrices() {
             weight: 0.5, fillOpacity: 0.8,
         }).bindPopup(`
             <strong>${d.trading_name}</strong><br>
-            ${d.brand_name || ''}<br>
+            ${d.brand_name || ''} · ${d.forecourt_type || 'Independent'}<br>
             ${d.city} ${d.postcode}<br>
             <strong>${ppl(d.price)}</strong> ${d.fuel_name || fuel}
         `)
@@ -465,6 +687,7 @@ async function doSearch(offset = 0) {
     const maxP = document.getElementById('search-max').value;
     const supermarket = document.getElementById('search-supermarket').checked;
     const motorway = document.getElementById('search-motorway').checked;
+    const category = document.getElementById('search-category').value;
 
     let url = `/prices/search?fuel_type=${fuel}&limit=50&offset=${offset}`;
     if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
@@ -474,6 +697,7 @@ async function doSearch(offset = 0) {
     if (maxP) url += `&max_price=${maxP}`;
     if (supermarket) url += '&supermarket_only=true';
     if (motorway) url += '&motorway_only=true';
+    if (category) url += `&category=${encodeURIComponent(category)}`;
 
     const data = await apiFetch(url);
     searchState = { offset, total: data.total };
@@ -483,6 +707,7 @@ async function doSearch(offset = 0) {
         <tr>
             <td>${r.trading_name}</td>
             <td>${r.brand_name || '—'}</td>
+            <td>${categoryTag(r.forecourt_type)}</td>
             <td>${r.city || '—'}</td>
             <td>${r.postcode || '—'}</td>
             <td>${r.region || '—'}</td>
@@ -522,6 +747,203 @@ async function loadAnomalies() {
             <td>${new Date(r.observed_at).toLocaleString()}</td>
         </tr>
     `).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Data / Admin tab
+// ---------------------------------------------------------------------------
+
+const dataSections = ['report', 'aliases', 'categories', 'overrides'];
+function switchDataSection() {
+    const active = document.getElementById('data-section').value;
+    dataSections.forEach(s => {
+        document.getElementById('data-' + s).style.display = s === active ? '' : 'none';
+    });
+    // Lazy-load the section
+    if (active === 'report') loadReport();
+    else if (active === 'aliases') loadAliases();
+    else if (active === 'categories') loadCategories();
+    else if (active === 'overrides') loadOverrides();
+}
+
+async function apiPost(path, body) {
+    const r = await fetch(API + path, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || r.statusText);
+    }
+    return r.json();
+}
+
+async function apiDelete(path) {
+    const r = await fetch(API + path, { method: 'DELETE' });
+    if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || r.statusText);
+    }
+    return r.json();
+}
+
+// --- Normalisation Report ---
+async function loadReport() {
+    const filter = document.getElementById('report-filter').value;
+    const brand = document.getElementById('report-brand').value;
+    let url = '/admin/normalisation-report?limit=200';
+    if (filter) url += `&type=${filter}`;
+    if (brand) url += `&brand=${encodeURIComponent(brand)}`;
+    const data = await apiFetch(url);
+    const body = document.getElementById('report-body');
+    if (!data.length) {
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--muted)">No results</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(r => `
+        <tr>
+            <td>${escHtml(r.raw_brand)}</td>
+            <td>${r.alias_resolved ? escHtml(r.alias_resolved) : '<span style="color:var(--muted)">—</span>'}</td>
+            <td>${r.override_resolved ? escHtml(r.override_resolved) : '<span style="color:var(--muted)">—</span>'}</td>
+            <td><strong>${escHtml(r.final_brand)}</strong></td>
+            <td>${categoryTag(r.forecourt_type)}</td>
+            <td><span class="tag">${r.resolution_method}</span></td>
+            <td>${r.station_count}</td>
+        </tr>
+    `).join('');
+}
+
+// --- Brand Aliases ---
+async function loadAliases() {
+    const data = await apiFetch('/admin/brand-aliases');
+    const body = document.getElementById('alias-body');
+    if (!data.length) {
+        body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--muted)">No aliases defined</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(r => `
+        <tr>
+            <td>${escHtml(r.raw_brand_name)}</td>
+            <td><strong>${escHtml(r.canonical_brand)}</strong></td>
+            <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
+            <td><button class="btn-delete" onclick="deleteAlias('${escHtml(r.raw_brand_name)}')">Delete</button></td>
+        </tr>
+    `).join('');
+}
+
+async function saveAlias() {
+    const raw = document.getElementById('alias-raw').value.trim();
+    const canonical = document.getElementById('alias-canonical').value.trim();
+    if (!raw || !canonical) return alert('Both fields required');
+    try {
+        await apiPost('/admin/brand-aliases', { raw_brand_name: raw, canonical_brand: canonical });
+        document.getElementById('alias-raw').value = '';
+        document.getElementById('alias-canonical').value = '';
+        loadAliases();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteAlias(raw) {
+    if (!confirm(`Delete alias "${raw}"?`)) return;
+    try {
+        await apiDelete(`/admin/brand-aliases/${encodeURIComponent(raw)}`);
+        loadAliases();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// --- Brand Categories ---
+async function loadCategories() {
+    const data = await apiFetch('/admin/brand-categories');
+    const body = document.getElementById('category-body');
+    if (!data.length) {
+        body.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:2rem;color:var(--muted)">No categories defined</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(r => `
+        <tr>
+            <td><strong>${escHtml(r.canonical_brand)}</strong></td>
+            <td>${categoryTag(r.forecourt_type)}</td>
+            <td><button class="btn-delete" onclick="deleteCategory('${escHtml(r.canonical_brand)}')">Delete</button></td>
+        </tr>
+    `).join('');
+}
+
+async function saveCategory() {
+    const brand = document.getElementById('cat-brand').value.trim();
+    const type = document.getElementById('cat-type').value;
+    if (!brand) return alert('Brand name required');
+    try {
+        await apiPost('/admin/brand-categories', { canonical_brand: brand, forecourt_type: type });
+        document.getElementById('cat-brand').value = '';
+        loadCategories();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteCategory(brand) {
+    if (!confirm(`Delete category for "${brand}"? It will default to Independent.`)) return;
+    try {
+        await apiDelete(`/admin/brand-categories/${encodeURIComponent(brand)}`);
+        loadCategories();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// --- Station Overrides ---
+async function loadOverrides() {
+    const data = await apiFetch('/admin/station-overrides');
+    const body = document.getElementById('override-body');
+    if (!data.length) {
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--muted)">No overrides defined</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(r => `
+        <tr>
+            <td style="font-family:monospace;font-size:0.8rem">${escHtml(r.node_id)}</td>
+            <td>${escHtml(r.trading_name)}</td>
+            <td>${escHtml(r.raw_brand_name)}</td>
+            <td><strong>${escHtml(r.canonical_brand)}</strong></td>
+            <td>${escHtml(r.notes) || '<span style="color:var(--muted)">—</span>'}</td>
+            <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
+            <td><button class="btn-delete" onclick="deleteOverride('${escHtml(r.node_id)}')">Delete</button></td>
+        </tr>
+    `).join('');
+}
+
+async function saveOverride() {
+    const node = document.getElementById('override-node').value.trim();
+    const brand = document.getElementById('override-brand').value.trim();
+    const notes = document.getElementById('override-notes').value.trim();
+    if (!node || !brand) return alert('Node ID and brand required');
+    try {
+        await apiPost('/admin/station-overrides', { node_id: node, canonical_brand: brand, notes: notes || null });
+        document.getElementById('override-node').value = '';
+        document.getElementById('override-brand').value = '';
+        document.getElementById('override-notes').value = '';
+        loadOverrides();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteOverride(nodeId) {
+    if (!confirm(`Delete override for station ${nodeId}?`)) return;
+    try {
+        await apiDelete(`/admin/station-overrides/${encodeURIComponent(nodeId)}`);
+        loadOverrides();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// --- Refresh materialised view ---
+async function refreshView() {
+    const btn = document.getElementById('btn-refresh-view');
+    btn.textContent = 'Refreshing…';
+    btn.disabled = true;
+    try {
+        await apiPost('/admin/refresh-view', {});
+        btn.textContent = '✓ Refreshed';
+        setTimeout(() => { btn.textContent = 'Refresh View'; btn.disabled = false; }, 2000);
+    } catch (e) {
+        btn.textContent = 'Refresh View';
+        btn.disabled = false;
+        alert('Error refreshing view: ' + e.message);
+    }
 }
 
 // ---------------------------------------------------------------------------

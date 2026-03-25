@@ -203,3 +203,132 @@ class TestStaticFiles:
         r = client.get("/")
         assert r.status_code == 200
         assert "Fuel Finder" in r.text
+
+
+class TestPricesByCategory:
+    def test_returns_200(self, client, has_data):
+        r = client.get("/api/prices/by-category?fuel_type=E10")
+        assert r.status_code == 200
+
+    def test_has_forecourt_types(self, client, has_data):
+        data = client.get("/api/prices/by-category?fuel_type=E10").json()
+        types = [d["forecourt_type"] for d in data]
+        assert "Supermarket" in types
+        assert "Major Oil" in types
+
+    def test_sorted_by_price(self, client, has_data):
+        data = client.get("/api/prices/by-category?fuel_type=E10").json()
+        prices = [d["avg_price"] for d in data]
+        assert prices == sorted(prices)
+
+
+class TestAdminBrandAliases:
+    def test_list_returns_200(self, client, has_data):
+        r = client.get("/api/admin/brand-aliases")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_has_fields(self, client, has_data):
+        data = client.get("/api/admin/brand-aliases").json()
+        assert len(data) > 0
+        assert "raw_brand_name" in data[0]
+        assert "canonical_brand" in data[0]
+
+    def test_create_and_delete(self, client, has_data):
+        # Create
+        r = client.post("/api/admin/brand-aliases", json={
+            "raw_brand_name": "__TEST_RAW__",
+            "canonical_brand": "__TEST_CANONICAL__",
+        })
+        assert r.status_code == 200
+        assert r.json()["raw_brand_name"] == "__TEST_RAW__"
+        # Delete
+        r = client.delete("/api/admin/brand-aliases/__TEST_RAW__")
+        assert r.status_code == 200
+
+    def test_create_empty_rejected(self, client):
+        r = client.post("/api/admin/brand-aliases", json={
+            "raw_brand_name": "", "canonical_brand": "",
+        })
+        assert r.status_code == 400
+
+
+class TestAdminBrandCategories:
+    def test_list_returns_200(self, client, has_data):
+        r = client.get("/api/admin/brand-categories")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_create_and_delete(self, client, has_data):
+        r = client.post("/api/admin/brand-categories", json={
+            "canonical_brand": "__TEST_BRAND__",
+            "forecourt_type": "Supermarket",
+        })
+        assert r.status_code == 200
+        r = client.delete("/api/admin/brand-categories/__TEST_BRAND__")
+        assert r.status_code == 200
+
+    def test_invalid_type_rejected(self, client):
+        r = client.post("/api/admin/brand-categories", json={
+            "canonical_brand": "__TEST__", "forecourt_type": "InvalidType",
+        })
+        assert r.status_code == 400
+
+
+class TestAdminStationOverrides:
+    def test_list_returns_200(self, client):
+        r = client.get("/api/admin/station-overrides")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_invalid_station_rejected(self, client):
+        r = client.post("/api/admin/station-overrides", json={
+            "node_id": "NONEXISTENT_NODE_ID_999",
+            "canonical_brand": "Test",
+        })
+        assert r.status_code == 404
+
+
+class TestNormalisationReport:
+    def test_returns_200(self, client, has_data):
+        r = client.get("/api/admin/normalisation-report")
+        assert r.status_code == 200
+
+    def test_has_fields(self, client, has_data):
+        data = client.get("/api/admin/normalisation-report?limit=5").json()
+        assert len(data) > 0
+        row = data[0]
+        assert "raw_brand" in row
+        assert "final_brand" in row
+        assert "forecourt_type" in row
+        assert "resolution_method" in row
+        assert "station_count" in row
+
+    def test_filter_unmapped(self, client, has_data):
+        data = client.get("/api/admin/normalisation-report?type=unmapped&limit=5").json()
+        for row in data:
+            assert row["resolution_method"] == "raw"
+
+    def test_filter_aliased(self, client, has_data):
+        data = client.get("/api/admin/normalisation-report?type=aliased&limit=5").json()
+        for row in data:
+            assert row["resolution_method"] == "alias"
+
+
+class TestRefreshView:
+    def test_returns_200(self, client, has_data):
+        r = client.post("/api/admin/refresh-view", json={})
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+
+class TestSearchCategory:
+    def test_category_filter(self, client, has_data):
+        data = client.get("/api/prices/search?fuel_type=E10&category=Supermarket&limit=10").json()
+        for row in data["results"]:
+            assert row["forecourt_type"] == "Supermarket"
+
+    def test_results_have_forecourt_type(self, client, has_data):
+        data = client.get("/api/prices/search?fuel_type=E10&limit=5").json()
+        for row in data["results"]:
+            assert "forecourt_type" in row

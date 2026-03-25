@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # Database pool (simple: one connection per request, fine for low traffic)
@@ -62,9 +63,27 @@ app = FastAPI(title="Fuel Finder", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # tighten in production
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Request bodies for admin endpoints
+# ---------------------------------------------------------------------------
+
+class BrandAliasBody(BaseModel):
+    raw_brand_name: str
+    canonical_brand: str
+
+class BrandCategoryBody(BaseModel):
+    canonical_brand: str
+    forecourt_type: str
+
+class StationOverrideBody(BaseModel):
+    node_id: str
+    canonical_brand: str
+    notes: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +167,7 @@ def prices_by_brand(
     with db.cursor() as cur:
         cur.execute("""
             SELECT brand_name,
+                   forecourt_type,
                    ROUND(AVG(price)::numeric, 1) AS avg_price,
                    MIN(price) AS min_price,
                    MAX(price) AS max_price,
@@ -156,11 +176,34 @@ def prices_by_brand(
             WHERE fuel_type = %s
               AND brand_name IS NOT NULL
               AND NOT temporary_closure
-            GROUP BY brand_name
+            GROUP BY brand_name, forecourt_type
             HAVING COUNT(*) >= 3
             ORDER BY avg_price
             LIMIT %s
         """, (fuel_type, limit))
+        return cur.fetchall()
+
+
+@app.get("/api/prices/by-category")
+def prices_by_category(
+    fuel_type: str = Query("E10"),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Average price by forecourt category for a given fuel type."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT forecourt_type,
+                   ROUND(AVG(price)::numeric, 1) AS avg_price,
+                   MIN(price) AS min_price,
+                   MAX(price) AS max_price,
+                   COUNT(*) AS station_count
+            FROM current_prices
+            WHERE fuel_type = %s
+              AND NOT temporary_closure
+            GROUP BY forecourt_type
+            ORDER BY avg_price
+        """, (fuel_type,))
         return cur.fetchall()
 
 
@@ -217,7 +260,7 @@ def price_map(
     with db.cursor() as cur:
         cur.execute("""
             SELECT node_id, trading_name, brand_name, city, postcode,
-                   price, fuel_name,
+                   price, fuel_name, forecourt_type,
                    latitude, longitude,
                    is_motorway_service_station, is_supermarket_service_station
             FROM current_prices
@@ -238,6 +281,7 @@ def price_search(
     city: Optional[str] = Query(None),
     min_price: Optional[float] = Query(None),
     max_price: Optional[float] = Query(None),
+    category: Optional[str] = Query(None),
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     sort: str = Query("price"),
@@ -269,6 +313,9 @@ def price_search(
         conditions.append("is_supermarket_service_station = TRUE")
     if motorway_only:
         conditions.append("is_motorway_service_station = TRUE")
+    if category:
+        conditions.append("forecourt_type = %s")
+        params.append(category)
 
     where = " AND ".join(conditions)
 
@@ -279,6 +326,7 @@ def price_search(
         cur.execute(f"""
             SELECT node_id, trading_name, brand_name, city, county,
                    postcode, region, price, fuel_name, fuel_category,
+                   forecourt_type,
                    latitude, longitude,
                    is_motorway_service_station, is_supermarket_service_station,
                    observed_at
@@ -352,6 +400,212 @@ def regions(db=Depends(get_db)):
             ORDER BY region
         """)
         return [r["region"] for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Lookup tables — read/write for brand aliases, categories, overrides
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/brand-aliases")
+def list_brand_aliases(db=Depends(get_db), _auth=Depends(require_auth)):
+    """All brand alias mappings."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT raw_brand_name, canonical_brand, created_at
+            FROM brand_aliases ORDER BY canonical_brand, raw_brand_name
+        """)
+        return cur.fetchall()
+
+
+@app.post("/api/admin/brand-aliases")
+def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends(require_auth)):
+    """Create or update a brand alias mapping."""
+    raw = body.raw_brand_name.strip()
+    canonical = body.canonical_brand.strip()
+    if not raw or not canonical:
+        raise HTTPException(400, "raw_brand_name and canonical_brand required")
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO brand_aliases (raw_brand_name, canonical_brand)
+            VALUES (%s, %s)
+            ON CONFLICT (raw_brand_name) DO UPDATE SET canonical_brand = EXCLUDED.canonical_brand
+            RETURNING raw_brand_name, canonical_brand
+        """, (raw, canonical))
+        db.commit()
+        return cur.fetchone()
+
+
+@app.delete("/api/admin/brand-aliases/{raw_brand_name}")
+def delete_brand_alias(raw_brand_name: str, db=Depends(get_db), _auth=Depends(require_auth)):
+    """Remove a brand alias."""
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM brand_aliases WHERE raw_brand_name = %s RETURNING raw_brand_name", (raw_brand_name,))
+        db.commit()
+        if not cur.fetchone():
+            raise HTTPException(404, "Alias not found")
+        return {"deleted": raw_brand_name}
+
+
+@app.get("/api/admin/brand-categories")
+def list_brand_categories(db=Depends(get_db), _auth=Depends(require_auth)):
+    """All brand → forecourt type mappings."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT canonical_brand, forecourt_type
+            FROM brand_categories ORDER BY forecourt_type, canonical_brand
+        """)
+        return cur.fetchall()
+
+
+@app.post("/api/admin/brand-categories")
+def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=Depends(require_auth)):
+    """Create or update a brand category mapping."""
+    brand = body.canonical_brand.strip()
+    cat = body.forecourt_type.strip()
+    allowed = {"Supermarket", "Major Oil", "Motorway Operator", "Fuel Group", "Convenience", "Independent"}
+    if not brand or not cat:
+        raise HTTPException(400, "canonical_brand and forecourt_type required")
+    if cat not in allowed:
+        raise HTTPException(400, f"forecourt_type must be one of: {', '.join(sorted(allowed))}")
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO brand_categories (canonical_brand, forecourt_type)
+            VALUES (%s, %s)
+            ON CONFLICT (canonical_brand) DO UPDATE SET forecourt_type = EXCLUDED.forecourt_type
+            RETURNING canonical_brand, forecourt_type
+        """, (brand, cat))
+        db.commit()
+        return cur.fetchone()
+
+
+@app.delete("/api/admin/brand-categories/{canonical_brand}")
+def delete_brand_category(canonical_brand: str, db=Depends(get_db), _auth=Depends(require_auth)):
+    """Remove a brand category mapping (brand will default to Independent)."""
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM brand_categories WHERE canonical_brand = %s RETURNING canonical_brand", (canonical_brand,))
+        db.commit()
+        if not cur.fetchone():
+            raise HTTPException(404, "Category mapping not found")
+        return {"deleted": canonical_brand}
+
+
+@app.get("/api/admin/station-overrides")
+def list_station_overrides(db=Depends(get_db), _auth=Depends(require_auth)):
+    """All per-station brand overrides."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT sbo.node_id, s.trading_name, s.brand_name AS raw_brand_name,
+                   sbo.canonical_brand, sbo.notes, sbo.created_at
+            FROM station_brand_overrides sbo
+            JOIN stations s ON s.node_id = sbo.node_id
+            ORDER BY sbo.canonical_brand, s.trading_name
+        """)
+        return cur.fetchall()
+
+
+@app.post("/api/admin/station-overrides")
+def upsert_station_override(body: "StationOverrideBody", db=Depends(get_db), _auth=Depends(require_auth)):
+    """Create or update a per-station brand override."""
+    node_id = body.node_id.strip()
+    canonical = body.canonical_brand.strip()
+    notes = (body.notes or "").strip() or None
+    if not node_id or not canonical:
+        raise HTTPException(400, "node_id and canonical_brand required")
+    with db.cursor() as cur:
+        cur.execute("SELECT node_id FROM stations WHERE node_id = %s", (node_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, f"Station {node_id} not found")
+        cur.execute("""
+            INSERT INTO station_brand_overrides (node_id, canonical_brand, notes)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (node_id) DO UPDATE
+                SET canonical_brand = EXCLUDED.canonical_brand,
+                    notes = EXCLUDED.notes
+            RETURNING node_id, canonical_brand, notes
+        """, (node_id, canonical, notes))
+        db.commit()
+        return cur.fetchone()
+
+
+@app.delete("/api/admin/station-overrides/{node_id}")
+def delete_station_override(node_id: str, db=Depends(get_db), _auth=Depends(require_auth)):
+    """Remove a per-station brand override."""
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM station_brand_overrides WHERE node_id = %s RETURNING node_id", (node_id,))
+        db.commit()
+        if not cur.fetchone():
+            raise HTTPException(404, "Override not found")
+        return {"deleted": node_id}
+
+
+@app.get("/api/admin/normalisation-report")
+def normalisation_report(
+    limit: int = Query(100, ge=1, le=1000),
+    filter_type: Optional[str] = Query(None, alias="type"),
+    brand_filter: Optional[str] = Query(None, alias="brand"),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Show how brands were resolved: raw → alias → override → canonical → category.
+
+    filter_type: 'aliased', 'overridden', 'unmapped', 'all' (default: all)
+    """
+    with db.cursor() as cur:
+        conditions = []
+        params: list = []
+
+        if filter_type == "aliased":
+            conditions.append("ba.canonical_brand IS NOT NULL")
+            conditions.append("sbo.canonical_brand IS NULL")
+        elif filter_type == "overridden":
+            conditions.append("sbo.canonical_brand IS NOT NULL")
+        elif filter_type == "unmapped":
+            conditions.append("ba.canonical_brand IS NULL")
+            conditions.append("sbo.canonical_brand IS NULL")
+            conditions.append("bc.forecourt_type IS NULL")
+
+        if brand_filter:
+            conditions.append("UPPER(COALESCE(sbo.canonical_brand, ba.canonical_brand, s.brand_name)) LIKE %s")
+            params.append("%" + brand_filter.upper() + "%")
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        cur.execute(f"""
+            SELECT s.brand_name AS raw_brand,
+                   ba.canonical_brand AS alias_resolved,
+                   sbo.canonical_brand AS override_resolved,
+                   COALESCE(sbo.canonical_brand, ba.canonical_brand, s.brand_name) AS final_brand,
+                   CASE
+                       WHEN s.is_motorway_service_station THEN 'Motorway'
+                       ELSE COALESCE(bc.forecourt_type, 'Independent')
+                   END AS forecourt_type,
+                   CASE
+                       WHEN sbo.canonical_brand IS NOT NULL THEN 'override'
+                       WHEN ba.canonical_brand IS NOT NULL THEN 'alias'
+                       ELSE 'raw'
+                   END AS resolution_method,
+                   COUNT(*) AS station_count
+            FROM stations s
+            LEFT JOIN brand_aliases ba ON ba.raw_brand_name = s.brand_name
+            LEFT JOIN station_brand_overrides sbo ON sbo.node_id = s.node_id
+            LEFT JOIN brand_categories bc ON bc.canonical_brand =
+                COALESCE(sbo.canonical_brand, ba.canonical_brand, s.brand_name)
+            {where}
+            GROUP BY s.brand_name, ba.canonical_brand, sbo.canonical_brand,
+                     s.is_motorway_service_station, bc.forecourt_type
+            ORDER BY station_count DESC
+            LIMIT %s
+        """, params + [limit])
+        return cur.fetchall()
+
+
+@app.post("/api/admin/refresh-view")
+def refresh_view(db=Depends(get_db), _auth=Depends(require_auth)):
+    """Refresh the current_prices materialised view after lookup changes."""
+    with db.cursor() as cur:
+        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
+        db.commit()
+    return {"status": "ok", "message": "current_prices view refreshed"}
 
 
 # ---------------------------------------------------------------------------
