@@ -17,7 +17,8 @@ log.setLevel(logging.INFO)
 def handler(event, context):
     log.info("Lambda invoked with event: %s", json.dumps(event, default=str))
     try:
-        result = run_scrape(include_stations=True)
+        mode = event.get("mode", "auto") if isinstance(event, dict) else "auto"
+        result = run_scrape(mode=mode)
         log.info("Scrape completed: %s", result)
         return {
             "statusCode": 200,

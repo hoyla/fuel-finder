@@ -2,6 +2,8 @@
 
 import json
 import os
+from decimal import Decimal
+
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -124,21 +126,48 @@ def upsert_stations(conn, stations):
 
 
 def insert_fuel_prices(conn, price_records, scrape_run_id):
-    """Insert price observations. price_records is the raw API response list."""
+    """Insert price observations, but only when the price has actually changed.
+
+    Compares each incoming price against the most recent stored price for that
+    station + fuel_type. Only inserts a new row if the price differs (or no
+    previous record exists). This means every row in fuel_prices represents
+    a genuine price change, keeping storage lean and time-series queries simple.
+    """
     if not price_records:
         return 0
+
+    # Build lookup of latest known prices: (node_id, fuel_type) -> price
+    all_node_ids = list({s["node_id"] for s in price_records})
+    latest = {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT DISTINCT ON (node_id, fuel_type)
+                      node_id, fuel_type, price
+                 FROM fuel_prices
+                WHERE node_id = ANY(%s)
+             ORDER BY node_id, fuel_type, observed_at DESC""",
+            (all_node_ids,),
+        )
+        for row in cur.fetchall():
+            latest[(row[0], row[1])] = row[2]
+
+    # Only keep rows where price has changed (or is new)
     rows = []
     for station in price_records:
         node_id = station["node_id"]
         for fp in station.get("fuel_prices", []):
-            rows.append((
-                node_id,
-                fp["fuel_type"],
-                fp["price"],
-                fp.get("price_last_updated"),
-                fp.get("price_change_effective_timestamp"),
-                scrape_run_id,
-            ))
+            key = (node_id, fp["fuel_type"])
+            # Compare as Decimal to avoid float issues
+            new_price = Decimal(str(fp["price"]))
+            if key not in latest or latest[key] != new_price:
+                rows.append((
+                    node_id,
+                    fp["fuel_type"],
+                    fp["price"],
+                    fp.get("price_last_updated"),
+                    fp.get("price_change_effective_timestamp"),
+                    scrape_run_id,
+                ))
     if not rows:
         return 0
     with conn.cursor() as cur:
@@ -153,3 +182,15 @@ def insert_fuel_prices(conn, price_records, scrape_run_id):
         )
     conn.commit()
     return len(rows)
+
+
+def get_last_scrape_timestamp(conn):
+    """Get the finished_at timestamp of the last successful scrape run."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT finished_at FROM scrape_runs
+                WHERE status = 'completed'
+             ORDER BY finished_at DESC LIMIT 1"""
+        )
+        row = cur.fetchone()
+    return row[0].strftime("%Y-%m-%d %H:%M:%S") if row else None

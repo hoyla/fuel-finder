@@ -15,6 +15,7 @@ from db import (
     fail_scrape_run,
     upsert_stations,
     insert_fuel_prices,
+    get_last_scrape_timestamp,
 )
 
 logging.basicConfig(
@@ -38,23 +39,44 @@ def upload_to_s3(data, key, bucket=None):
     return key
 
 
-def run_scrape(include_stations=True):
+def run_scrape(mode="auto"):
+    """Run a scrape.
+
+    mode:
+        'full'        — fetch all batches of prices + stations
+        'incremental' — fetch only prices changed since last successful scrape
+        'auto'        — incremental if a previous scrape exists, otherwise full
+    """
     now = datetime.now(timezone.utc)
     timestamp_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     skip_s3 = os.environ.get("SKIP_S3", "false").lower() == "true"
 
-    log.info("Starting fuel finder scrape at %s", timestamp_str)
+    log.info("Starting fuel finder scrape at %s (mode=%s)", timestamp_str, mode)
 
     client = FuelFinderClient()
     conn = get_connection()
 
     try:
         init_schema(conn)
-        run_id = start_scrape_run(conn, run_type="full")
-        log.info("Scrape run %d started", run_id)
 
-        # Fetch station info (less volatile, but needed for foreign key on first run)
-        if include_stations:
+        # Decide run type
+        since_timestamp = None
+        if mode == "auto":
+            since_timestamp = get_last_scrape_timestamp(conn)
+            run_type = "incremental" if since_timestamp else "full"
+        elif mode == "incremental":
+            since_timestamp = get_last_scrape_timestamp(conn)
+            if not since_timestamp:
+                log.warning("No previous scrape found, falling back to full")
+            run_type = "incremental" if since_timestamp else "full"
+        else:
+            run_type = "full"
+
+        run_id = start_scrape_run(conn, run_type=run_type)
+        log.info("Scrape run %d started (type=%s, since=%s)", run_id, run_type, since_timestamp)
+
+        # Fetch station info on full runs (needed for foreign keys)
+        if run_type == "full":
             log.info("Fetching station info...")
             stations, station_batches = client.get_all_stations()
             log.info("Fetched %d stations across %d batches", len(stations), station_batches)
@@ -65,17 +87,17 @@ def run_scrape(include_stations=True):
                 s3_stations_key = f"stations/{now.strftime('%Y/%m/%d')}/{timestamp_str}.json"
                 upload_to_s3(stations, s3_stations_key)
 
-        # Fetch fuel prices
-        log.info("Fetching fuel prices...")
-        prices, price_batches = client.get_all_fuel_prices()
+        # Fetch fuel prices (incremental uses since_timestamp)
+        log.info("Fetching fuel prices%s...", f" since {since_timestamp}" if since_timestamp else "")
+        prices, price_batches = client.get_all_fuel_prices(since_timestamp)
         log.info("Fetched prices for %d stations across %d batches", len(prices), price_batches)
 
         # Ensure stations exist for any new node_ids in price data
-        if not include_stations:
+        if run_type == "incremental":
             _ensure_stations_exist(conn, client, prices)
 
         price_count = insert_fuel_prices(conn, prices, run_id)
-        log.info("Inserted %d price records", price_count)
+        log.info("Inserted %d changed price records (out of %d stations fetched)", price_count, len(prices))
 
         # S3 backup of raw price data
         s3_key = None
@@ -112,4 +134,6 @@ def _ensure_stations_exist(conn, client, price_records):
 
 
 if __name__ == "__main__":
-    run_scrape()
+    import sys
+    mode = sys.argv[1] if len(sys.argv) > 1 else "auto"
+    run_scrape(mode=mode)
