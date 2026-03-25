@@ -1,0 +1,216 @@
+name: CI / CD
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # needed for OIDC → AWS credentials
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPOSITORY: fuel-finder
+  ECS_CLUSTER: fuel-finder
+  ECS_SERVICE_STAGING: fuel-finder-staging
+  ECS_SERVICE_PROD: fuel-finder-prod
+  TASK_DEF_STAGING: .aws/task-definition-staging.json
+  TASK_DEF_PROD: .aws/task-definition-prod.json
+
+jobs:
+  # ── 1. Unit tests (all branches + PRs) ─────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fuelfinder
+          POSTGRES_PASSWORD: fuelfinder
+          POSTGRES_DB: fuelfinder
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fuelfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install psycopg2-binary requests boto3 pytest
+          pip install fastapi httpx uvicorn PyJWT cryptography
+
+      - name: Run scraper + apply migrations
+        env:
+          DATABASE_URL: postgresql://fuelfinder:fuelfinder@localhost:5432/fuelfinder
+        run: python migrate.py
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://fuelfinder:fuelfinder@localhost:5432/fuelfinder
+        run: python -m pytest tests/ -x -q --tb=short
+
+  # ── 2. Build Docker image + smoke test (all branches) ──────────────
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker compose build web
+
+      - name: Smoke-test container starts
+        run: |
+          docker compose up -d --no-build --wait --timeout 60
+          for i in $(seq 1 10); do
+            if curl -sf http://localhost:8080/health; then
+              echo ""
+              echo "Health check passed on attempt $i"
+              break
+            fi
+            echo "Attempt $i failed, retrying in 2s..."
+            sleep 2
+          done
+          curl -sf --retry 3 --retry-delay 2 http://localhost:8080/health
+          docker compose down
+
+      - name: Save image for ECR push
+        if: github.event_name == 'push'
+        run: |
+          IMAGE_NAME=$(docker compose config --images | grep web | head -1)
+          docker save "$IMAGE_NAME" | gzip > /tmp/fuel-finder-web.tar.gz
+
+      - name: Upload image artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/fuel-finder-web.tar.gz
+          retention-days: 1
+
+  # ── 3. Push to ECR (pushes only, not PRs) ──────────────────────────
+  push-ecr:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: docker
+    timeout-minutes: 10
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: gunzip -c /tmp/fuel-finder-web.tar.gz | docker load
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and push image
+        id: push
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY"
+          # Find the locally loaded image name
+          LOCAL_IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep fuel-finder | head -1)
+          docker tag "$LOCAL_IMAGE" "$IMAGE:$IMAGE_TAG"
+          docker tag "$LOCAL_IMAGE" "$IMAGE:latest"
+          docker push "$IMAGE:$IMAGE_TAG"
+          docker push "$IMAGE:latest"
+          echo "image=$IMAGE:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+  # ── 4. Deploy to STAGING (non-main branches) ──────────────────────
+  deploy-staging:
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: push-ecr
+    timeout-minutes: 10
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Render task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.TASK_DEF_STAGING }}
+          container-name: app
+          image: ${{ needs.push-ecr.outputs.image }}
+
+      - name: Deploy to staging
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE_STAGING }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+  # ── 5. Deploy to PRODUCTION (main branch only) ────────────────────
+  deploy-prod:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: push-ecr
+    timeout-minutes: 10
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Render task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.TASK_DEF_PROD }}
+          container-name: app
+          image: ${{ needs.push-ecr.outputs.image }}
+
+      - name: Deploy to production
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE_PROD }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
