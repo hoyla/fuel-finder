@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuel Finder</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg:       #f5f6f7;
+            --card-bg:  #ffffff;
+            --text:     #1a1a1a;
+            --muted:    #6b7280;
+            --accent:   #1d70b8;
+            --border:   #d2d6db;
+            --green:    #00703c;
+            --red:      #d4351c;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg); color: var(--text); line-height: 1.5;
+        }
+        header {
+            background: var(--text); color: #fff; padding: 1rem 2rem;
+            display: flex; align-items: center; gap: 1rem;
+        }
+        header h1 { font-size: 1.4rem; font-weight: 600; }
+        header .meta { margin-left: auto; font-size: 0.85rem; color: #aaa; }
+        .tabs {
+            display: flex; background: var(--card-bg); border-bottom: 1px solid var(--border);
+            padding: 0 2rem; gap: 0;
+        }
+        .tab {
+            padding: 0.75rem 1.25rem; cursor: pointer; border-bottom: 3px solid transparent;
+            font-size: 0.9rem; color: var(--muted); font-weight: 500;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        main { padding: 1.5rem 2rem; max-width: 1400px; margin: 0 auto; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* Cards */
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1.25rem;
+        }
+        .card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .card .value { font-size: 1.8rem; font-weight: 700; margin-top: 0.25rem; }
+        .card .sub { font-size: 0.85rem; color: var(--muted); }
+
+        /* Charts */
+        .chart-container {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem;
+        }
+        .chart-container h3 { font-size: 1rem; margin-bottom: 0.75rem; }
+        .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+        canvas { width: 100% !important; }
+
+        /* Controls */
+        .controls { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: end; }
+        .control label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+        .control select, .control input {
+            padding: 0.5rem 0.75rem; border: 1px solid var(--border);
+            border-radius: 6px; font-size: 0.9rem; background: var(--card-bg);
+        }
+        .control select { min-width: 140px; }
+        button.primary {
+            padding: 0.5rem 1.25rem; background: var(--accent); color: #fff;
+            border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+            font-weight: 500;
+        }
+        button.primary:hover { opacity: 0.9; }
+
+        /* Map */
+        #map { height: 500px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 1.5rem; }
+
+        /* Table */
+        .table-wrap {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 8px; overflow-x: auto;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { background: var(--bg); text-align: left; padding: 0.6rem 1rem; font-weight: 600; border-bottom: 2px solid var(--border); }
+        td { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); }
+        tr:hover td { background: #f0f4ff; }
+        .tag { display: inline-block; background: #fef3c7; color: #92400e; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin: 0.1rem; }
+        .pagination { display: flex; gap: 0.5rem; margin-top: 1rem; align-items: center; justify-content: center; }
+        .pagination button { padding: 0.4rem 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); cursor: pointer; }
+        .pagination button:disabled { opacity: 0.4; cursor: default; }
+        .pagination .info { font-size: 0.85rem; color: var(--muted); }
+
+        .loading { text-align: center; padding: 3rem; color: var(--muted); }
+        @media (max-width: 768px) {
+            .chart-row { grid-template-columns: 1fr; }
+            main { padding: 1rem; }
+            .tabs { padding: 0 1rem; overflow-x: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>⛽ Fuel Finder</h1>
+    <span class="meta" id="last-scrape"></span>
+</header>
+
+<div class="tabs">
+    <div class="tab active" data-panel="dashboard">Dashboard</div>
+    <div class="tab" data-panel="map">Map</div>
+    <div class="tab" data-panel="trends">Trends</div>
+    <div class="tab" data-panel="search">Search</div>
+    <div class="tab" data-panel="anomalies">Anomalies</div>
+</div>
+
+<main>
+    <!-- ============ DASHBOARD ============ -->
+    <div class="panel active" id="panel-dashboard">
+        <div class="cards" id="summary-cards"></div>
+        <div class="chart-row">
+            <div class="chart-container">
+                <h3>Average price by region (E10 Unleaded)</h3>
+                <canvas id="chart-region"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>Cheapest brands (E10 Unleaded)</h3>
+                <canvas id="chart-brand"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ MAP ============ -->
+    <div class="panel" id="panel-map">
+        <div class="controls">
+            <div class="control">
+                <label>Fuel type</label>
+                <select id="map-fuel"></select>
+            </div>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <!-- ============ TRENDS ============ -->
+    <div class="panel" id="panel-trends">
+        <div class="controls">
+            <div class="control">
+                <label>Fuel type</label>
+                <select id="trend-fuel"></select>
+            </div>
+            <div class="control">
+                <label>Region (optional)</label>
+                <select id="trend-region"><option value="">All regions</option></select>
+            </div>
+            <div class="control">
+                <label>Days</label>
+                <select id="trend-days">
+                    <option value="7">7</option>
+                    <option value="14">14</option>
+                    <option value="30" selected>30</option>
+                    <option value="90">90</option>
+                    <option value="180">180</option>
+                    <option value="365">365</option>
+                </select>
+            </div>
+            <button class="primary" onclick="loadTrends()">Update</button>
+        </div>
+        <div class="chart-container">
+            <h3>Daily average price</h3>
+            <canvas id="chart-trend"></canvas>
+        </div>
+    </div>
+
+    <!-- ============ SEARCH ============ -->
+    <div class="panel" id="panel-search">
+        <div class="controls">
+            <div class="control">
+                <label>Fuel type</label>
+                <select id="search-fuel"></select>
+            </div>
+            <div class="control">
+                <label>Postcode</label>
+                <input id="search-postcode" placeholder="e.g. SW1" />
+            </div>
+            <div class="control">
+                <label>Brand</label>
+                <input id="search-brand" placeholder="e.g. Tesco" />
+            </div>
+            <div class="control">
+                <label>City</label>
+                <input id="search-city" placeholder="e.g. Manchester" />
+            </div>
+            <div class="control">
+                <label>Min price (p)</label>
+                <input id="search-min" type="number" step="0.1" />
+            </div>
+            <div class="control">
+                <label>Max price (p)</label>
+                <input id="search-max" type="number" step="0.1" />
+            </div>
+            <div class="control" style="display: flex; gap: 0.75rem; align-items: end; padding-bottom: 0.5rem;">
+                <label><input type="checkbox" id="search-supermarket"> Supermarket only</label>
+                <label><input type="checkbox" id="search-motorway"> Motorway only</label>
+            </div>
+            <button class="primary" onclick="doSearch()">Search</button>
+        </div>
+        <div class="table-wrap">
+            <table id="search-table">
+                <thead>
+                    <tr>
+                        <th>Station</th><th>Brand</th><th>City</th>
+                        <th>Postcode</th><th>Region</th><th>Price (p)</th>
+                        <th>Fuel</th><th>Last seen</th>
+                    </tr>
+                </thead>
+                <tbody id="search-body"></tbody>
+            </table>
+        </div>
+        <div class="pagination" id="search-pagination"></div>
+    </div>
+
+    <!-- ============ ANOMALIES ============ -->
+    <div class="panel" id="panel-anomalies">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Station</th><th>City</th><th>Fuel</th>
+                        <th>Price (p)</th><th>Flags</th><th>Observed</th>
+                    </tr>
+                </thead>
+                <tbody id="anomaly-body"></tbody>
+            </table>
+        </div>
+    </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+const API = '/api';
+
+// ---------------------------------------------------------------------------
+// Tab switching
+// ---------------------------------------------------------------------------
+const tabs = document.querySelectorAll('.tab');
+const panels = document.querySelectorAll('.panel');
+const lazyLoaded = {};
+
+tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    panels.forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const id = t.dataset.panel;
+    document.getElementById('panel-' + id).classList.add('active');
+    if (!lazyLoaded[id]) {
+        lazyLoaded[id] = true;
+        if (id === 'map') initMap();
+        if (id === 'trends') loadTrends();
+        if (id === 'anomalies') loadAnomalies();
+    }
+}));
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+async function apiFetch(path) {
+    const r = await fetch(API + path);
+    if (!r.ok) throw new Error(`API error: ${r.status}`);
+    return r.json();
+}
+
+function ppl(v) { return v != null ? Number(v).toFixed(1) + 'p' : '—'; }
+
+const COLOURS = [
+    '#1d70b8','#d4351c','#00703c','#f47738','#5694ca',
+    '#912b88','#28a197','#b58840','#505a5f','#4c2c92',
+    '#d53880','#006435','#1d70b8','#003078',
+];
+
+// ---------------------------------------------------------------------------
+// Populate fuel type selectors
+// ---------------------------------------------------------------------------
+let fuelTypes = [];
+
+async function loadFuelTypes() {
+    fuelTypes = await apiFetch('/fuel-types');
+    for (const sel of document.querySelectorAll('#map-fuel, #trend-fuel, #search-fuel')) {
+        sel.innerHTML = '';
+        fuelTypes.forEach(ft => {
+            const o = document.createElement('option');
+            o.value = ft.fuel_type_code;
+            o.textContent = ft.fuel_name || ft.fuel_type_code;
+            if (ft.fuel_type_code === 'E10') o.selected = true;
+            sel.appendChild(o);
+        });
+    }
+}
+
+async function loadRegions() {
+    const regions = await apiFetch('/regions');
+    const sel = document.getElementById('trend-region');
+    regions.forEach(r => {
+        const o = document.createElement('option');
+        o.value = r; o.textContent = r;
+        sel.appendChild(o);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+async function loadDashboard() {
+    const data = await apiFetch('/summary');
+
+    if (data.last_scrape) {
+        const d = new Date(data.last_scrape);
+        document.getElementById('last-scrape').textContent =
+            'Last scrape: ' + d.toLocaleString();
+    }
+
+    const cards = document.getElementById('summary-cards');
+    cards.innerHTML = `
+        <div class="card">
+            <div class="label">Stations</div>
+            <div class="value">${data.total_stations.toLocaleString()}</div>
+        </div>
+    `;
+    data.by_fuel_type.forEach(ft => {
+        cards.innerHTML += `
+            <div class="card">
+                <div class="label">${ft.fuel_name || ft.fuel_type}</div>
+                <div class="value">${ppl(ft.avg_price)}</div>
+                <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)} · ${ft.station_count} stations</div>
+            </div>
+        `;
+    });
+
+    // Region chart
+    const regionData = await apiFetch('/prices/by-region?fuel_type=E10');
+    renderBarChart('chart-region', regionData.map(r => r.region), regionData.map(r => r.avg_price),
+        'Avg pence/litre', '#1d70b8');
+
+    // Brand chart
+    const brandData = await apiFetch('/prices/by-brand?fuel_type=E10&limit=15');
+    renderBarChart('chart-brand', brandData.map(b => b.brand_name), brandData.map(b => b.avg_price),
+        'Avg pence/litre', '#00703c');
+}
+
+let charts = {};
+function renderBarChart(canvasId, labels, values, label, colour) {
+    if (charts[canvasId]) charts[canvasId].destroy();
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    charts[canvasId] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{ label, data: values, backgroundColor: colour + '99', borderColor: colour, borderWidth: 1 }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: false } }
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Map
+// ---------------------------------------------------------------------------
+let map, mapLayer;
+
+function initMap() {
+    map = L.map('map').setView([53.5, -1.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 18,
+    }).addTo(map);
+    loadMapPrices();
+    document.getElementById('map-fuel').addEventListener('change', loadMapPrices);
+}
+
+async function loadMapPrices() {
+    const fuel = document.getElementById('map-fuel').value;
+    const data = await apiFetch(`/prices/map?fuel_type=${fuel}`);
+
+    if (mapLayer) map.removeLayer(mapLayer);
+
+    const prices = data.map(d => d.price);
+    const minP = Math.min(...prices);
+    const maxP = Math.max(...prices);
+
+    function priceColour(p) {
+        const t = (p - minP) / (maxP - minP || 1);
+        const r = Math.round(0 + t * 212);
+        const g = Math.round(112 - t * 59);
+        const b = Math.round(60 - t * 32);
+        return `rgb(${r},${g},${b})`;
+    }
+
+    const markers = data.map(d =>
+        L.circleMarker([d.latitude, d.longitude], {
+            radius: 4, fillColor: priceColour(d.price), color: '#333',
+            weight: 0.5, fillOpacity: 0.8,
+        }).bindPopup(`
+            <strong>${d.trading_name}</strong><br>
+            ${d.brand_name || ''}<br>
+            ${d.city} ${d.postcode}<br>
+            <strong>${ppl(d.price)}</strong> ${d.fuel_name || fuel}
+        `)
+    );
+    mapLayer = L.layerGroup(markers).addTo(map);
+}
+
+// ---------------------------------------------------------------------------
+// Trends
+// ---------------------------------------------------------------------------
+async function loadTrends() {
+    const fuel = document.getElementById('trend-fuel').value;
+    const region = document.getElementById('trend-region').value;
+    const days = document.getElementById('trend-days').value;
+    let url = `/prices/history?fuel_type=${fuel}&days=${days}`;
+    if (region) url += `&region=${encodeURIComponent(region)}`;
+    const data = await apiFetch(url);
+
+    if (charts['chart-trend']) charts['chart-trend'].destroy();
+    const ctx = document.getElementById('chart-trend').getContext('2d');
+    charts['chart-trend'] = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d => d.day),
+            datasets: [{
+                label: 'Avg pence/litre',
+                data: data.map(d => d.avg_price),
+                borderColor: '#1d70b8',
+                backgroundColor: '#1d70b833',
+                fill: true, tension: 0.3, pointRadius: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: { ticks: { maxTicksAutoSkip: true, maxRotation: 45 } },
+                y: { beginAtZero: false }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+let searchState = { offset: 0 };
+
+async function doSearch(offset = 0) {
+    const fuel = document.getElementById('search-fuel').value;
+    const postcode = document.getElementById('search-postcode').value;
+    const brand = document.getElementById('search-brand').value;
+    const city = document.getElementById('search-city').value;
+    const minP = document.getElementById('search-min').value;
+    const maxP = document.getElementById('search-max').value;
+    const supermarket = document.getElementById('search-supermarket').checked;
+    const motorway = document.getElementById('search-motorway').checked;
+
+    let url = `/prices/search?fuel_type=${fuel}&limit=50&offset=${offset}`;
+    if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
+    if (brand) url += `&brand=${encodeURIComponent(brand)}`;
+    if (city) url += `&city=${encodeURIComponent(city)}`;
+    if (minP) url += `&min_price=${minP}`;
+    if (maxP) url += `&max_price=${maxP}`;
+    if (supermarket) url += '&supermarket_only=true';
+    if (motorway) url += '&motorway_only=true';
+
+    const data = await apiFetch(url);
+    searchState = { offset, total: data.total };
+
+    const body = document.getElementById('search-body');
+    body.innerHTML = data.results.map(r => `
+        <tr>
+            <td>${r.trading_name}</td>
+            <td>${r.brand_name || '—'}</td>
+            <td>${r.city || '—'}</td>
+            <td>${r.postcode || '—'}</td>
+            <td>${r.region || '—'}</td>
+            <td><strong>${ppl(r.price)}</strong></td>
+            <td>${r.fuel_name || r.fuel_type}</td>
+            <td>${new Date(r.observed_at).toLocaleDateString()}</td>
+        </tr>
+    `).join('');
+
+    const pag = document.getElementById('search-pagination');
+    const page = Math.floor(offset / 50) + 1;
+    const pages = Math.ceil(data.total / 50);
+    pag.innerHTML = `
+        <button ${offset === 0 ? 'disabled' : ''} onclick="doSearch(${offset - 50})">← Prev</button>
+        <span class="info">Page ${page} of ${pages} (${data.total.toLocaleString()} results)</span>
+        <button ${offset + 50 >= data.total ? 'disabled' : ''} onclick="doSearch(${offset + 50})">Next →</button>
+    `;
+}
+
+// ---------------------------------------------------------------------------
+// Anomalies
+// ---------------------------------------------------------------------------
+async function loadAnomalies() {
+    const data = await apiFetch('/anomalies');
+    const body = document.getElementById('anomaly-body');
+    if (!data.length) {
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--muted)">No anomalies detected</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(r => `
+        <tr>
+            <td>${r.trading_name}</td>
+            <td>${r.city || '—'}</td>
+            <td>${r.fuel_type}</td>
+            <td><strong>${ppl(r.price)}</strong></td>
+            <td>${(r.anomaly_flags || []).map(f => `<span class="tag">${f}</span>`).join(' ')}</td>
+            <td>${new Date(r.observed_at).toLocaleString()}</td>
+        </tr>
+    `).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+(async () => {
+    await loadFuelTypes();
+    await loadRegions();
+    await loadDashboard();
+})();
+</script>
+
+</body>
+</html>

@@ -28,5 +28,16 @@ services:
       S3_BUCKET: ${S3_BUCKET:-fuel-finder-raw}
       AWS_REGION: ${AWS_REGION:-eu-west-1}
 
+  web:
+    build: ./web
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://fuelfinder:fuelfinder@postgres:5432/fuelfinder
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+
 volumes:
   pgdata:
