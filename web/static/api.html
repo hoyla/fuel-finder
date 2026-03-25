@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Reference — Fuel Finder</title>
+    <style>
+        :root {
+            --bg:       #f5f6f7;
+            --card-bg:  #ffffff;
+            --text:     #1a1a1a;
+            --muted:    #6b7280;
+            --accent:   #1d70b8;
+            --border:   #d2d6db;
+            --green:    #00703c;
+            --red:      #d4351c;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg); color: var(--text); line-height: 1.6;
+        }
+        header {
+            background: var(--text); color: #fff; padding: 1rem 2rem;
+            display: flex; align-items: center; gap: 1rem;
+        }
+        header h1 { font-size: 1.4rem; font-weight: 600; }
+        header a { color: #aaa; text-decoration: none; font-size: 0.9rem; }
+        header a:hover { color: #fff; }
+        header nav { margin-left: auto; display: flex; gap: 1.5rem; }
+        main {
+            max-width: 900px; margin: 0 auto; padding: 2rem;
+        }
+        h2 {
+            font-size: 1.5rem; margin: 2rem 0 0.75rem; padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+        h2:first-child { margin-top: 0; }
+        h3 {
+            font-size: 1.1rem; margin: 1.5rem 0 0.5rem;
+            color: var(--accent);
+        }
+        p { margin: 0.5rem 0; }
+        .endpoint {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1.25rem; margin: 1rem 0;
+        }
+        .endpoint .method-path {
+            font-family: "SF Mono", Monaco, Menlo, monospace;
+            font-size: 0.95rem; font-weight: 600;
+        }
+        .method {
+            display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+            font-size: 0.8rem; font-weight: 700; margin-right: 0.5rem;
+            text-transform: uppercase; color: #fff;
+        }
+        .method.get { background: var(--green); }
+        .method.post { background: var(--accent); }
+        .method.delete { background: var(--red); }
+        .endpoint .desc { color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0; }
+        table {
+            width: 100%; border-collapse: collapse; font-size: 0.9rem;
+            margin: 0.75rem 0;
+        }
+        th {
+            background: var(--bg); text-align: left; padding: 0.5rem 0.75rem;
+            font-weight: 600; border-bottom: 2px solid var(--border);
+        }
+        td {
+            padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border);
+        }
+        code {
+            background: #e8ecf0; padding: 0.15rem 0.4rem; border-radius: 3px;
+            font-family: "SF Mono", Monaco, Menlo, monospace; font-size: 0.85rem;
+        }
+        pre {
+            background: #1a1a1a; color: #e0e0e0; padding: 1rem; border-radius: 6px;
+            overflow-x: auto; font-size: 0.85rem; margin: 0.75rem 0; line-height: 1.4;
+        }
+        .note {
+            background: #fff3cd; border: 1px solid #f0d78e; border-radius: 6px;
+            padding: 0.75rem 1rem; font-size: 0.9rem; margin: 0.75rem 0;
+        }
+        .section-nav {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+        }
+        .section-nav h4 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; margin-bottom: 0.5rem; }
+        .section-nav a {
+            display: inline-block; margin: 0.2rem 0.75rem 0.2rem 0;
+            color: var(--accent); text-decoration: none; font-size: 0.9rem;
+        }
+        .section-nav a:hover { text-decoration: underline; }
+        @media (max-width: 768px) {
+            main { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>⛽ Fuel Finder</h1>
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/docs/api">API</a>
+        <a href="/docs/about">About</a>
+    </nav>
+</header>
+
+<main>
+    <h2>API Reference</h2>
+
+    <p>All endpoints return JSON. Base URL: <code>/api/</code>. No authentication required by default.</p>
+
+    <div class="section-nav">
+        <h4>Sections</h4>
+        <a href="#prices">Price data</a>
+        <a href="#reference">Reference</a>
+        <a href="#admin">Admin / lookups</a>
+    </div>
+
+    <!-- ===== PRICE DATA ===== -->
+    <h2 id="prices">Price data</h2>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/summary</div>
+        <div class="desc">Dashboard headline numbers: average/min/max prices per fuel type, station count, last scrape time.</div>
+        <pre>{
+  "by_fuel_type": [
+    { "fuel_type": "E10", "fuel_name": "Unleaded (E10)",
+      "avg_price": 149.3, "min_price": 135.9, "max_price": 199.9, "station_count": 7277 }
+  ],
+  "total_stations": 7466,
+  "total_prices": 24551,
+  "last_scrape": "2026-03-25T14:00:00Z"
+}</pre>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/by-region</div>
+        <div class="desc">Average price by ONS region.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { region, avg_price, min_price, max_price, station_count } ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/by-brand</div>
+        <div class="desc">Average price by canonical brand name (minimum 3 stations).</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>20</td><td>Max brands (1–100)</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { brand_name, forecourt_type, avg_price, min_price, max_price, station_count } ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/by-category</div>
+        <div class="desc">Average price by forecourt category (Supermarket, Major Oil, Motorway, etc.).</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { forecourt_type, avg_price, min_price, max_price, station_count } ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/history</div>
+        <div class="desc">Daily average price over time, optionally filtered by region.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+                <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1–365)</td></tr>
+                <tr><td><code>region</code></td><td>string</td><td>—</td><td>Optional region filter</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { day, avg_price, stations } ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/map</div>
+        <div class="desc">Current prices with coordinates for map display.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: array with <code>node_id, trading_name, brand_name, city, postcode, price, fuel_name, forecourt_type, latitude, longitude</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/search</div>
+        <div class="desc">Flexible search/filter with pagination.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+                <tr><td><code>postcode</code></td><td>string</td><td>—</td><td>Postcode prefix (e.g. SW1)</td></tr>
+                <tr><td><code>brand</code></td><td>string</td><td>—</td><td>Brand substring</td></tr>
+                <tr><td><code>city</code></td><td>string</td><td>—</td><td>City substring</td></tr>
+                <tr><td><code>min_price</code></td><td>float</td><td>—</td><td>Min price (pence)</td></tr>
+                <tr><td><code>max_price</code></td><td>float</td><td>—</td><td>Max price (pence)</td></tr>
+                <tr><td><code>category</code></td><td>string</td><td>—</td><td>Forecourt type filter</td></tr>
+                <tr><td><code>sort</code></td><td>string</td><td>price</td><td>price, brand, city, postcode</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Results per page (1–500)</td></tr>
+                <tr><td><code>offset</code></td><td>int</td><td>0</td><td>Pagination offset</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>{ results: [...], total, limit, offset }</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/anomalies</div>
+        <div class="desc">Price records flagged by anomaly detection.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Max records (1–500)</td></tr>
+            </tbody>
+        </table>
+        <p>Flags: <code>price_below_floor</code>, <code>price_above_ceiling</code>, <code>likely_decimal_error</code>, <code>large_price_jump</code></p>
+    </div>
+
+    <!-- ===== REFERENCE ===== -->
+    <h2 id="reference">Reference</h2>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/fuel-types</div>
+        <div class="desc">List fuel types with human names and categories.</div>
+        <p>Returns: <code>[ { fuel_type_code, fuel_name, fuel_category } ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/regions</div>
+        <div class="desc">List available regions.</div>
+        <p>Returns: <code>[ "London", "North West", "Scotland", ... ]</code></p>
+    </div>
+
+    <!-- ===== ADMIN ===== -->
+    <h2 id="admin">Admin / lookup tables</h2>
+
+    <div class="note"> Changes to lookup tables are not reflected in the dashboard until you call <code>POST /api/admin/refresh-view</code> to rebuild the materialised view.</div>
+
+    <h3>Brand aliases</h3>
+    <p>Map raw API brand strings to canonical names (e.g. <code>"TESCO PFS"</code> → <code>"Tesco"</code>).</p>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/brand-aliases</div>
+        <div class="desc">List all alias mappings.</div>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/brand-aliases</div>
+        <div class="desc">Create or update an alias. Upserts on <code>raw_brand_name</code>.</div>
+        <pre>{ "raw_brand_name": "TESCO PFS", "canonical_brand": "Tesco" }</pre>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method delete">DEL</span> /api/admin/brand-aliases/{raw_brand_name}</div>
+        <div class="desc">Delete an alias mapping.</div>
+    </div>
+
+    <h3>Brand categories</h3>
+    <p>Map canonical brands to forecourt types for category-level price comparison.</p>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/brand-categories</div>
+        <div class="desc">List all category mappings.</div>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/brand-categories</div>
+        <div class="desc">Create or update a category. Upserts on <code>canonical_brand</code>.</div>
+        <pre>{ "canonical_brand": "Tesco", "forecourt_type": "Supermarket" }</pre>
+        <p>Allowed types: <code>Supermarket</code>, <code>Major Oil</code>, <code>Motorway Operator</code>, <code>Fuel Group</code>, <code>Convenience</code>, <code>Independent</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method delete">DEL</span> /api/admin/brand-categories/{canonical_brand}</div>
+        <div class="desc">Delete a category mapping (brand defaults to Independent).</div>
+    </div>
+
+    <h3>Station overrides</h3>
+    <p>Per-station brand overrides for edge cases (takes priority over aliases).</p>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/station-overrides</div>
+        <div class="desc">List all overrides with station details.</div>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/station-overrides</div>
+        <div class="desc">Create or update an override. Upserts on <code>node_id</code>.</div>
+        <pre>{ "node_id": "abc123...", "canonical_brand": "Shell", "notes": "Branded Shell but API says independent" }</pre>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method delete">DEL</span> /api/admin/station-overrides/{node_id}</div>
+        <div class="desc">Delete a station override.</div>
+    </div>
+
+    <h3>Normalisation report</h3>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/normalisation-report</div>
+        <div class="desc">Shows how each brand resolves through the normalisation pipeline.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>limit</code></td><td>int</td><td>100</td><td>Max rows (1–1000)</td></tr>
+                <tr><td><code>type</code></td><td>string</td><td>—</td><td><code>aliased</code>, <code>overridden</code>, or <code>unmapped</code></td></tr>
+                <tr><td><code>brand</code></td><td>string</td><td>—</td><td>Brand substring filter</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { raw_brand, alias_resolved, override_resolved, final_brand, forecourt_type, resolution_method, station_count } ]</code></p>
+        <p><code>resolution_method</code>: <code>raw</code> (no transformation), <code>alias</code> (via brand_aliases), <code>override</code> (via station_brand_overrides)</p>
+    </div>
+
+    <h3>Refresh view</h3>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/refresh-view</div>
+        <div class="desc">Rebuilds the <code>current_prices</code> materialised view. Call after changing any lookup table.</div>
+        <pre>{ "status": "ok", "message": "current_prices view refreshed" }</pre>
+    </div>
+
+</main>
+
+</body>
+</html>

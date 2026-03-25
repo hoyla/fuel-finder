@@ -620,3 +620,11 @@ if os.path.isdir(STATIC_DIR):
     @app.get("/")
     def index():
         return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+    @app.get("/docs/api")
+    def api_docs_page():
+        return FileResponse(os.path.join(STATIC_DIR, "api.html"))
+
+    @app.get("/docs/about")
+    def about_page():
+        return FileResponse(os.path.join(STATIC_DIR, "about.html"))

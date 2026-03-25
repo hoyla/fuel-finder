@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About — Fuel Finder</title>
+    <style>
+        :root {
+            --bg:       #f5f6f7;
+            --card-bg:  #ffffff;
+            --text:     #1a1a1a;
+            --muted:    #6b7280;
+            --accent:   #1d70b8;
+            --border:   #d2d6db;
+            --green:    #00703c;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg); color: var(--text); line-height: 1.6;
+        }
+        header {
+            background: var(--text); color: #fff; padding: 1rem 2rem;
+            display: flex; align-items: center; gap: 1rem;
+        }
+        header h1 { font-size: 1.4rem; font-weight: 600; }
+        header a { color: #aaa; text-decoration: none; font-size: 0.9rem; }
+        header a:hover { color: #fff; }
+        header nav { margin-left: auto; display: flex; gap: 1.5rem; }
+        main { max-width: 800px; margin: 0 auto; padding: 2rem; }
+        h2 {
+            font-size: 1.5rem; margin: 2rem 0 0.75rem; padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+        h2:first-child { margin-top: 0; }
+        h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; color: var(--accent); }
+        p { margin: 0.5rem 0; }
+        ul, ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+        li { margin: 0.3rem 0; }
+        code {
+            background: #e8ecf0; padding: 0.15rem 0.4rem; border-radius: 3px;
+            font-family: "SF Mono", Monaco, Menlo, monospace; font-size: 0.85rem;
+        }
+        pre {
+            background: #1a1a1a; color: #e0e0e0; padding: 1rem; border-radius: 6px;
+            overflow-x: auto; font-size: 0.85rem; margin: 0.75rem 0; line-height: 1.5;
+        }
+        .card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1.25rem; margin: 1rem 0;
+        }
+        .card h4 { font-size: 1rem; margin-bottom: 0.5rem; }
+        .diagram {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1.5rem; margin: 1rem 0;
+            overflow-x: auto;
+        }
+        .diagram pre {
+            background: none; color: var(--text); padding: 0; margin: 0;
+            font-size: 0.85rem;
+        }
+        table {
+            width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 0.75rem 0;
+        }
+        th { background: var(--bg); text-align: left; padding: 0.5rem 0.75rem; font-weight: 600; border-bottom: 2px solid var(--border); }
+        td { padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border); }
+        .note {
+            background: #e8f4fd; border: 1px solid #b3d7f0; border-radius: 6px;
+            padding: 0.75rem 1rem; font-size: 0.9rem; margin: 0.75rem 0;
+        }
+        .category-tag {
+            display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+            font-size: 0.8rem; font-weight: 500;
+        }
+        .category-tag.supermarket { background: #d4edda; color: #155724; }
+        .category-tag.major-oil { background: #cce5ff; color: #004085; }
+        .category-tag.motorway { background: #f8d7da; color: #721c24; }
+        .category-tag.fuel-group { background: #e2e3e5; color: #383d41; }
+        .category-tag.convenience { background: #fff3cd; color: #856404; }
+        .category-tag.independent { background: #f5f6f7; color: var(--muted); }
+        @media (max-width: 768px) {
+            main { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>⛽ Fuel Finder</h1>
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/docs/api">API</a>
+        <a href="/docs/about">About</a>
+    </nav>
+</header>
+
+<main>
+    <h2>How it works</h2>
+
+    <p>This tool scrapes the <a href="https://www.developer.fuel-finder.service.gov.uk/">GOV.UK Fuel Finder API</a> — the same data source behind the government's consumer fuel price finder — and stores it in a PostgreSQL database to build a <strong>historical price record</strong> that the API itself doesn't provide.</p>
+
+    <p>The GOV.UK API only serves <strong>live snapshots</strong>: current prices at the time of the request. There is no way to retrieve yesterday's prices or see how prices have changed over time. By scraping regularly and storing every price change, we build a time-series dataset that enables trend analysis, regional comparisons, and anomaly detection.</p>
+
+    <h2>Data source</h2>
+
+    <p>The Fuel Finder API is a government service that aggregates fuel prices reported by petrol station operators. It covers approximately <strong>7,400 stations</strong> across England, Wales, Scotland and Northern Ireland, reporting prices for up to six fuel types.</p>
+
+    <table>
+        <thead><tr><th>Code</th><th>Fuel type</th><th>Category</th></tr></thead>
+        <tbody>
+            <tr><td><code>E10</code></td><td>Unleaded (standard, up to 10% ethanol)</td><td>Petrol</td></tr>
+            <tr><td><code>E5</code></td><td>Super Unleaded (up to 5% ethanol)</td><td>Petrol</td></tr>
+            <tr><td><code>B7_STANDARD</code></td><td>Diesel (standard, up to 7% biodiesel)</td><td>Diesel</td></tr>
+            <tr><td><code>B7_PREMIUM</code></td><td>Premium Diesel</td><td>Diesel</td></tr>
+            <tr><td><code>B10</code></td><td>Diesel (up to 10% biodiesel)</td><td>Diesel</td></tr>
+            <tr><td><code>HVO</code></td><td>Hydrotreated Vegetable Oil (renewable)</td><td>Diesel</td></tr>
+        </tbody>
+    </table>
+
+    <h2>The scraper</h2>
+
+    <div class="diagram">
+<pre>
+Fuel Finder API (GOV.UK)
+    │
+    │  OAuth2 client credentials → bearer token (1h TTL)
+    │  GET /api/v1/pfs/fuel-prices?batch-number=N  (500 stations/batch, ~15 batches)
+    │  GET /api/v1/pfs?batch-number=N               (station details)
+    ▼
+┌─────────────────────┐
+│    Scraper           │  Python — api_client.py + scrape.py
+│                     │
+│  1. Authenticate    │  OAuth2 client credentials
+│  2. Fetch batches   │  Paginate through all stations + prices
+│  3. Upsert stations │  Insert/update station records
+│  4. Insert prices   │  Append-only, deduplicated
+│  5. Detect anomalies│  Flag suspicious prices (not filter)
+│  6. Refresh view    │  Rebuild current_prices snapshot
+│  7. Backup to S3    │  Raw JSON (optional)
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│    PostgreSQL        │
+│                     │
+│  stations           │  ~7,400 fuel stations with lat/lng
+│  fuel_prices        │  append-only price change events
+│  brand_aliases      │  raw → canonical brand mapping
+│  brand_categories   │  brand → forecourt type
+│  postcode_regions   │  postcode → ONS region
+│  current_prices     │  materialised view (live snapshot)
+└─────────────────────┘
+</pre>
+    </div>
+
+    <h3>Scrape modes</h3>
+
+    <div class="card">
+        <h4>Full scrape</h4>
+        <p>Fetches all stations and all prices from scratch (~15 batches of 500 stations each). Used for the initial load and daily refreshes. Updates station metadata (addresses, amenities, opening times) and inserts any new prices.</p>
+    </div>
+
+    <div class="card">
+        <h4>Incremental scrape</h4>
+        <p>Uses the <code>effective-start-timestamp</code> API parameter to fetch only prices that have changed since the last successful scrape. Much faster — typically returns a few hundred changes instead of ~24,000 prices. Ideal for frequent polling (every 30 minutes).</p>
+    </div>
+
+    <div class="card">
+        <h4>Auto mode</h4>
+        <p>Checks the database for the most recent successful scrape. If one exists, runs incremental; otherwise runs a full scrape. This is the default — set it up on a schedule and forget about it.</p>
+    </div>
+
+    <h2>How prices are stored</h2>
+
+    <p>The <code>fuel_prices</code> table is <strong>append-only</strong>, but with deduplication. When a scrape runs:</p>
+
+    <ol>
+        <li>For each (station, fuel type) pair, the scraper looks up the most recently stored price</li>
+        <li>If the new price is <strong>the same</strong> as the stored price, it's skipped</li>
+        <li>If the price has <strong>changed</strong>, a new row is inserted with the current timestamp</li>
+        <li>The new price is checked against anomaly rules and flagged if suspicious</li>
+    </ol>
+
+    <p>This means every row in <code>fuel_prices</code> represents a <strong>genuine price change event</strong>, keeping storage lean and making time-series analysis straightforward.</p>
+
+    <h3>Anomaly detection</h3>
+
+    <p>On insert, each price is checked against three rules. Suspicious prices are <strong>flagged, not filtered</strong> — the data is preserved but marked for review.</p>
+
+    <table>
+        <thead><tr><th>Flag</th><th>Trigger</th></tr></thead>
+        <tbody>
+            <tr><td><code>price_below_floor</code></td><td>Price below 80p/litre</td></tr>
+            <tr><td><code>price_above_ceiling</code></td><td>Price above 300p/litre</td></tr>
+            <tr><td><code>likely_decimal_error</code></td><td>Price looks like pounds instead of pence (e.g. 1.45 instead of 145.0)</td></tr>
+            <tr><td><code>large_price_jump</code></td><td>Price changed by more than 30% from previous</td></tr>
+        </tbody>
+    </table>
+
+    <h2>Brand normalisation</h2>
+
+    <p>The API provides brand names inconsistently — <code>ESSO</code>, <code>Esso</code>, <code>esso</code> all appear for the same company. Three layers of normalisation clean this up:</p>
+
+    <ol>
+        <li><strong>Brand aliases</strong> — bulk mapping of raw API strings to canonical names (e.g. <code>"TESCO"</code> → <code>"Tesco"</code>). Managed via the <a href="/">Data tab</a>.</li>
+        <li><strong>Station overrides</strong> — per-station corrections for edge cases where the API brand is wrong or the alias isn't granular enough.</li>
+        <li><strong>Resolution order</strong> — <code>station_override &gt; brand_alias &gt; raw_brand_name</code>. Overrides always win.</li>
+    </ol>
+
+    <p>Raw brand values are <strong>never modified</strong> in the database. Normalisation is applied in the materialised view, so any change can be reversed.</p>
+
+    <h2>Forecourt categories</h2>
+
+    <p>Stations are classified into categories based on their <strong>canonical brand name</strong>, not the API's <code>is_supermarket_service_station</code> flag (which is unreliable — it flags BP, Texaco, and Maxol as supermarkets).</p>
+
+    <table>
+        <thead><tr><th>Category</th><th>Examples</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><span class="category-tag supermarket">Supermarket</span></td><td>Tesco, Asda, Sainsburys, Morrisons, Waitrose</td><td>Supermarket-operated forecourts</td></tr>
+            <tr><td><span class="category-tag major-oil">Major Oil</span></td><td>Shell, BP, Esso, Texaco, Jet, Gulf</td><td>Major oil company brands</td></tr>
+            <tr><td><span class="category-tag motorway">Motorway Operator</span></td><td>Welcome Break, EG On The Move, Applegreen</td><td>Motorway service area operators</td></tr>
+            <tr><td><span class="category-tag fuel-group">Fuel Group</span></td><td>Motor Fuel Group, Rontec, Harvest Energy</td><td>Fuel wholesalers / groups</td></tr>
+            <tr><td><span class="category-tag convenience">Convenience</span></td><td>Spar, Circle K, Maxol</td><td>Convenience store forecourts</td></tr>
+            <tr><td><span class="category-tag independent">Independent</span></td><td>(any unmapped brand)</td><td>Independent operators, default</td></tr>
+            <tr><td><span class="category-tag motorway">Motorway</span></td><td>(any station with motorway flag)</td><td>Motorway flag always takes priority</td></tr>
+        </tbody>
+    </table>
+
+    <div class="note">Categories are managed on the <a href="/">Data tab</a>. After changes, hit <strong>Refresh View</strong> to rebuild the snapshot.</div>
+
+    <h2>Regional mapping</h2>
+
+    <p>Each station's postcode is mapped to an ONS-style region using the first 1–2 letters of the postcode (the <em>postcode area</em>). For example, <code>SW1A</code> → <code>SW</code> → <strong>London</strong>, <code>M1</code> → <code>M</code> → <strong>North West</strong>.</p>
+
+    <p>This enables regional price comparisons (e.g. "London is 3p/litre more expensive than the North East") without requiring geocoding.</p>
+
+    <h2>The materialised view</h2>
+
+    <p><code>current_prices</code> is a PostgreSQL materialised view that provides the <strong>latest price per station per fuel type</strong>. It joins together:</p>
+
+    <ul>
+        <li>The most recent price from <code>fuel_prices</code></li>
+        <li>Station details from <code>stations</code></li>
+        <li>Canonical brand name (via aliases and overrides)</li>
+        <li>Forecourt type (via <code>brand_categories</code>)</li>
+        <li>Region (via <code>postcode_regions</code>)</li>
+        <li>Human-friendly fuel names (via <code>fuel_type_labels</code>)</li>
+    </ul>
+
+    <p>The view is refreshed after each scrape run and when you press <strong>Refresh View</strong> on the Data tab. All dashboard, map, search and API queries read from this view for fast, consistent results.</p>
+
+    <h2>Running on a schedule</h2>
+
+    <p>For production use, the scraper is designed to run on <strong>AWS Lambda</strong> with EventBridge Scheduler:</p>
+
+    <ul>
+        <li><strong>Every 30 minutes</strong>: incremental scrape (fetch changed prices only)</li>
+        <li><strong>Daily at 03:00 UTC</strong>: full scrape (refresh all station metadata + prices)</li>
+    </ul>
+
+    <p>Raw JSON responses from each scrape are optionally backed up to S3 for audit and replay purposes.</p>
+
+</main>
+
+</body>
+</html>
