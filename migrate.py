@@ -69,3 +69,17 @@ def run_migrations(conn):
         newly_applied.append(filename)
 
     return newly_applied
+
+
+if __name__ == "__main__":
+    import psycopg2
+
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        applied = run_migrations(conn)
+        for name in applied:
+            print(f"  Applied {name}")
+        if not applied:
+            print("  All migrations already applied")
+    finally:
+        conn.close()
