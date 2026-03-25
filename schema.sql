@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS fuel_prices (
     price_last_updated  TIMESTAMPTZ,
     price_change_effective_timestamp TIMESTAMPTZ,
     observed_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    scrape_run_id       BIGINT REFERENCES scrape_runs(id)
+    scrape_run_id       BIGINT REFERENCES scrape_runs(id),
+    anomaly_flags       TEXT[]       -- NULL = no issues; populated by anomaly checks
 );
 
 -- Index for efficient time-series queries on fuel prices
@@ -93,6 +94,17 @@ CREATE TABLE IF NOT EXISTS postcode_regions (
     region_group        TEXT NOT NULL
 );
 
+-- Human-friendly fuel type names.
+-- Translates API codes like 'B7_STANDARD' to readable labels.
+-- Seeded from seed_fuel_types.sql.
+
+CREATE TABLE IF NOT EXISTS fuel_type_labels (
+    fuel_type_code      TEXT PRIMARY KEY,
+    fuel_name           TEXT NOT NULL,
+    fuel_category       TEXT NOT NULL,  -- 'Petrol' or 'Diesel'
+    description         TEXT
+);
+
 -- Materialised view: current price per station + fuel type.
 -- The last-reported price IS the current price, regardless of how old it is.
 -- Uses canonical brand: override > alias > raw brand_name.
@@ -101,6 +113,8 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS current_prices AS
 SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
     fp.node_id,
     fp.fuel_type,
+    COALESCE(ftl.fuel_name, fp.fuel_type) AS fuel_name,
+    COALESCE(ftl.fuel_category, 'Unknown') AS fuel_category,
     fp.price,
     fp.price_last_updated,
     fp.price_change_effective_timestamp,
@@ -133,6 +147,7 @@ LEFT JOIN postcode_regions pr ON pr.postcode_area = (
         ELSE LEFT(s.postcode, 1)
     END
 )
+LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
 ORDER BY fp.node_id, fp.fuel_type, fp.observed_at DESC;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_current_prices_node_fuel

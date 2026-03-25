@@ -125,6 +125,41 @@ def upsert_stations(conn, stations):
     conn.commit()
 
 
+# --- Anomaly detection ---
+
+# Plausible price range in pence per litre.
+# Anything outside this is almost certainly a data entry error.
+PRICE_FLOOR = 80.0    # Below 80p hasn't happened since ~2004
+PRICE_CEILING = 300.0  # Above 300p would be unprecedented
+
+# A single price change of more than this % is suspicious.
+MAX_CHANGE_PCT = 30.0
+
+
+def _detect_anomalies(price, fuel_type, previous_price):
+    """Return a list of anomaly flag strings, or None if price looks normal."""
+    flags = []
+
+    if price < PRICE_FLOOR:
+        flags.append(f"price_below_floor:{price}<{PRICE_FLOOR}")
+    elif price > PRICE_CEILING:
+        flags.append(f"price_above_ceiling:{price}>{PRICE_CEILING}")
+
+    # Check for likely decimal place errors (e.g. 14.9 instead of 149.0)
+    if price < PRICE_FLOOR and 10 * price >= PRICE_FLOOR:
+        flags.append(f"likely_decimal_error:x10_would_be_{10*price}")
+    if price > PRICE_CEILING and price / 10 <= PRICE_CEILING:
+        flags.append(f"likely_decimal_error:div10_would_be_{price/10}")
+
+    # Large jump from previous price
+    if previous_price and previous_price > 0:
+        change_pct = abs(price - float(previous_price)) / float(previous_price) * 100
+        if change_pct > MAX_CHANGE_PCT:
+            flags.append(f"large_change:{change_pct:.1f}%_from_{previous_price}")
+
+    return flags if flags else None
+
+
 def insert_fuel_prices(conn, price_records, scrape_run_id):
     """Insert price observations, but only when the price has actually changed.
 
@@ -132,6 +167,11 @@ def insert_fuel_prices(conn, price_records, scrape_run_id):
     station + fuel_type. Only inserts a new row if the price differs (or no
     previous record exists). This means every row in fuel_prices represents
     a genuine price change, keeping storage lean and time-series queries simple.
+
+    Each inserted row is checked for anomalies (implausible prices, decimal
+    place errors, large jumps). Anomaly flags are stored in the anomaly_flags
+    column but the row is still inserted — raw data is preserved, anomalies
+    are flagged not filtered.
     """
     if not price_records:
         return 0
@@ -153,13 +193,17 @@ def insert_fuel_prices(conn, price_records, scrape_run_id):
 
     # Only keep rows where price has changed (or is new)
     rows = []
+    anomaly_count = 0
     for station in price_records:
         node_id = station["node_id"]
         for fp in station.get("fuel_prices", []):
             key = (node_id, fp["fuel_type"])
-            # Compare as Decimal to avoid float issues
             new_price = Decimal(str(fp["price"]))
             if key not in latest or latest[key] != new_price:
+                previous = latest.get(key)
+                flags = _detect_anomalies(float(fp["price"]), fp["fuel_type"], previous)
+                if flags:
+                    anomaly_count += 1
                 rows.append((
                     node_id,
                     fp["fuel_type"],
@@ -167,6 +211,7 @@ def insert_fuel_prices(conn, price_records, scrape_run_id):
                     fp.get("price_last_updated"),
                     fp.get("price_change_effective_timestamp"),
                     scrape_run_id,
+                    flags,
                 ))
     if not rows:
         return 0
@@ -175,12 +220,17 @@ def insert_fuel_prices(conn, price_records, scrape_run_id):
             cur,
             """INSERT INTO fuel_prices
                (node_id, fuel_type, price, price_last_updated,
-                price_change_effective_timestamp, scrape_run_id)
+                price_change_effective_timestamp, scrape_run_id, anomaly_flags)
                VALUES %s""",
             rows,
             page_size=1000,
         )
     conn.commit()
+    if anomaly_count:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Detected %d anomalous price records in this scrape", anomaly_count
+        )
     return len(rows)
 
 
