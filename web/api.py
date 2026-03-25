@@ -85,6 +85,10 @@ class StationOverrideBody(BaseModel):
     canonical_brand: str
     notes: Optional[str] = None
 
+class PostcodeCoordsBody(BaseModel):
+    latitude: float
+    longitude: float
+
 
 # ---------------------------------------------------------------------------
 # API routes
@@ -268,6 +272,8 @@ def price_map(
             WHERE fuel_type = %s
               AND latitude IS NOT NULL
               AND longitude IS NOT NULL
+              AND latitude BETWEEN 49 AND 61
+              AND longitude BETWEEN -9 AND 2
               AND NOT temporary_closure
             ORDER BY price
         """, (fuel_type,))
@@ -750,6 +756,33 @@ def postcode_issues(
                 s.postcode
         """)
         return cur.fetchall()
+
+
+@app.patch("/api/admin/postcode-lookups/{postcode}")
+def update_postcode_coords(
+    postcode: str,
+    body: PostcodeCoordsBody,
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Manually set coordinates for a postcode lookup.
+
+    Useful for postcodes that postcodes.io didn't recognise, where the
+    correct location is known (e.g. from fixing sign errors in API coords).
+    """
+    if not (-90 <= body.latitude <= 90 and -180 <= body.longitude <= 180):
+        raise HTTPException(400, "Invalid coordinates")
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO postcode_lookups (postcode, pc_latitude, pc_longitude)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (postcode) DO UPDATE SET
+                pc_latitude = EXCLUDED.pc_latitude,
+                pc_longitude = EXCLUDED.pc_longitude,
+                looked_up_at = NOW()
+        """, (postcode.upper().strip(), body.latitude, body.longitude))
+        db.commit()
+    return {"postcode": postcode, "latitude": body.latitude, "longitude": body.longitude}
 
 
 @app.post("/api/admin/refresh-view")

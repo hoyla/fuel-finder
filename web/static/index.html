@@ -443,7 +443,7 @@
                         <tr>
                             <th>Postcode</th><th>Station</th><th>Brand</th>
                             <th>City</th><th>API Lat</th><th>API Lon</th>
-                            <th>Outside UK?</th>
+                            <th>Outside UK?</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="postcode-issues-body"></tbody>
@@ -1085,7 +1085,7 @@ async function refreshView() {
 
 async function loadPostcodeIssues() {
     const body = document.getElementById('postcode-issues-body');
-    body.innerHTML = '<tr><td colspan="7">Loading…</td></tr>';
+    body.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
     try {
         const r = await fetch(API + '/admin/postcode-issues');
         const rows = await r.json();
@@ -1097,9 +1097,31 @@ async function loadPostcodeIssues() {
             <td>${s.api_latitude ?? ''}</td>
             <td>${s.api_longitude ?? ''}</td>
             <td>${s.coords_outside_uk ? '⚠ Yes' : ''}</td>
-        </tr>`).join('') : '<tr><td colspan="7">No postcode issues found.</td></tr>';
+            <td>${s.postcode ? `<button class="small" onclick="fixPostcodeCoords('${s.postcode}', ${s.api_latitude}, ${s.api_longitude})">Fix coords</button>` : ''}</td>
+        </tr>`).join('') : '<tr><td colspan="8">No postcode issues found.</td></tr>';
     } catch (e) {
-        body.innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="8">Error: ${e.message}</td></tr>`;
+    }
+}
+
+async function fixPostcodeCoords(postcode, apiLat, apiLon) {
+    const lat = prompt(`Correct latitude for ${postcode}:`, apiLat);
+    if (lat === null) return;
+    const lon = prompt(`Correct longitude for ${postcode}:`, apiLon);
+    if (lon === null) return;
+    const pLat = parseFloat(lat), pLon = parseFloat(lon);
+    if (isNaN(pLat) || isNaN(pLon)) { alert('Invalid coordinates'); return; }
+    try {
+        const r = await fetch(API + '/admin/postcode-lookups/' + encodeURIComponent(postcode), {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({latitude: pLat, longitude: pLon}),
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        await apiPost('/admin/refresh-view', {});
+        loadPostcodeIssues();
+    } catch (e) {
+        alert('Error: ' + e.message);
     }
 }
 
