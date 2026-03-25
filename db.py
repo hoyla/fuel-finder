@@ -184,6 +184,13 @@ def insert_fuel_prices(conn, price_records, scrape_run_id):
     return len(rows)
 
 
+def refresh_current_prices(conn):
+    """Refresh the current_prices materialised view after a scrape."""
+    with conn.cursor() as cur:
+        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
+    conn.commit()
+
+
 def get_last_scrape_timestamp(conn):
     """Get the finished_at timestamp of the last successful scrape run."""
     with conn.cursor() as cur:

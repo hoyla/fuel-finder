@@ -64,3 +64,38 @@ CREATE INDEX IF NOT EXISTS idx_stations_latlon
 
 CREATE INDEX IF NOT EXISTS idx_stations_postcode
     ON stations (postcode);
+
+-- Materialised view: current price per station + fuel type.
+-- The last-reported price IS the current price, regardless of how old it is.
+-- Refresh this after each scrape run.
+CREATE MATERIALIZED VIEW IF NOT EXISTS current_prices AS
+SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
+    fp.node_id,
+    fp.fuel_type,
+    fp.price,
+    fp.price_last_updated,
+    fp.price_change_effective_timestamp,
+    fp.observed_at,
+    s.trading_name,
+    s.brand_name,
+    s.city,
+    s.county,
+    s.country,
+    s.postcode,
+    s.latitude,
+    s.longitude,
+    s.is_motorway_service_station,
+    s.is_supermarket_service_station,
+    s.temporary_closure
+FROM fuel_prices fp
+JOIN stations s ON s.node_id = fp.node_id
+ORDER BY fp.node_id, fp.fuel_type, fp.observed_at DESC;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_current_prices_node_fuel
+    ON current_prices (node_id, fuel_type);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_fuel_price
+    ON current_prices (fuel_type, price);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_postcode
+    ON current_prices (postcode);

@@ -15,6 +15,7 @@ from db import (
     fail_scrape_run,
     upsert_stations,
     insert_fuel_prices,
+    refresh_current_prices,
     get_last_scrape_timestamp,
 )
 
@@ -98,6 +99,10 @@ def run_scrape(mode="auto"):
 
         price_count = insert_fuel_prices(conn, prices, run_id)
         log.info("Inserted %d changed price records (out of %d stations fetched)", price_count, len(prices))
+
+        # Refresh the current_prices snapshot view
+        refresh_current_prices(conn)
+        log.info("Refreshed current_prices materialised view")
 
         # S3 backup of raw price data
         s3_key = None
