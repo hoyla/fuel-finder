@@ -113,9 +113,42 @@ CREATE TABLE IF NOT EXISTS brand_categories (
     forecourt_type      TEXT NOT NULL  -- 'Supermarket', 'Major Oil', 'Motorway Operator', 'Independent'
 );
 
+-- Postcode geographic enrichment from postcodes.io.
+-- Caches rich geographic/administrative data per postcode.
+
+CREATE TABLE IF NOT EXISTS postcode_lookups (
+    postcode            TEXT PRIMARY KEY,
+    pc_latitude         DOUBLE PRECISION,
+    pc_longitude        DOUBLE PRECISION,
+    admin_district      TEXT,
+    admin_county        TEXT,
+    admin_ward          TEXT,
+    parish              TEXT,
+    parliamentary_constituency TEXT,
+    ons_region          TEXT,
+    country             TEXT,
+    rural_urban         TEXT,
+    rural_urban_code    TEXT,
+    lsoa                TEXT,
+    msoa                TEXT,
+    built_up_area       TEXT,
+    quality             INTEGER,
+    looked_up_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_postcode_lookups_district
+    ON postcode_lookups (admin_district);
+CREATE INDEX IF NOT EXISTS idx_postcode_lookups_constituency
+    ON postcode_lookups (parliamentary_constituency);
+CREATE INDEX IF NOT EXISTS idx_postcode_lookups_rural_urban
+    ON postcode_lookups (rural_urban);
+CREATE INDEX IF NOT EXISTS idx_postcode_lookups_country
+    ON postcode_lookups (country);
+
 -- Materialised view: current price per station + fuel type.
 -- The last-reported price IS the current price, regardless of how old it is.
 -- Uses canonical brand: override > alias > raw brand_name.
+-- Coordinates: prefer postcodes.io authoritative coords, fall back to API.
 -- Refresh this after each scrape run.
 CREATE MATERIALIZED VIEW IF NOT EXISTS current_prices AS
 SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
@@ -140,15 +173,23 @@ SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
     END AS forecourt_type,
     s.city,
     s.county,
-    s.country,
+    COALESCE(pl.country, s.country) AS country,
     s.postcode,
-    pr.region,
+    COALESCE(pl.ons_region, pr.region) AS region,
     pr.region_group,
-    s.latitude,
-    s.longitude,
+    COALESCE(pl.pc_latitude, s.latitude) AS latitude,
+    COALESCE(pl.pc_longitude, s.longitude) AS longitude,
     s.is_motorway_service_station,
     s.is_supermarket_service_station,
-    s.temporary_closure
+    s.temporary_closure,
+    pl.admin_district,
+    pl.admin_county,
+    pl.admin_ward,
+    pl.parliamentary_constituency,
+    pl.rural_urban,
+    pl.built_up_area,
+    pl.lsoa,
+    pl.msoa
 FROM fuel_prices fp
 JOIN stations s ON s.node_id = fp.node_id
 LEFT JOIN brand_aliases ba ON ba.raw_brand_name = s.brand_name
@@ -165,6 +206,7 @@ LEFT JOIN brand_categories bc ON bc.canonical_brand = COALESCE(
     ba.canonical_brand,
     s.brand_name
 )
+LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
 ORDER BY fp.node_id, fp.fuel_type, fp.observed_at DESC;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_current_prices_node_fuel
@@ -181,3 +223,12 @@ CREATE INDEX IF NOT EXISTS idx_current_prices_region
 
 CREATE INDEX IF NOT EXISTS idx_current_prices_forecourt_type
     ON current_prices (forecourt_type, fuel_type);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_admin_district
+    ON current_prices (admin_district, fuel_type);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_constituency
+    ON current_prices (parliamentary_constituency, fuel_type);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_rural_urban
+    ON current_prices (rural_urban, fuel_type);

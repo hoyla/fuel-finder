@@ -161,8 +161,22 @@
         </div>
         <div class="chart-row">
             <div class="chart-container">
+                <h3>Average price by rural/urban classification (E10)</h3>
+                <canvas id="chart-rural-urban"></canvas>
+            </div>
+            <div class="chart-container">
                 <h3>Cheapest brands (E10 Unleaded)</h3>
                 <canvas id="chart-brand"></canvas>
+            </div>
+        </div>
+        <div class="chart-row">
+            <div class="chart-container">
+                <h3>Most expensive local authorities (E10)</h3>
+                <canvas id="chart-district-expensive"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>Cheapest local authorities (E10)</h3>
+                <canvas id="chart-district-cheap"></canvas>
             </div>
         </div>
     </div>
@@ -252,6 +266,32 @@
                     <option>Motorway</option>
                 </select>
             </div>
+            <div class="control">
+                <label>Local authority</label>
+                <select id="search-district"><option value="">All</option></select>
+            </div>
+            <div class="control">
+                <label>Constituency</label>
+                <select id="search-constituency"><option value="">All</option></select>
+            </div>
+            <div class="control">
+                <label>Rural / Urban</label>
+                <select id="search-rural-urban">
+                    <option value="">All</option>
+                    <option>Urban: Nearer to a major town or city</option>
+                    <option>Urban: Further from a major town or city</option>
+                    <option>Smaller rural: Nearer to a major town or city</option>
+                    <option>Smaller rural: Further from a major town or city</option>
+                    <option>Larger rural: Nearer to a major town or city</option>
+                    <option>Larger rural: Further from a major town or city</option>
+                    <option>Large Urban Areas</option>
+                    <option>Other Urban Areas</option>
+                    <option>Accessible Small Towns</option>
+                    <option>Remote Small Towns</option>
+                    <option>Accessible Rural</option>
+                    <option>Remote Rural</option>
+                </select>
+            </div>
             <button class="primary" onclick="doSearch()">Search</button>
         </div>
         <div class="table-wrap">
@@ -259,8 +299,8 @@
                 <thead>
                     <tr>
                         <th>Station</th><th>Brand</th><th>Category</th><th>City</th>
-                        <th>Postcode</th><th>Region</th><th>Price (p)</th>
-                        <th>Fuel</th><th>Last seen</th>
+                        <th>Postcode</th><th>Local authority</th><th>Rural/Urban</th>
+                        <th>Price (p)</th><th>Fuel</th><th>Last seen</th>
                     </tr>
                 </thead>
                 <tbody id="search-body"></tbody>
@@ -506,6 +546,26 @@ async function loadRegions() {
     });
 }
 
+async function loadDistricts() {
+    const districts = await apiFetch('/districts');
+    const sel = document.getElementById('search-district');
+    districts.forEach(d => {
+        const o = document.createElement('option');
+        o.value = d; o.textContent = d;
+        sel.appendChild(o);
+    });
+}
+
+async function loadConstituencies() {
+    const constituencies = await apiFetch('/constituencies');
+    const sel = document.getElementById('search-constituency');
+    constituencies.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c; o.textContent = c;
+        sel.appendChild(o);
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
@@ -573,6 +633,47 @@ async function loadDashboard() {
     const brandData = await apiFetch('/prices/by-brand?fuel_type=E10&limit=15');
     renderBarChart('chart-brand', brandData.map(b => b.brand_name), brandData.map(b => b.avg_price),
         'Avg pence/litre', '#00703c');
+
+    // Rural/Urban chart
+    const ruData = await apiFetch('/prices/by-rural-urban?fuel_type=E10');
+    const ruColours = ruData.map(r => {
+        if (!r.rural_urban) return '#999';
+        const lc = r.rural_urban.toLowerCase();
+        if (lc.includes('urban')) return '#1d70b8';
+        if (lc.includes('remote')) return '#d4351c';
+        return '#00703c';
+    });
+    if (charts['chart-rural-urban']) charts['chart-rural-urban'].destroy();
+    const ruCtx = document.getElementById('chart-rural-urban').getContext('2d');
+    charts['chart-rural-urban'] = new Chart(ruCtx, {
+        type: 'bar',
+        data: {
+            labels: ruData.map(r => `${(r.rural_urban || 'Unknown').replace(/:.*/,'')} (${r.station_count})`),
+            datasets: [{
+                label: 'Avg pence/litre',
+                data: ruData.map(r => r.avg_price),
+                backgroundColor: ruColours.map(c => c + '99'),
+                borderColor: ruColours,
+                borderWidth: 1,
+            }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: false } }
+        }
+    });
+
+    // District charts (most/least expensive)
+    const distExpensive = await apiFetch('/prices/by-district?fuel_type=E10&limit=15');
+    renderBarChart('chart-district-expensive',
+        distExpensive.map(d => `${d.admin_district} (${d.station_count})`),
+        distExpensive.map(d => d.avg_price), 'Avg pence/litre', '#d4351c');
+    const distCheap = await apiFetch('/prices/by-district?fuel_type=E10&limit=500');
+    const cheapest15 = distCheap.slice(-15).reverse();
+    renderBarChart('chart-district-cheap',
+        cheapest15.map(d => `${d.admin_district} (${d.station_count})`),
+        cheapest15.map(d => d.avg_price), 'Avg pence/litre', '#00703c');
 }
 
 let charts = {};
@@ -635,6 +736,8 @@ async function loadMapPrices() {
             <strong>${d.trading_name}</strong><br>
             ${d.brand_name || ''} · ${d.forecourt_type || 'Independent'}<br>
             ${d.city} ${d.postcode}<br>
+            ${d.admin_district ? d.admin_district + '<br>' : ''}
+            ${d.rural_urban ? '<em>' + d.rural_urban + '</em><br>' : ''}
             <strong>${ppl(d.price)}</strong> ${d.fuel_name || fuel}
         `)
     );
@@ -692,6 +795,9 @@ async function doSearch(offset = 0) {
     const supermarket = document.getElementById('search-supermarket').checked;
     const motorway = document.getElementById('search-motorway').checked;
     const category = document.getElementById('search-category').value;
+    const district = document.getElementById('search-district').value;
+    const constituency = document.getElementById('search-constituency').value;
+    const ruralUrban = document.getElementById('search-rural-urban').value;
 
     let url = `/prices/search?fuel_type=${fuel}&limit=50&offset=${offset}`;
     if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
@@ -702,6 +808,9 @@ async function doSearch(offset = 0) {
     if (supermarket) url += '&supermarket_only=true';
     if (motorway) url += '&motorway_only=true';
     if (category) url += `&category=${encodeURIComponent(category)}`;
+    if (district) url += `&district=${encodeURIComponent(district)}`;
+    if (constituency) url += `&constituency=${encodeURIComponent(constituency)}`;
+    if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
 
     const data = await apiFetch(url);
     searchState = { offset, total: data.total };
@@ -714,7 +823,8 @@ async function doSearch(offset = 0) {
             <td>${categoryTag(r.forecourt_type)}</td>
             <td>${r.city || '—'}</td>
             <td>${r.postcode || '—'}</td>
-            <td>${r.region || '—'}</td>
+            <td>${r.admin_district || '—'}</td>
+            <td>${r.rural_urban ? r.rural_urban.replace(/:.*/,'') : '—'}</td>
             <td><strong>${ppl(r.price)}</strong></td>
             <td>${r.fuel_name || r.fuel_type}</td>
             <td>${new Date(r.observed_at).toLocaleDateString()}</td>
@@ -956,6 +1066,8 @@ async function refreshView() {
 (async () => {
     await loadFuelTypes();
     await loadRegions();
+    loadDistricts();
+    loadConstituencies();
     await loadDashboard();
 })();
 </script>

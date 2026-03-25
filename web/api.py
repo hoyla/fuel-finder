@@ -261,6 +261,7 @@ def price_map(
         cur.execute("""
             SELECT node_id, trading_name, brand_name, city, postcode,
                    price, fuel_name, forecourt_type,
+                   admin_district, rural_urban, parliamentary_constituency,
                    latitude, longitude,
                    is_motorway_service_station, is_supermarket_service_station
             FROM current_prices
@@ -282,6 +283,9 @@ def price_search(
     min_price: Optional[float] = Query(None),
     max_price: Optional[float] = Query(None),
     category: Optional[str] = Query(None),
+    district: Optional[str] = Query(None),
+    constituency: Optional[str] = Query(None),
+    rural_urban: Optional[str] = Query(None),
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     sort: str = Query("price"),
@@ -316,17 +320,27 @@ def price_search(
     if category:
         conditions.append("forecourt_type = %s")
         params.append(category)
+    if district:
+        conditions.append("admin_district = %s")
+        params.append(district)
+    if constituency:
+        conditions.append("parliamentary_constituency = %s")
+        params.append(constituency)
+    if rural_urban:
+        conditions.append("rural_urban = %s")
+        params.append(rural_urban)
 
     where = " AND ".join(conditions)
 
-    allowed_sorts = {"price": "price", "brand": "brand_name", "city": "city", "postcode": "postcode"}
+    allowed_sorts = {"price": "price", "brand": "brand_name", "city": "city", "postcode": "postcode", "district": "admin_district"}
     order = allowed_sorts.get(sort, "price")
 
     with db.cursor() as cur:
         cur.execute(f"""
             SELECT node_id, trading_name, brand_name, city, county,
                    postcode, region, price, fuel_name, fuel_category,
-                   forecourt_type,
+                   forecourt_type, admin_district, parliamentary_constituency,
+                   rural_urban,
                    latitude, longitude,
                    is_motorway_service_station, is_supermarket_service_station,
                    observed_at
@@ -400,6 +414,110 @@ def regions(db=Depends(get_db)):
             ORDER BY region
         """)
         return [r["region"] for r in cur.fetchall()]
+
+
+@app.get("/api/districts")
+def districts(db=Depends(get_db)):
+    """List available local authority districts."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT DISTINCT admin_district
+            FROM current_prices
+            WHERE admin_district IS NOT NULL
+            ORDER BY admin_district
+        """)
+        return [r["admin_district"] for r in cur.fetchall()]
+
+
+@app.get("/api/constituencies")
+def constituencies(db=Depends(get_db)):
+    """List available parliamentary constituencies."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT DISTINCT parliamentary_constituency
+            FROM current_prices
+            WHERE parliamentary_constituency IS NOT NULL
+            ORDER BY parliamentary_constituency
+        """)
+        return [r["parliamentary_constituency"] for r in cur.fetchall()]
+
+
+@app.get("/api/prices/by-district")
+def prices_by_district(
+    fuel_type: str = Query("E10"),
+    limit: int = Query(30, ge=1, le=500),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Average price by local authority district."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT admin_district,
+                   ROUND(AVG(price)::numeric, 1) AS avg_price,
+                   MIN(price) AS min_price,
+                   MAX(price) AS max_price,
+                   COUNT(*) AS station_count
+            FROM current_prices
+            WHERE fuel_type = %s
+              AND admin_district IS NOT NULL
+              AND NOT temporary_closure
+            GROUP BY admin_district
+            HAVING COUNT(*) >= 3
+            ORDER BY avg_price DESC
+            LIMIT %s
+        """, (fuel_type, limit))
+        return cur.fetchall()
+
+
+@app.get("/api/prices/by-rural-urban")
+def prices_by_rural_urban(
+    fuel_type: str = Query("E10"),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Average price by rural/urban classification."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT rural_urban,
+                   ROUND(AVG(price)::numeric, 1) AS avg_price,
+                   MIN(price) AS min_price,
+                   MAX(price) AS max_price,
+                   COUNT(*) AS station_count
+            FROM current_prices
+            WHERE fuel_type = %s
+              AND rural_urban IS NOT NULL
+              AND NOT temporary_closure
+            GROUP BY rural_urban
+            ORDER BY avg_price DESC
+        """, (fuel_type,))
+        return cur.fetchall()
+
+
+@app.get("/api/prices/by-constituency")
+def prices_by_constituency(
+    fuel_type: str = Query("E10"),
+    limit: int = Query(30, ge=1, le=650),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Average price by parliamentary constituency."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT parliamentary_constituency,
+                   ROUND(AVG(price)::numeric, 1) AS avg_price,
+                   MIN(price) AS min_price,
+                   MAX(price) AS max_price,
+                   COUNT(*) AS station_count
+            FROM current_prices
+            WHERE fuel_type = %s
+              AND parliamentary_constituency IS NOT NULL
+              AND NOT temporary_closure
+            GROUP BY parliamentary_constituency
+            HAVING COUNT(*) >= 2
+            ORDER BY avg_price DESC
+            LIMIT %s
+        """, (fuel_type, limit))
+        return cur.fetchall()
 
 
 # ---------------------------------------------------------------------------

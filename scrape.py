@@ -104,6 +104,16 @@ def run_scrape(mode="auto"):
         refresh_current_prices(conn)
         log.info("Refreshed current_prices materialised view")
 
+        # Enrich any new postcodes via postcodes.io
+        try:
+            from enrich_postcodes import run as enrich_run
+            enriched = enrich_run()
+            if enriched:
+                log.info("Enriched %d new postcodes via postcodes.io", enriched)
+                refresh_current_prices(conn)
+        except Exception as e:
+            log.warning("Postcode enrichment failed (non-fatal): %s", e)
+
         # S3 backup of raw price data
         s3_key = None
         if not skip_s3:
