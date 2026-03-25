@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS fuel_type_labels (
     description         TEXT
 );
 
+-- Forecourt type categorisation via canonical brand.
+-- Classifies stations into meaningful groups for price comparison.
+
+CREATE TABLE IF NOT EXISTS brand_categories (
+    canonical_brand     TEXT PRIMARY KEY,
+    forecourt_type      TEXT NOT NULL  -- 'Supermarket', 'Major Oil', 'Motorway Operator', 'Independent'
+);
+
 -- Materialised view: current price per station + fuel type.
 -- The last-reported price IS the current price, regardless of how old it is.
 -- Uses canonical brand: override > alias > raw brand_name.
@@ -126,6 +134,10 @@ SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
         ba.canonical_brand,
         s.brand_name
     ) AS brand_name,
+    CASE
+        WHEN s.is_motorway_service_station THEN 'Motorway'
+        ELSE COALESCE(bc.forecourt_type, 'Independent')
+    END AS forecourt_type,
     s.city,
     s.county,
     s.country,
@@ -148,6 +160,11 @@ LEFT JOIN postcode_regions pr ON pr.postcode_area = (
     END
 )
 LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
+LEFT JOIN brand_categories bc ON bc.canonical_brand = COALESCE(
+    sbo.canonical_brand,
+    ba.canonical_brand,
+    s.brand_name
+)
 ORDER BY fp.node_id, fp.fuel_type, fp.observed_at DESC;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_current_prices_node_fuel
@@ -161,3 +178,6 @@ CREATE INDEX IF NOT EXISTS idx_current_prices_postcode
 
 CREATE INDEX IF NOT EXISTS idx_current_prices_region
     ON current_prices (region, fuel_type);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_forecourt_type
+    ON current_prices (forecourt_type, fuel_type);
