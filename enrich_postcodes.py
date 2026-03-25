@@ -98,6 +98,27 @@ def _extract_ruc_code(r):
     return codes.get("ruc21") or codes.get("ruc11")
 
 
+def record_failed_lookups(conn, postcodes):
+    """Insert a row for postcodes that postcodes.io couldn't resolve.
+
+    All fields are NULL except postcode and looked_up_at, so we know
+    a lookup was attempted (and won't retry next run).
+    """
+    if not postcodes:
+        return
+    with conn.cursor() as cur:
+        execute_values(
+            cur,
+            """INSERT INTO postcode_lookups (postcode)
+            VALUES %s
+            ON CONFLICT (postcode) DO UPDATE SET looked_up_at = NOW()
+            """,
+            [(pc,) for pc in postcodes],
+        )
+    conn.commit()
+    log.info("Recorded %d unrecognised postcodes", len(postcodes))
+
+
 def upsert_lookups(conn, rows):
     """Insert or update postcode lookup results."""
     if not rows:
@@ -163,14 +184,18 @@ def run(refresh_all=False):
                 continue
 
             rows = []
+            failed_postcodes = []
             for item in results:
                 parsed = parse_result(item)
                 if parsed:
                     rows.append(parsed)
                 else:
                     total_failed += 1
+                    failed_postcodes.append(item["query"])
 
             upsert_lookups(conn, rows)
+            if failed_postcodes:
+                record_failed_lookups(conn, failed_postcodes)
             total_ok += len(rows)
 
             log.info(

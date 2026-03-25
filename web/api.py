@@ -717,6 +717,41 @@ def normalisation_report(
         return cur.fetchall()
 
 
+@app.get("/api/admin/postcode-issues")
+def postcode_issues(
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Stations whose postcodes were not recognised by postcodes.io.
+
+    These may indicate bad source data (typos, missing spaces, invalid
+    prefixes) and often correlate with wrong coordinates in the API.
+    """
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT s.node_id, s.trading_name, s.brand_name, s.postcode,
+                   s.latitude AS api_latitude, s.longitude AS api_longitude,
+                   s.city, s.county,
+                   CASE
+                       WHEN s.latitude IS NOT NULL AND
+                            (s.latitude < 49 OR s.latitude > 61 OR
+                             s.longitude < -8 OR s.longitude > 2)
+                       THEN true ELSE false
+                   END AS coords_outside_uk
+            FROM stations s
+            LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
+            WHERE pl.postcode IS NULL
+               OR (pl.pc_latitude IS NULL AND pl.looked_up_at IS NOT NULL)
+            ORDER BY
+                CASE WHEN s.latitude IS NOT NULL AND
+                    (s.latitude < 49 OR s.latitude > 61 OR
+                     s.longitude < -8 OR s.longitude > 2)
+                THEN 0 ELSE 1 END,
+                s.postcode
+        """)
+        return cur.fetchall()
+
+
 @app.post("/api/admin/refresh-view")
 def refresh_view(db=Depends(get_db), _auth=Depends(require_auth)):
     """Refresh the current_prices materialised view after lookup changes."""

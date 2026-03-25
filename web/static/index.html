@@ -334,6 +334,7 @@
                     <option value="aliases">Brand Aliases</option>
                     <option value="categories">Brand Categories</option>
                     <option value="overrides">Station Overrides</option>
+                    <option value="postcodes">Postcode Issues</option>
                 </select>
             </div>
             <button class="primary" id="btn-refresh-view" onclick="refreshView()" style="margin-left: auto;">
@@ -425,6 +426,27 @@
                         </tr>
                     </thead>
                     <tbody id="category-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Postcode Issues -->
+        <div id="data-postcodes" style="display:none;">
+            <p style="color: var(--text-light); margin-bottom: 1rem;">
+                Stations whose postcodes were not recognised by postcodes.io.
+                These may indicate typos or invalid postcodes in the source data.
+                Stations with coordinates outside the UK are shown first.
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Postcode</th><th>Station</th><th>Brand</th>
+                            <th>City</th><th>API Lat</th><th>API Lon</th>
+                            <th>Outside UK?</th>
+                        </tr>
+                    </thead>
+                    <tbody id="postcode-issues-body"></tbody>
                 </table>
             </div>
         </div>
@@ -867,7 +889,7 @@ async function loadAnomalies() {
 // Data / Admin tab
 // ---------------------------------------------------------------------------
 
-const dataSections = ['report', 'aliases', 'categories', 'overrides'];
+const dataSections = ['report', 'aliases', 'categories', 'overrides', 'postcodes'];
 function switchDataSection() {
     const active = document.getElementById('data-section').value;
     dataSections.forEach(s => {
@@ -878,6 +900,7 @@ function switchDataSection() {
     else if (active === 'aliases') loadAliases();
     else if (active === 'categories') loadCategories();
     else if (active === 'overrides') loadOverrides();
+    else if (active === 'postcodes') loadPostcodeIssues();
 }
 
 async function apiPost(path, body) {
@@ -1057,6 +1080,26 @@ async function refreshView() {
         btn.textContent = 'Refresh View';
         btn.disabled = false;
         alert('Error refreshing view: ' + e.message);
+    }
+}
+
+async function loadPostcodeIssues() {
+    const body = document.getElementById('postcode-issues-body');
+    body.innerHTML = '<tr><td colspan="7">Loading…</td></tr>';
+    try {
+        const r = await fetch(API + '/admin/postcode-issues');
+        const rows = await r.json();
+        body.innerHTML = rows.length ? rows.map(s => `<tr${s.coords_outside_uk ? ' style="background:var(--bg-warn,#fff3cd)"' : ''}>
+            <td><code>${s.postcode || '(empty)'}</code></td>
+            <td>${s.trading_name || ''}</td>
+            <td>${s.brand_name || ''}</td>
+            <td>${s.city || ''}</td>
+            <td>${s.api_latitude ?? ''}</td>
+            <td>${s.api_longitude ?? ''}</td>
+            <td>${s.coords_outside_uk ? '⚠ Yes' : ''}</td>
+        </tr>`).join('') : '<tr><td colspan="7">No postcode issues found.</td></tr>';
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
     }
 }
 
