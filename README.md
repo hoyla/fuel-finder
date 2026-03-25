@@ -91,6 +91,7 @@ docker compose run --rm scraper python scrape.py incremental
 │  station_overrides  │
 │  brand_categories   │──▶ forecourt type classification
 │  postcode_regions   │──▶ regional grouping
+│  postcode_lookups   │──▶ postcodes.io enrichment
 │  fuel_type_labels   │──▶ human-friendly names
 │  current_prices     │──▶ materialised view
 └─────────────────────┘
@@ -132,18 +133,20 @@ docker compose run --rm scraper python scrape.py incremental
 - **Anomaly detection**: On insert, prices are flagged (not filtered) if they fall outside 80–300p, look like decimal-place errors, or jump by more than 30%. Flags are stored in `anomaly_flags` on each `fuel_prices` row. See `queries/anomaly_detection.sql`.
 - **Forecourt categories**: The API's `is_supermarket_service_station` flag is unreliable (flags BP, Texaco, Maxol as supermarkets). Instead, `brand_categories` maps canonical brands to forecourt types (Supermarket, Major Oil, Motorway Operator, Fuel Group, Convenience). Motorway flag always takes priority; unmapped brands default to Independent.
 - **Numbered migrations**: Schema changes go through `migrations/NNN_name.sql` files, tracked in `schema_migrations`. No external tools — `migrate.py` handles discovery, ordering, and idempotent application.
+- **Postcodes.io enrichment**: Each unique postcode is looked up via the free [postcodes.io](https://postcodes.io) bulk API. Results are cached in `postcode_lookups` and provide authoritative lat/lng (fixing ~85 stations with bad API coordinates), admin district, parliamentary constituency, rural/urban classification, LSOA and MSOA. Failed lookups are recorded (NULL coords + timestamp) so they aren't retried.
+- **Coordinate correction**: Stations with coordinates outside the UK (lat 49–61, lon -9–2) are excluded from the map. Unrecognised postcodes are surfaced in the Data tab with a "Fix coords" button for manual correction (e.g. sign errors in the source data).
 
 ## Web UI
 
 The project includes a web dashboard at http://localhost:8080 (started via Docker Compose).
 
 **Tabs:**
-- **Dashboard** — headline prices, regional chart, forecourt category chart, cheapest brands
-- **Map** — every station on a Leaflet map, colour-coded by price
+- **Dashboard** — headline prices, regional chart, forecourt category chart, cheapest brands, rural/urban price comparison, most/least expensive local authorities
+- **Map** — every station on a Leaflet map, colour-coded by price, with admin district and rural/urban classification in popups
 - **Trends** — daily average price line chart, filterable by region
-- **Search** — query builder with postcode, brand, city, price range, category filters
+- **Search** — query builder with postcode, brand, city, price range, category, local authority, constituency, and rural/urban filters
 - **Anomalies** — flagged price records
-- **Data** — view and edit normalisation lookup tables (brand aliases, brand categories, station overrides), see the normalisation report showing how each brand resolves, and refresh the materialised view after changes
+- **Data** — normalisation report, brand aliases, brand categories, station overrides, postcode issues (stations with unrecognised postcodes + coordinate fix tool), and materialised view refresh
 
 **API documentation:** see the [API docs page](http://localhost:8080/docs/api) (served from the web UI) or [docs/API.md](docs/API.md).
 
@@ -160,6 +163,7 @@ fuel-finder-scraper/
 ├── scrape.py                 # Main scraper orchestrator
 ├── migrate.py                # Numbered SQL migration runner
 ├── lambda_handler.py         # AWS Lambda entry point
+├── enrich_postcodes.py       # postcodes.io bulk lookup + enrichment
 ├── schema.sql                # Full schema reference (tables, views, indexes)
 ├── migrations/               # Numbered SQL migrations (source of truth)
 │   ├── 001_base_schema.sql
@@ -168,7 +172,9 @@ fuel-finder-scraper/
 │   ├── 004_seed_fuel_types.sql
 │   ├── 005_current_prices_view.sql
 │   ├── 006_brand_categories.sql
-│   └── 007_current_prices_forecourt_type.sql
+│   ├── 007_current_prices_forecourt_type.sql
+│   ├── 008_postcode_lookups.sql
+│   └── 009_current_prices_postcode_enrichment.sql
 ├── seed_brand_aliases.sql    # Legacy seed file (superseded by migrations)
 ├── seed_postcode_regions.sql # Legacy seed file (superseded by migrations)
 ├── seed_fuel_types.sql       # Legacy seed file (superseded by migrations)
