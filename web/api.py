@@ -372,14 +372,25 @@ def anomalies(
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
-    """Recent anomaly-flagged price records."""
+    """Recent anomaly-flagged price records with previous price context."""
     with db.cursor() as cur:
         cur.execute("""
             SELECT fp.id, fp.node_id, s.trading_name, s.city,
                    fp.fuel_type, fp.price, fp.anomaly_flags,
-                   fp.observed_at
+                   fp.observed_at,
+                   prev.price AS prev_price,
+                   prev.observed_at AS prev_observed_at
             FROM fuel_prices fp
             JOIN stations s ON s.node_id = fp.node_id
+            LEFT JOIN LATERAL (
+                SELECT p2.price, p2.observed_at
+                FROM fuel_prices p2
+                WHERE p2.node_id = fp.node_id
+                  AND p2.fuel_type = fp.fuel_type
+                  AND p2.observed_at < fp.observed_at
+                ORDER BY p2.observed_at DESC
+                LIMIT 1
+            ) prev ON true
             WHERE fp.anomaly_flags IS NOT NULL
             ORDER BY fp.observed_at DESC
             LIMIT %s

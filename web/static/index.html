@@ -311,12 +311,18 @@
 
     <!-- ============ ANOMALIES ============ -->
     <div class="panel" id="panel-anomalies">
+        <p style="color: var(--text-light); margin-bottom: 1rem;">
+            Price records flagged as potentially anomalous. A larger gap between
+            the previous and current dates makes a bigger price change more plausible.
+        </p>
         <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
                         <th>Station</th><th>City</th><th>Fuel</th>
-                        <th>Price (p)</th><th>Flags</th><th>Observed</th>
+                        <th>Previous Price</th><th>Previous Date</th>
+                        <th>Current Price</th><th>Current Date</th>
+                        <th>Change</th><th>Flags</th>
                     </tr>
                 </thead>
                 <tbody id="anomaly-body"></tbody>
@@ -870,19 +876,31 @@ async function loadAnomalies() {
     const data = await apiFetch('/anomalies');
     const body = document.getElementById('anomaly-body');
     if (!data.length) {
-        body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--muted)">No anomalies detected</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">No anomalies detected</td></tr>';
         return;
     }
-    body.innerHTML = data.map(r => `
-        <tr>
+    const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
+    body.innerHTML = data.map(r => {
+        let changeTxt = '—';
+        let changeStyle = '';
+        if (r.prev_price != null && r.prev_price > 0) {
+            const pct = ((r.price - r.prev_price) / r.prev_price * 100).toFixed(1);
+            const sign = pct > 0 ? '+' : '';
+            changeStyle = pct > 0 ? 'color:#d4351c' : 'color:#00703c';
+            changeTxt = `${sign}${pct}%`;
+        }
+        return `<tr>
             <td>${r.trading_name}</td>
             <td>${r.city || '—'}</td>
             <td>${r.fuel_type}</td>
+            <td>${r.prev_price != null ? ppl(r.prev_price) : '—'}</td>
+            <td>${fmtDate(r.prev_observed_at)}</td>
             <td><strong>${ppl(r.price)}</strong></td>
+            <td>${fmtDate(r.observed_at)}</td>
+            <td style="${changeStyle}"><strong>${changeTxt}</strong></td>
             <td>${(r.anomaly_flags || []).map(f => `<span class="tag">${f}</span>`).join(' ')}</td>
-            <td>${new Date(r.observed_at).toLocaleString()}</td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 }
 
 // ---------------------------------------------------------------------------
