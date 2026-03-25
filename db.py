@@ -14,12 +14,11 @@ def get_connection(database_url=None):
 
 
 def init_schema(conn):
-    schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
-    with open(schema_path) as f:
-        sql = f.read()
-    with conn.cursor() as cur:
-        cur.execute(sql)
-    conn.commit()
+    from migrate import run_migrations
+    applied = run_migrations(conn)
+    if applied:
+        import logging
+        logging.getLogger(__name__).info("Applied migrations: %s", ", ".join(applied))
 
 
 def start_scrape_run(conn, run_type="full"):
