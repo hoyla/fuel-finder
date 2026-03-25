@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fuelfinder
+      POSTGRES_PASSWORD: fuelfinder
+      POSTGRES_DB: fuelfinder
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fuelfinder"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  scraper:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://fuelfinder:fuelfinder@postgres:5432/fuelfinder
+      FUEL_API_ID: ${FUEL_API_ID}
+      FUEL_API_SECRET: ${FUEL_API_SECRET}
+      SKIP_S3: ${SKIP_S3:-true}
+      S3_BUCKET: ${S3_BUCKET:-fuel-finder-raw}
+      AWS_REGION: ${AWS_REGION:-eu-west-1}
+
+volumes:
+  pgdata:
