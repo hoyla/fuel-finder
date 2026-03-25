@@ -148,6 +148,7 @@ Fuel Finder API (GOV.UK)
 │  brand_aliases      │  raw → canonical brand mapping
 │  brand_categories   │  brand → forecourt type
 │  postcode_regions   │  postcode → ONS region
+│  postcode_lookups   │  postcodes.io enrichment cache
 │  current_prices     │  materialised view (live snapshot)
 └─────────────────────┘
 </pre>
@@ -234,6 +235,36 @@ Fuel Finder API (GOV.UK)
 
     <p>This enables regional price comparisons (e.g. "London is 3p/litre more expensive than the North East") without requiring geocoding.</p>
 
+    <h2>Postcodes.io enrichment</h2>
+
+    <p>Each unique station postcode is looked up via <a href="https://postcodes.io">postcodes.io</a>, a free and open API for UK postcode data. The results are cached in a <code>postcode_lookups</code> table, providing:</p>
+
+    <ul>
+        <li><strong>Authoritative coordinates</strong> — fixes ~85 stations where the Fuel Finder API reports incorrect lat/lng (e.g. sign errors placing stations in the North Sea)</li>
+        <li><strong>Administrative geography</strong> — local authority district, county, ward, parish</li>
+        <li><strong>Parliamentary constituency</strong> — for political analysis</li>
+        <li><strong>Rural/urban classification</strong> — ONS RUC 2021 categories (e.g. "Urban major conurbation", "Rural village in a sparse setting")</li>
+        <li><strong>Statistical areas</strong> — LSOA, MSOA, built-up area</li>
+    </ul>
+
+    <p>Postcodes that postcodes.io doesn't recognise are recorded (so they aren't retried) and flagged in the <a href="/">Data tab</a> as potential data quality issues. Coordinates for these can be manually corrected.</p>
+
+    <h3>Licensing</h3>
+
+    <p>Postcodes.io source code is available under the <a href="https://opensource.org/licenses/MIT">MIT Licence</a>. The underlying postcode data is used under the following terms:</p>
+
+    <ul>
+        <li>Great Britain postcode data is used under the <a href="https://www.ordnancesurvey.co.uk/documents/licensing/os-opendata-licence.pdf">OS OpenData licence</a></li>
+        <li>Northern Ireland postcode data (BT prefix) is used under the <a href="https://www.ons.gov.uk/methodology/geography/licences">ONSPD licence</a></li>
+    </ul>
+
+    <p style="font-size: 0.85rem; color: var(--muted);">
+        Contains Ordnance Survey data © Crown copyright and database right 2025.<br>
+        Contains Royal Mail data © Royal Mail copyright and database right 2025.<br>
+        Contains National Statistics data © Crown copyright and database right 2025.<br>
+        Contains NRS data © Crown copyright and database right 2025.
+    </p>
+
     <h2>The materialised view</h2>
 
     <p><code>current_prices</code> is a PostgreSQL materialised view that provides the <strong>latest price per station per fuel type</strong>. It joins together:</p>
@@ -245,6 +276,7 @@ Fuel Finder API (GOV.UK)
         <li>Forecourt type (via <code>brand_categories</code>)</li>
         <li>Region (via <code>postcode_regions</code>)</li>
         <li>Human-friendly fuel names (via <code>fuel_type_labels</code>)</li>
+        <li>Authoritative coordinates, admin district, constituency, rural/urban (via <code>postcode_lookups</code>)</li>
     </ul>
 
     <p>The view is refreshed after each scrape run and when you press <strong>Refresh View</strong> on the Data tab. All dashboard, map, search and API queries read from this view for fast, consistent results.</p>
