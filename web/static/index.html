@@ -142,7 +142,7 @@
     <div class="tab" data-panel="trends">Trends</div>
     <div class="tab" data-panel="search">Search</div>
     <div class="tab" data-panel="anomalies">Anomalies</div>
-    <div class="tab" data-panel="data">Data</div>
+    <div class="tab" data-panel="data">Data Cleanup</div>
 </div>
 
 <main>
@@ -328,7 +328,7 @@
     <div class="panel" id="panel-data">
         <div class="controls" style="margin-bottom: 1rem;">
             <div class="control">
-                <label>Section</label>
+                <label>Normalisation tables and overrides</label>
                 <select id="data-section" onchange="switchDataSection()">
                     <option value="report">Normalisation Report</option>
                     <option value="aliases">Brand Aliases</option>
@@ -443,7 +443,7 @@
                         <tr>
                             <th>Postcode</th><th>Station</th><th>Brand</th>
                             <th>City</th><th>API Lat</th><th>API Lon</th>
-                            <th>Outside UK?</th><th></th>
+                            <th>Outside UK?</th><th>Status</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="postcode-issues-body"></tbody>
@@ -1085,22 +1085,36 @@ async function refreshView() {
 
 async function loadPostcodeIssues() {
     const body = document.getElementById('postcode-issues-body');
-    body.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
+    body.innerHTML = '<tr><td colspan="9">Loading…</td></tr>';
     try {
         const r = await fetch(API + '/admin/postcode-issues');
         const rows = await r.json();
-        body.innerHTML = rows.length ? rows.map(s => `<tr${s.coords_outside_uk ? ' style="background:var(--bg-warn,#fff3cd)"' : ''}>
+        body.innerHTML = rows.length ? rows.map(s => {
+            const gmaps = (lat, lon) => lat != null && lon != null
+                ? `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" rel="noopener">${lat}</a>`
+                : '';
+            const gmapsLon = (lat, lon) => lat != null && lon != null
+                ? `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" rel="noopener">${lon}</a>`
+                : '';
+            let status = '';
+            if (s.fixed_latitude != null) {
+                status = `<span title="Manually set to ${s.fixed_latitude}, ${s.fixed_longitude}" style="color:var(--green,#00703c)">✓ Fixed</span>`
+                    + `<br><small><a href="https://www.google.com/maps?q=${s.fixed_latitude},${s.fixed_longitude}" target="_blank" rel="noopener">${s.fixed_latitude}, ${s.fixed_longitude}</a></small>`;
+            }
+            return `<tr${s.coords_outside_uk ? ' style="background:var(--bg-warn,#fff3cd)"' : ''}>
             <td><code>${s.postcode || '(empty)'}</code></td>
             <td>${s.trading_name || ''}</td>
             <td>${s.brand_name || ''}</td>
             <td>${s.city || ''}</td>
-            <td>${s.api_latitude ?? ''}</td>
-            <td>${s.api_longitude ?? ''}</td>
+            <td>${gmaps(s.api_latitude, s.api_longitude)}</td>
+            <td>${gmapsLon(s.api_latitude, s.api_longitude)}</td>
             <td>${s.coords_outside_uk ? '⚠ Yes' : ''}</td>
+            <td>${status}</td>
             <td>${s.postcode ? `<button class="small" onclick="fixPostcodeCoords('${s.postcode}', ${s.api_latitude}, ${s.api_longitude})">Fix coords</button>` : ''}</td>
-        </tr>`).join('') : '<tr><td colspan="8">No postcode issues found.</td></tr>';
+        </tr>`;
+        }).join('') : '<tr><td colspan="9">No postcode issues found.</td></tr>';
     } catch (e) {
-        body.innerHTML = `<tr><td colspan="8">Error: ${e.message}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="9">Error: ${e.message}</td></tr>`;
     }
 }
 

@@ -743,16 +743,27 @@ def postcode_issues(
                             (s.latitude < 49 OR s.latitude > 61 OR
                              s.longitude < -8 OR s.longitude > 2)
                        THEN true ELSE false
-                   END AS coords_outside_uk
+                   END AS coords_outside_uk,
+                   CASE
+                       WHEN pl.pc_latitude IS NOT NULL AND pl.admin_district IS NULL
+                       THEN pl.pc_latitude
+                   END AS fixed_latitude,
+                   CASE
+                       WHEN pl.pc_latitude IS NOT NULL AND pl.admin_district IS NULL
+                       THEN pl.pc_longitude
+                   END AS fixed_longitude
             FROM stations s
             LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
             WHERE pl.postcode IS NULL
-               OR (pl.pc_latitude IS NULL AND pl.looked_up_at IS NOT NULL)
+               OR pl.pc_latitude IS NULL
+               OR (pl.pc_latitude IS NOT NULL AND pl.admin_district IS NULL)
             ORDER BY
                 CASE WHEN s.latitude IS NOT NULL AND
                     (s.latitude < 49 OR s.latitude > 61 OR
                      s.longitude < -8 OR s.longitude > 2)
                 THEN 0 ELSE 1 END,
+                CASE WHEN pl.pc_latitude IS NOT NULL AND pl.admin_district IS NULL
+                THEN 1 ELSE 0 END,
                 s.postcode
         """)
         return cur.fetchall()
