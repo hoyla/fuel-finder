@@ -567,7 +567,7 @@ async function initAuth() {
         _authMode = cfg.mode;
         if (_authMode === 'cognito') {
             _cognitoRegion = cfg.region;
-            _cognitoClientId = cfg.client_id;
+            _cognitoClientId = cfg.clientId;
             _idToken = localStorage.getItem('ff_id_token');
             _refreshToken = localStorage.getItem('ff_refresh_token');
             if (_idToken) {
