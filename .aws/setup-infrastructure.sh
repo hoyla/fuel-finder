@@ -23,7 +23,7 @@
 
 set -euo pipefail
 
-REGION="eu-west-1"
+REGION="eu-north-1"
 PROJECT="fuel-finder"
 GITHUB_REPO="hoyla/fuel-finder"
 

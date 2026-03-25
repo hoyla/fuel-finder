@@ -11,7 +11,7 @@ permissions:
   id-token: write # needed for OIDC → AWS credentials
 
 env:
-  AWS_REGION: eu-west-1
+  AWS_REGION: eu-north-1
   ECR_REPOSITORY: fuel-finder
   ECS_CLUSTER: fuel-finder
   ECS_SERVICE_STAGING: fuel-finder-staging
