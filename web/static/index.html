@@ -118,6 +118,41 @@
         .status-msg.success { display: block; background: #d4edda; color: #155724; }
         .status-msg.error { display: block; background: #f8d7da; color: #721c24; }
 
+        /* Login overlay */
+        #login-overlay {
+            position: fixed; inset: 0; z-index: 9999;
+            background: var(--bg);
+            display: flex; align-items: center; justify-content: center;
+        }
+        #login-overlay.hidden { display: none; }
+        .login-box {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 12px; padding: 2.5rem; width: 360px; max-width: 90vw;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+        }
+        .login-box h2 { font-size: 1.3rem; margin-bottom: 1.5rem; text-align: center; }
+        .login-box label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+        .login-box input {
+            width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border);
+            border-radius: 6px; font-size: 0.95rem; margin-bottom: 1rem; background: var(--card-bg);
+        }
+        .login-box button {
+            width: 100%; padding: 0.65rem; background: var(--accent); color: #fff;
+            border: none; border-radius: 6px; font-size: 1rem; font-weight: 500; cursor: pointer;
+        }
+        .login-box button:hover { opacity: 0.9; }
+        .login-box button:disabled { opacity: 0.5; cursor: default; }
+        .login-error {
+            background: #f8d7da; color: #721c24; padding: 0.5rem 0.75rem;
+            border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem; display: none;
+        }
+        .login-error.visible { display: block; }
+        #logout-btn {
+            background: transparent; border: 1px solid #666; color: #aaa;
+            padding: 0.3rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem;
+        }
+        #logout-btn:hover { border-color: #aaa; color: #fff; }
+
         @media (max-width: 768px) {
             .chart-row { grid-template-columns: 1fr; }
             main { padding: 1rem; }
@@ -134,7 +169,29 @@
         <a href="/docs/api" style="color:#aaa;text-decoration:none;font-size:0.9rem;">API</a>
         <a href="/docs/about" style="color:#aaa;text-decoration:none;font-size:0.9rem;">About</a>
     </nav>
+    <span id="user-email" style="font-size:0.8rem;color:#aaa;"></span>
+    <button id="logout-btn" style="display:none;" onclick="logout()">Log out</button>
 </header>
+
+<!-- Login overlay -->
+<div id="login-overlay">
+    <div class="login-box">
+        <h2>⛽ Fuel Finder</h2>
+        <div id="login-error" class="login-error"></div>
+        <form id="login-form" onsubmit="return handleLogin(event)">
+            <label for="login-email">Email</label>
+            <input id="login-email" type="email" autocomplete="username" required autofocus>
+            <label for="login-password">Password</label>
+            <input id="login-password" type="password" autocomplete="current-password" required>
+            <!-- New password fields (hidden until NEW_PASSWORD_REQUIRED) -->
+            <div id="new-password-fields" style="display:none;">
+                <label for="login-new-password">New password</label>
+                <input id="login-new-password" type="password" autocomplete="new-password">
+            </div>
+            <button type="submit" id="login-btn">Sign in</button>
+        </form>
+    </div>
+</div>
 
 <div class="tabs">
     <div class="tab active" data-panel="dashboard">Dashboard</div>
@@ -492,6 +549,192 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+let _authMode = 'none';
+let _idToken = null;
+let _refreshToken = null;
+let _cognitoRegion = null;
+let _cognitoClientId = null;
+let _cognitoSession = null;  // for NEW_PASSWORD_REQUIRED challenge
+let _challengeUsername = null;
+
+async function initAuth() {
+    try {
+        const r = await fetch('/auth/config');
+        const cfg = await r.json();
+        _authMode = cfg.mode;
+        if (_authMode === 'cognito') {
+            _cognitoRegion = cfg.region;
+            _cognitoClientId = cfg.client_id;
+            _idToken = localStorage.getItem('ff_id_token');
+            _refreshToken = localStorage.getItem('ff_refresh_token');
+            if (_idToken) {
+                // Check if token is still valid by decoding exp
+                try {
+                    const payload = JSON.parse(atob(_idToken.split('.')[1]));
+                    if (payload.exp * 1000 < Date.now()) {
+                        // Token expired — try refresh
+                        const refreshed = await refreshTokens();
+                        if (!refreshed) { showLogin(); return false; }
+                    }
+                    showApp(payload.email || payload['cognito:username'] || '');
+                    return true;
+                } catch {
+                    showLogin(); return false;
+                }
+            }
+            showLogin(); return false;
+        }
+        // api-key or no-auth mode — no login needed
+        showApp('');
+        return true;
+    } catch {
+        // Can't reach /auth/config — assume no auth (local dev)
+        showApp('');
+        return true;
+    }
+}
+
+async function cognitoCall(action, body) {
+    const r = await fetch(`https://cognito-idp.${_cognitoRegion}.amazonaws.com/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-amz-json-1.1',
+            'X-Amz-Target': `AWSCognitoIdentityProviderService.${action}`,
+        },
+        body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.message || data.__type || 'Auth error');
+    return data;
+}
+
+async function handleLogin(e) {
+    e.preventDefault();
+    const btn = document.getElementById('login-btn');
+    const errEl = document.getElementById('login-error');
+    errEl.className = 'login-error';
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+
+    try {
+        // Check if we're responding to a NEW_PASSWORD_REQUIRED challenge
+        if (_cognitoSession) {
+            const newPw = document.getElementById('login-new-password').value;
+            if (!newPw) { throw new Error('Please enter a new password'); }
+            const resp = await cognitoCall('RespondToAuthChallenge', {
+                ChallengeName: 'NEW_PASSWORD_REQUIRED',
+                ClientId: _cognitoClientId,
+                Session: _cognitoSession,
+                ChallengeResponses: {
+                    USERNAME: _challengeUsername,
+                    NEW_PASSWORD: newPw,
+                },
+            });
+            _cognitoSession = null;
+            _challengeUsername = null;
+            storeTokens(resp.AuthenticationResult);
+            return;
+        }
+
+        const resp = await cognitoCall('InitiateAuth', {
+            AuthFlow: 'USER_PASSWORD_AUTH',
+            ClientId: _cognitoClientId,
+            AuthParameters: { USERNAME: email, PASSWORD: password },
+        });
+
+        if (resp.ChallengeName === 'NEW_PASSWORD_REQUIRED') {
+            _cognitoSession = resp.Session;
+            _challengeUsername = email;
+            document.getElementById('new-password-fields').style.display = 'block';
+            btn.textContent = 'Set new password';
+            btn.disabled = false;
+            errEl.textContent = 'Please set a new password.';
+            errEl.className = 'login-error visible';
+            return;
+        }
+
+        storeTokens(resp.AuthenticationResult);
+    } catch (err) {
+        errEl.textContent = err.message;
+        errEl.className = 'login-error visible';
+        btn.disabled = false;
+        btn.textContent = _cognitoSession ? 'Set new password' : 'Sign in';
+    }
+    return false;
+}
+
+function storeTokens(result) {
+    _idToken = result.IdToken;
+    _refreshToken = result.RefreshToken || _refreshToken;
+    localStorage.setItem('ff_id_token', _idToken);
+    if (_refreshToken) localStorage.setItem('ff_refresh_token', _refreshToken);
+    const payload = JSON.parse(atob(_idToken.split('.')[1]));
+    showApp(payload.email || payload['cognito:username'] || '');
+    // Schedule token refresh ~5 min before expiry
+    const expiresIn = (payload.exp * 1000) - Date.now() - 300000;
+    if (expiresIn > 0) setTimeout(() => refreshTokens(), expiresIn);
+    startApp();
+}
+
+async function refreshTokens() {
+    if (!_refreshToken) return false;
+    try {
+        const resp = await cognitoCall('InitiateAuth', {
+            AuthFlow: 'REFRESH_TOKEN_AUTH',
+            ClientId: _cognitoClientId,
+            AuthParameters: { REFRESH_TOKEN: _refreshToken },
+        });
+        _idToken = resp.AuthenticationResult.IdToken;
+        localStorage.setItem('ff_id_token', _idToken);
+        const payload = JSON.parse(atob(_idToken.split('.')[1]));
+        const expiresIn = (payload.exp * 1000) - Date.now() - 300000;
+        if (expiresIn > 0) setTimeout(() => refreshTokens(), expiresIn);
+        return true;
+    } catch {
+        localStorage.removeItem('ff_id_token');
+        localStorage.removeItem('ff_refresh_token');
+        _idToken = null;
+        _refreshToken = null;
+        return false;
+    }
+}
+
+function showLogin() {
+    document.getElementById('login-overlay').classList.remove('hidden');
+    document.getElementById('logout-btn').style.display = 'none';
+    document.getElementById('user-email').textContent = '';
+}
+
+function showApp(email) {
+    document.getElementById('login-overlay').classList.add('hidden');
+    if (email) {
+        document.getElementById('user-email').textContent = email;
+        document.getElementById('logout-btn').style.display = '';
+    }
+}
+
+function logout() {
+    localStorage.removeItem('ff_id_token');
+    localStorage.removeItem('ff_refresh_token');
+    _idToken = null;
+    _refreshToken = null;
+    location.reload();
+}
+
+function authHeaders() {
+    const h = {};
+    if (_authMode === 'cognito' && _idToken) {
+        h['Authorization'] = 'Bearer ' + _idToken;
+    }
+    return h;
+}
+
 const API = '/api';
 
 // ---------------------------------------------------------------------------
@@ -520,7 +763,8 @@ tabs.forEach(t => t.addEventListener('click', () => {
 // Helpers
 // ---------------------------------------------------------------------------
 async function apiFetch(path) {
-    const r = await fetch(API + path);
+    const r = await fetch(API + path, { headers: authHeaders() });
+    if (r.status === 401) { showLogin(); throw new Error('Session expired'); }
     if (!r.ok) throw new Error(`API error: ${r.status}`);
     return r.json();
 }
@@ -923,7 +1167,7 @@ function switchDataSection() {
 
 async function apiPost(path, body) {
     const r = await fetch(API + path, {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {...authHeaders(), 'Content-Type': 'application/json'},
         body: JSON.stringify(body),
     });
     if (!r.ok) {
@@ -934,7 +1178,7 @@ async function apiPost(path, body) {
 }
 
 async function apiDelete(path) {
-    const r = await fetch(API + path, { method: 'DELETE' });
+    const r = await fetch(API + path, { method: 'DELETE', headers: authHeaders() });
     if (!r.ok) {
         const err = await r.json().catch(() => ({ detail: r.statusText }));
         throw new Error(err.detail || r.statusText);
@@ -1105,7 +1349,7 @@ async function loadPostcodeIssues() {
     const body = document.getElementById('postcode-issues-body');
     body.innerHTML = '<tr><td colspan="9">Loading…</td></tr>';
     try {
-        const r = await fetch(API + '/admin/postcode-issues');
+        const r = await fetch(API + '/admin/postcode-issues', { headers: authHeaders() });
         const rows = await r.json();
         body.innerHTML = rows.length ? rows.map(s => {
             const gmaps = (lat, lon) => lat != null && lon != null
@@ -1146,7 +1390,7 @@ async function fixPostcodeCoords(postcode, apiLat, apiLon) {
     try {
         const r = await fetch(API + '/admin/postcode-lookups/' + encodeURIComponent(postcode), {
             method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
+            headers: {...authHeaders(), 'Content-Type': 'application/json'},
             body: JSON.stringify({latitude: pLat, longitude: pLon}),
         });
         if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
@@ -1160,12 +1404,17 @@ async function fixPostcodeCoords(postcode, apiLat, apiLon) {
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
-(async () => {
+async function startApp() {
     await loadFuelTypes();
     await loadRegions();
     loadDistricts();
     loadConstituencies();
     await loadDashboard();
+}
+
+(async () => {
+    const authed = await initAuth();
+    if (authed) await startApp();
 })();
 </script>
 
