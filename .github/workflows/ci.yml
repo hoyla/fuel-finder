@@ -11,6 +11,7 @@ permissions:
   id-token: write # needed for OIDC → AWS credentials
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   AWS_REGION: eu-north-1
   ECR_REPOSITORY: fuel-finder
   ECS_CLUSTER: fuel-finder
