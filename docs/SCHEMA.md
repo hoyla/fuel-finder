@@ -63,6 +63,7 @@ Raw station data from the API. Upserted on each full scrape — always reflects 
 | `price_change_effective_timestamp` | `TIMESTAMPTZ` | When the station says the price took effect |
 | `observed_at` | `TIMESTAMPTZ` | When **we** scraped this price |
 | `scrape_run_id` | `BIGINT FK → scrape_runs` | Which scrape run captured this |
+| `anomaly_flags` | `TEXT[]` | `NULL` = no issues. Populated by anomaly checks on insert (e.g. `price_below_floor`, `likely_decimal_error`, `large_price_jump`) |
 
 **Key indexes:**
 - `(node_id, fuel_type, observed_at DESC)` — fast per-station history lookups
@@ -100,6 +101,17 @@ Maps UK postcode area prefixes (1-2 letters) to ONS-style regions. Used for regi
 | `region` | `TEXT` | ONS-style region: London, North West, Scotland, etc. |
 | `region_group` | `TEXT` | Broader grouping: North, Midlands, South, London, Wales, Scotland, Northern Ireland |
 
+### `fuel_type_labels`
+
+Maps API fuel type codes to human-friendly names and categories. Seeded from `seed_fuel_types.sql`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `fuel_type_code` | `TEXT PK` | API code, e.g. `B7_STANDARD`, `E10` |
+| `fuel_name` | `TEXT` | Human name, e.g. "Diesel", "Unleaded (E10)" |
+| `fuel_category` | `TEXT` | `'Petrol'` or `'Diesel'` |
+| `description` | `TEXT` | Longer explanation of the fuel type |
+
 ## Materialised View
 
 ### `current_prices`
@@ -112,6 +124,8 @@ Joins station info, resolves canonical brand names via `station_override > brand
 |---|---|---|
 | `node_id` | `fuel_prices` | |
 | `fuel_type` | `fuel_prices` | |
+| `fuel_name` | `fuel_type_labels` | Human name, e.g. "Diesel". Falls back to fuel_type code if unmapped |
+| `fuel_category` | `fuel_type_labels` | `'Petrol'` or `'Diesel'`. Falls back to `'Unknown'` if unmapped |
 | `price` | `fuel_prices` | Current price in pence |
 | `price_last_updated` | `fuel_prices` | Station-reported timestamp |
 | `price_change_effective_timestamp` | `fuel_prices` | |
@@ -131,7 +145,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `is_supermarket_service_station` | `stations` | |
 | `temporary_closure` | `stations` | |
 
-**Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`
+**Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`, `(region, fuel_type)`
 
 ## Fuel types
 

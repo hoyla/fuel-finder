@@ -82,6 +82,8 @@ docker compose run --rm scraper python scrape.py incremental
 │  fuel_prices (raw)  │
 │  brand_aliases      │──▶ normalisation
 │  station_overrides  │
+│  postcode_regions   │──▶ regional grouping
+│  fuel_type_labels   │──▶ human-friendly names
 │  current_prices     │──▶ materialised view
 └─────────────────────┘
 ```
@@ -109,6 +111,9 @@ docker compose run --rm scraper python scrape.py incremental
 - **Last-reported = current**: The `current_prices` materialised view treats the most recent observation as the current price, regardless of age. Stations that report infrequently are still included.
 - **Raw data preserved**: Normalisation (brand cleanup) is done via lookup tables (`brand_aliases`, `station_brand_overrides`) that sit alongside the raw data. Original values are never modified.
 - **Brand resolution**: `COALESCE(station_override, brand_alias, raw_brand_name)` — per-station overrides take priority, then bulk aliases, then the raw API value.
+- **Regional grouping**: Postcode area prefixes are mapped to ONS-style regions (London, North West, Scotland, etc.) for regional comparisons. Seeded from `seed_postcode_regions.sql`.
+- **Fuel type labels**: API codes like `B7_STANDARD` are mapped to human names like "Diesel" via the `fuel_type_labels` table. Seeded from `seed_fuel_types.sql`.
+- **Anomaly detection**: On insert, prices are flagged (not filtered) if they fall outside 80–300p, look like decimal-place errors, or jump by more than 30%. Flags are stored in `anomaly_flags` on each `fuel_prices` row. See `queries/anomaly_detection.sql`.
 
 ## File structure
 
@@ -118,15 +123,18 @@ fuel-finder-scraper/
 ├── .gitignore                # Excludes .env
 ├── Dockerfile                # Python 3.11 container for the scraper
 ├── docker-compose.yml        # Postgres + scraper containers
-├── Pipfile                   # Python dependencies
 ├── api_client.py             # Fuel Finder API client (OAuth2 + pagination)
-├── db.py                     # Database operations (upsert, dedup, refresh)
+├── db.py                     # Database operations (upsert, dedup, anomaly detection)
 ├── scrape.py                 # Main scraper orchestrator
 ├── lambda_handler.py         # AWS Lambda entry point
 ├── schema.sql                # PostgreSQL schema (tables, views, indexes)
 ├── seed_brand_aliases.sql    # Initial brand name mappings
+├── seed_postcode_regions.sql # UK postcode areas → ONS regions
+├── seed_fuel_types.sql       # API fuel type codes → human-friendly names
 ├── queries/                  # Useful SQL queries
-│   └── unmapped_brands.sql   # Find brands needing cleanup
+│   ├── unmapped_brands.sql   # Find brands needing cleanup
+│   ├── regional_analysis.sql # Regional price comparisons for journalism
+│   └── anomaly_detection.sql # Spot data-entry errors, outliers
 └── docs/
     ├── SCHEMA.md             # Database schema reference
     └── AWS_DEPLOYMENT.md     # AWS deployment guide
