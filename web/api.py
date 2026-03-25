@@ -44,22 +44,10 @@ def get_db():
 
 
 # ---------------------------------------------------------------------------
-# Auth stub — no-op for local dev, swap in real middleware later
+# Auth — Cognito JWT / API key / no-auth (see auth.py)
 # ---------------------------------------------------------------------------
 
-AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
-
-
-async def require_auth(request: Request):
-    """Placeholder auth dependency. Enable via AUTH_ENABLED=true env var."""
-    if not AUTH_ENABLED:
-        return
-    token = request.headers.get("Authorization", "")
-    if not token.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    # TODO: validate JWT / API key here
-    # For now, any bearer token is accepted when auth is enabled
-    return
+from auth import require_auth, require_admin, get_auth_config
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +91,18 @@ class PostcodeCoordsBody(BaseModel):
 # ---------------------------------------------------------------------------
 # API routes
 # ---------------------------------------------------------------------------
+
+@app.get("/health")
+def health():
+    """Health check for ECS / load balancer."""
+    return {"status": "ok"}
+
+
+@app.get("/auth/config")
+def auth_config():
+    """Return auth mode so the frontend can adapt."""
+    return get_auth_config()
+
 
 @app.get("/api/summary")
 def summary(db=Depends(get_db), _auth=Depends(require_auth)):
@@ -563,7 +563,7 @@ def list_brand_aliases(db=Depends(get_db), _auth=Depends(require_auth)):
 
 
 @app.post("/api/admin/brand-aliases")
-def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends(require_auth)):
+def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends(require_admin)):
     """Create or update a brand alias mapping."""
     raw = body.raw_brand_name.strip()
     canonical = body.canonical_brand.strip()
@@ -581,7 +581,7 @@ def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends
 
 
 @app.delete("/api/admin/brand-aliases/{raw_brand_name}")
-def delete_brand_alias(raw_brand_name: str, db=Depends(get_db), _auth=Depends(require_auth)):
+def delete_brand_alias(raw_brand_name: str, db=Depends(get_db), _auth=Depends(require_admin)):
     """Remove a brand alias."""
     with db.cursor() as cur:
         cur.execute("DELETE FROM brand_aliases WHERE raw_brand_name = %s RETURNING raw_brand_name", (raw_brand_name,))
@@ -603,7 +603,7 @@ def list_brand_categories(db=Depends(get_db), _auth=Depends(require_auth)):
 
 
 @app.post("/api/admin/brand-categories")
-def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=Depends(require_auth)):
+def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=Depends(require_admin)):
     """Create or update a brand category mapping."""
     brand = body.canonical_brand.strip()
     cat = body.forecourt_type.strip()
@@ -624,7 +624,7 @@ def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=D
 
 
 @app.delete("/api/admin/brand-categories/{canonical_brand}")
-def delete_brand_category(canonical_brand: str, db=Depends(get_db), _auth=Depends(require_auth)):
+def delete_brand_category(canonical_brand: str, db=Depends(get_db), _auth=Depends(require_admin)):
     """Remove a brand category mapping (brand will default to Independent)."""
     with db.cursor() as cur:
         cur.execute("DELETE FROM brand_categories WHERE canonical_brand = %s RETURNING canonical_brand", (canonical_brand,))
@@ -649,7 +649,7 @@ def list_station_overrides(db=Depends(get_db), _auth=Depends(require_auth)):
 
 
 @app.post("/api/admin/station-overrides")
-def upsert_station_override(body: "StationOverrideBody", db=Depends(get_db), _auth=Depends(require_auth)):
+def upsert_station_override(body: "StationOverrideBody", db=Depends(get_db), _auth=Depends(require_admin)):
     """Create or update a per-station brand override."""
     node_id = body.node_id.strip()
     canonical = body.canonical_brand.strip()
@@ -673,7 +673,7 @@ def upsert_station_override(body: "StationOverrideBody", db=Depends(get_db), _au
 
 
 @app.delete("/api/admin/station-overrides/{node_id}")
-def delete_station_override(node_id: str, db=Depends(get_db), _auth=Depends(require_auth)):
+def delete_station_override(node_id: str, db=Depends(get_db), _auth=Depends(require_admin)):
     """Remove a per-station brand override."""
     with db.cursor() as cur:
         cur.execute("DELETE FROM station_brand_overrides WHERE node_id = %s RETURNING node_id", (node_id,))
@@ -795,7 +795,7 @@ def update_postcode_coords(
     postcode: str,
     body: PostcodeCoordsBody,
     db=Depends(get_db),
-    _auth=Depends(require_auth),
+    _auth=Depends(require_admin),
 ):
     """Manually set coordinates for a postcode lookup.
 
@@ -818,7 +818,7 @@ def update_postcode_coords(
 
 
 @app.post("/api/admin/refresh-view")
-def refresh_view(db=Depends(get_db), _auth=Depends(require_auth)):
+def refresh_view(db=Depends(get_db), _auth=Depends(require_admin)):
     """Refresh the current_prices materialised view after lookup changes."""
     with db.cursor() as cur:
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
