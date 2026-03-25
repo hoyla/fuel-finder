@@ -51,6 +51,20 @@ from auth import require_auth, require_admin, get_auth_config
 
 
 # ---------------------------------------------------------------------------
+# Run pending migrations on startup
+# ---------------------------------------------------------------------------
+
+import migrate
+
+_migrate_conn = psycopg2.connect(DATABASE_URL)
+try:
+    applied = migrate.run_migrations(_migrate_conn)
+    for name in applied:
+        print(f"  Applied migration: {name}")
+finally:
+    _migrate_conn.close()
+
+# ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 

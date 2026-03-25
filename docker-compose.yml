@@ -29,7 +29,9 @@ services:
       AWS_REGION: ${AWS_REGION:-eu-west-1}
 
   web:
-    build: ./web
+    build:
+      context: .
+      dockerfile: web/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy

@@ -5,9 +5,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir fastapi uvicorn psycopg2-binary PyJWT cryptography
 
-COPY auth.py .
-COPY api.py .
-COPY static/ static/
+COPY web/auth.py .
+COPY web/api.py .
+COPY web/static/ static/
+COPY migrate.py .
+COPY migrations/ migrations/
 
 EXPOSE 8000
 
