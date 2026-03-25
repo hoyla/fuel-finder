@@ -78,7 +78,7 @@ jobs:
 
       - name: Smoke-test container starts
         run: |
-          docker compose up -d --no-build --wait --timeout 60
+          docker compose up -d postgres web --no-build --wait --timeout 60
           for i in $(seq 1 10); do
             if curl -sf http://localhost:8080/health; then
               echo ""
