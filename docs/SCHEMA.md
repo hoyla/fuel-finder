@@ -112,13 +112,34 @@ Maps API fuel type codes to human-friendly names and categories. Seeded from `se
 | `fuel_category` | `TEXT` | `'Petrol'` or `'Diesel'` |
 | `description` | `TEXT` | Longer explanation of the fuel type |
 
+### `brand_categories`
+
+Maps canonical brand names to forecourt types for meaningful price comparisons. The API's `is_supermarket_service_station` flag is unreliable (flags BP, Texaco, etc. as supermarkets), so this table provides accurate classification based on actual brand identity.
+
+| Column | Type | Notes |
+|---|---|---|
+| `canonical_brand` | `TEXT PK` | Must match a resolved canonical brand name |
+| `forecourt_type` | `TEXT` | One of: `Supermarket`, `Major Oil`, `Motorway Operator`, `Fuel Group`, `Convenience`, `Independent` |
+
+Brands not present in this table default to `Independent` in the `current_prices` view. Stations with `is_motorway_service_station = TRUE` are always classified as `Motorway` regardless of brand category.
+
+### `schema_migrations`
+
+Tracks which numbered SQL migrations have been applied. Managed automatically by `migrate.py`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `version` | `INTEGER PK` | Migration number from filename (e.g. `006`) |
+| `filename` | `TEXT` | Full migration filename |
+| `applied_at` | `TIMESTAMPTZ` | When migration was applied |
+
 ## Materialised View
 
 ### `current_prices`
 
 The **current price snapshot** — one row per (station, fuel_type), always the most recently observed price regardless of age. Refreshed after each scrape run.
 
-Joins station info, resolves canonical brand names via `station_override > brand_alias > raw_brand_name`, and includes region via postcode area lookup.
+Joins station info, resolves canonical brand names via `station_override > brand_alias > raw_brand_name`, classifies forecourt type via `brand_categories`, and includes region via postcode area lookup.
 
 | Column | Source | Notes |
 |---|---|---|
@@ -133,6 +154,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `trading_name` | `stations` | |
 | `raw_brand_name` | `stations.brand_name` | Original API value |
 | `brand_name` | Resolved | `COALESCE(override, alias, raw)` |
+| `forecourt_type` | `brand_categories` | `Motorway` if motorway flag set, else from `brand_categories`, else `Independent` |
 | `city` | `stations` | |
 | `county` | `stations` | |
 | `country` | `stations` | |
@@ -145,7 +167,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `is_supermarket_service_station` | `stations` | |
 | `temporary_closure` | `stations` | |
 
-**Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`, `(region, fuel_type)`
+**Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`, `(region, fuel_type)`, `(forecourt_type, fuel_type)`
 
 ## Fuel types
 

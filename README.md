@@ -33,12 +33,19 @@ docker compose exec postgres psql -U fuelfinder
 ```
 
 ```sql
--- Current prices (materialised view, includes canonical brand names)
-SELECT brand_name, city, postcode, fuel_type, price
+-- Current prices (materialised view, includes canonical brand names + forecourt type)
+SELECT brand_name, forecourt_type, city, postcode, fuel_type, price
 FROM current_prices
 WHERE fuel_type = 'E10'
 ORDER BY price
 LIMIT 20;
+
+-- Average price by forecourt category
+SELECT forecourt_type, ROUND(AVG(price), 1) AS avg_price, COUNT(*) AS stations
+FROM current_prices
+WHERE fuel_type = 'E10' AND NOT temporary_closure
+GROUP BY forecourt_type
+ORDER BY avg_price;
 
 -- Price history for a station
 SELECT fuel_type, price, observed_at
@@ -82,9 +89,18 @@ docker compose run --rm scraper python scrape.py incremental
 │  fuel_prices (raw)  │
 │  brand_aliases      │──▶ normalisation
 │  station_overrides  │
+│  brand_categories   │──▶ forecourt type classification
 │  postcode_regions   │──▶ regional grouping
 │  fuel_type_labels   │──▶ human-friendly names
 │  current_prices     │──▶ materialised view
+└─────────────────────┘
+          │
+          ▼
+┌─────────────────────┐
+│    Web UI (FastAPI) │  http://localhost:8080
+│  Dashboard, Map,    │
+│  Trends, Search,    │
+│  Anomalies, Data    │
 └─────────────────────┘
 ```
 
@@ -114,6 +130,22 @@ docker compose run --rm scraper python scrape.py incremental
 - **Regional grouping**: Postcode area prefixes are mapped to ONS-style regions (London, North West, Scotland, etc.) for regional comparisons. Seeded from `seed_postcode_regions.sql`.
 - **Fuel type labels**: API codes like `B7_STANDARD` are mapped to human names like "Diesel" via the `fuel_type_labels` table. Seeded from `seed_fuel_types.sql`.
 - **Anomaly detection**: On insert, prices are flagged (not filtered) if they fall outside 80–300p, look like decimal-place errors, or jump by more than 30%. Flags are stored in `anomaly_flags` on each `fuel_prices` row. See `queries/anomaly_detection.sql`.
+- **Forecourt categories**: The API's `is_supermarket_service_station` flag is unreliable (flags BP, Texaco, Maxol as supermarkets). Instead, `brand_categories` maps canonical brands to forecourt types (Supermarket, Major Oil, Motorway Operator, Fuel Group, Convenience). Motorway flag always takes priority; unmapped brands default to Independent.
+- **Numbered migrations**: Schema changes go through `migrations/NNN_name.sql` files, tracked in `schema_migrations`. No external tools — `migrate.py` handles discovery, ordering, and idempotent application.
+
+## Web UI
+
+The project includes a web dashboard at http://localhost:8080 (started via Docker Compose).
+
+**Tabs:**
+- **Dashboard** — headline prices, regional chart, forecourt category chart, cheapest brands
+- **Map** — every station on a Leaflet map, colour-coded by price
+- **Trends** — daily average price line chart, filterable by region
+- **Search** — query builder with postcode, brand, city, price range, category filters
+- **Anomalies** — flagged price records
+- **Data** — view and edit normalisation lookup tables (brand aliases, brand categories, station overrides), see the normalisation report showing how each brand resolves, and refresh the materialised view after changes
+
+**API documentation:** see the [API docs page](http://localhost:8080/docs/api) (served from the web UI) or [docs/API.md](docs/API.md).
 
 ## File structure
 
@@ -122,25 +154,49 @@ fuel-finder-scraper/
 ├── .env.example              # Template for credentials & config
 ├── .gitignore                # Excludes .env
 ├── Dockerfile                # Python 3.11 container for the scraper
-├── docker-compose.yml        # Postgres + scraper containers
+├── docker-compose.yml        # Postgres + scraper + web containers
 ├── api_client.py             # Fuel Finder API client (OAuth2 + pagination)
 ├── db.py                     # Database operations (upsert, dedup, anomaly detection)
 ├── scrape.py                 # Main scraper orchestrator
+├── migrate.py                # Numbered SQL migration runner
 ├── lambda_handler.py         # AWS Lambda entry point
-├── schema.sql                # PostgreSQL schema (tables, views, indexes)
-├── seed_brand_aliases.sql    # Initial brand name mappings
-├── seed_postcode_regions.sql # UK postcode areas → ONS regions
-├── seed_fuel_types.sql       # API fuel type codes → human-friendly names
+├── schema.sql                # Full schema reference (tables, views, indexes)
+├── migrations/               # Numbered SQL migrations (source of truth)
+│   ├── 001_base_schema.sql
+│   ├── 002_seed_brand_aliases.sql
+│   ├── 003_seed_postcode_regions.sql
+│   ├── 004_seed_fuel_types.sql
+│   ├── 005_current_prices_view.sql
+│   ├── 006_brand_categories.sql
+│   └── 007_current_prices_forecourt_type.sql
+├── seed_brand_aliases.sql    # Legacy seed file (superseded by migrations)
+├── seed_postcode_regions.sql # Legacy seed file (superseded by migrations)
+├── seed_fuel_types.sql       # Legacy seed file (superseded by migrations)
 ├── queries/                  # Useful SQL queries
-│   ├── unmapped_brands.sql   # Find brands needing cleanup
-│   ├── regional_analysis.sql # Regional price comparisons for journalism
-│   └── anomaly_detection.sql # Spot data-entry errors, outliers
-└── docs/
-    ├── SCHEMA.md             # Database schema reference
-    └── AWS_DEPLOYMENT.md     # AWS deployment guide
+│   ├── unmapped_brands.sql
+│   ├── regional_analysis.sql
+│   └── anomaly_detection.sql
+├── web/                      # FastAPI web UI
+│   ├── Dockerfile
+│   ├── api.py                # API endpoints (read-only + admin CRUD)
+│   └── static/
+│       ├── index.html        # Main dashboard SPA
+│       ├── api.html          # API documentation page
+│       └── about.html        # How the scraper works
+├── tests/                    # pytest test suite (82 tests)
+│   ├── conftest.py
+│   ├── test_anomaly_detection.py
+│   ├── test_migrate.py
+│   └── test_api.py
+├── docs/
+│   ├── SCHEMA.md             # Database schema reference
+│   ├── API.md                # API endpoint reference
+│   └── AWS_DEPLOYMENT.md     # AWS deployment guide
+└── pyproject.toml            # pytest config
 ```
 
 ## See also
 
 - [Database schema reference](docs/SCHEMA.md)
+- [API endpoint reference](docs/API.md)
 - [AWS deployment guide](docs/AWS_DEPLOYMENT.md)
