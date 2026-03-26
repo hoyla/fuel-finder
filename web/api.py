@@ -1037,6 +1037,26 @@ class CreateUserBody(BaseModel):
     admin: bool = False
 
 
+@app.get("/api/admin/scrape-runs")
+def list_scrape_runs(
+    limit: int = Query(50, ge=1, le=500),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Recent scrape runs with timing and record counts."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT id, started_at, finished_at, run_type, status,
+                   batches_fetched, stations_count, price_records_count,
+                   s3_key, error_message,
+                   EXTRACT(EPOCH FROM (finished_at - started_at))::int AS duration_secs
+            FROM scrape_runs
+            ORDER BY started_at DESC
+            LIMIT %s
+        """, (limit,))
+        return cur.fetchall()
+
+
 @app.get("/api/admin/users")
 def list_users(_auth=Depends(require_admin)):
     """List all Cognito users and their group memberships."""

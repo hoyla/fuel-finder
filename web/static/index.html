@@ -524,6 +524,7 @@
             <div class="control">
                 <label>Normalisation tables and overrides</label>
                 <select id="data-section" onchange="switchDataSection()">
+                    <option value="scrapes">Scrape History</option>
                     <option value="report">Normalisation Report</option>
                     <option value="aliases">Brand Aliases</option>
                     <option value="categories">Brand Categories</option>
@@ -534,6 +535,23 @@
             <button class="primary" id="btn-refresh-view" onclick="refreshView()" style="margin-left: auto;">
                 Refresh View
             </button>
+        </div>
+
+        <!-- Scrape History -->
+        <div id="data-scrapes">
+            <div class="table-wrap">
+                <table class="sortable">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>Started</th><th>Finished</th>
+                            <th>Duration</th><th>Type</th><th>Status</th>
+                            <th>Batches</th><th>Stations</th><th>Price Records</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scrapes-body"></tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Normalisation Report -->
@@ -914,7 +932,7 @@ tabs.forEach(t => t.addEventListener('click', () => {
         if (id === 'map') initMap();
         if (id === 'trends') loadTrends();
         if (id === 'anomalies') loadAnomalies();
-        if (id === 'data') loadReport();
+        if (id === 'data') loadScrapeHistory();
         if (id === 'users') loadUsers();
     }
 }));
@@ -1670,14 +1688,15 @@ async function loadOutliers() {
 // Data / Admin tab
 // ---------------------------------------------------------------------------
 
-const dataSections = ['report', 'aliases', 'categories', 'overrides', 'postcodes'];
+const dataSections = ['scrapes', 'report', 'aliases', 'categories', 'overrides', 'postcodes'];
 function switchDataSection() {
     const active = document.getElementById('data-section').value;
     dataSections.forEach(s => {
         document.getElementById('data-' + s).style.display = s === active ? '' : 'none';
     });
     // Lazy-load the section
-    if (active === 'report') loadReport();
+    if (active === 'scrapes') loadScrapeHistory();
+    else if (active === 'report') loadReport();
     else if (active === 'aliases') loadAliases();
     else if (active === 'categories') loadCategories();
     else if (active === 'overrides') loadOverrides();
@@ -1703,6 +1722,34 @@ async function apiDelete(path) {
         throw new Error(err.detail || r.statusText);
     }
     return r.json();
+}
+
+// --- Scrape History ---
+async function loadScrapeHistory() {
+    const data = await apiFetch('/admin/scrape-runs?limit=100');
+    const body = document.getElementById('scrapes-body');
+    body.innerHTML = data.map(r => {
+        const started = r.started_at ? new Date(r.started_at).toLocaleString() : '—';
+        const finished = r.finished_at ? new Date(r.finished_at).toLocaleString() : '—';
+        const dur = r.duration_secs != null
+            ? (r.duration_secs >= 60 ? Math.floor(r.duration_secs / 60) + 'm ' + (r.duration_secs % 60) + 's' : r.duration_secs + 's')
+            : '—';
+        const statusCls = r.status === 'completed' ? 'color:var(--green)' :
+                          r.status === 'failed' ? 'color:var(--red)' : 'color:var(--muted)';
+        return `<tr>
+            <td>${r.id}</td>
+            <td>${started}</td>
+            <td>${finished}</td>
+            <td>${dur}</td>
+            <td>${escHtml(r.run_type)}</td>
+            <td style="${statusCls};font-weight:600">${escHtml(r.status)}</td>
+            <td>${r.batches_fetched ?? '—'}</td>
+            <td>${r.stations_count != null ? r.stations_count.toLocaleString() : '—'}</td>
+            <td>${r.price_records_count != null ? r.price_records_count.toLocaleString() : '—'}</td>
+            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.error_message) || ''}">${escHtml(r.error_message) || '—'}</td>
+        </tr>`;
+    }).join('');
+    initSortableTables();
 }
 
 // --- Normalisation Report ---
