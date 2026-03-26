@@ -39,6 +39,8 @@ _pool = SimpleConnectionPool(
 def get_db():
     conn = _pool.getconn()
     try:
+        with conn.cursor() as cur:
+            cur.execute("SET work_mem = '16MB'")
         yield conn
     finally:
         _pool.putconn(conn)
@@ -335,7 +337,19 @@ def price_history(
     end_date: Optional[str] = Query(None),
     granularity: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
+    rural_urban: Optional[str] = Query(None),
     node_ids: Optional[str] = Query(None),
+    # Search-style filters — used for "view trend for all results"
+    brand: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    postcode: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    district: Optional[str] = Query(None),
+    constituency: Optional[str] = Query(None),
+    supermarket_only: bool = Query(False),
+    motorway_only: bool = Query(False),
+    exclude_outliers: bool = Query(False),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
@@ -413,55 +427,131 @@ def price_history(
     else:
         time_col = "DATE(fp.observed_at)"
 
-    # Optional node_ids filter
+    # Optional node_ids filter (small selections) or search filter subquery (large sets)
     node_filter = ""
     node_params = ()
-    if node_ids:
+
+    # Build a subquery from search-style filters if any are provided
+    search_conditions = []
+    search_params_list = []
+    if brand:
+        search_conditions.append("UPPER(brand_name) LIKE %s")
+        search_params_list.append("%" + brand.upper() + "%")
+    if category:
+        cats = [c.strip() for c in category.split(",") if c.strip()]
+        if len(cats) == 1:
+            search_conditions.append("forecourt_type = %s")
+            search_params_list.append(cats[0])
+        elif cats:
+            ph = ", ".join(["%s"] * len(cats))
+            search_conditions.append(f"forecourt_type IN ({ph})")
+            search_params_list.extend(cats)
+    if postcode:
+        search_conditions.append("UPPER(postcode) LIKE %s")
+        search_params_list.append(postcode.upper().replace(" ", "") + "%")
+    if city:
+        search_conditions.append("UPPER(city) LIKE %s")
+        search_params_list.append("%" + city.upper() + "%")
+    if district:
+        search_conditions.append("admin_district = %s")
+        search_params_list.append(district)
+    if constituency:
+        search_conditions.append("parliamentary_constituency = %s")
+        search_params_list.append(constituency)
+    if supermarket_only:
+        search_conditions.append("is_supermarket_service_station = TRUE")
+    if motorway_only:
+        search_conditions.append("is_motorway_service_station = TRUE")
+    if exclude_outliers:
+        search_conditions.append("NOT price_is_outlier")
+
+    if search_conditions:
+        # Use a subquery against the indexed current_prices view
+        sub_where = " AND ".join(["fuel_type = %s", "NOT temporary_closure"] + search_conditions)
+        node_filter = f"AND fp.node_id IN (SELECT node_id FROM current_prices WHERE {sub_where})"
+        node_params = (fuel_type, *search_params_list)
+    elif node_ids:
         ids = [n.strip() for n in node_ids.split(",") if n.strip()]
         if ids:
             placeholders = ", ".join(["%s"] * len(ids))
             node_filter = f"AND fp.node_id IN ({placeholders})"
             node_params = tuple(ids)
 
-    with db.cursor() as cur:
+    # Location filters — need stations/postcode joins when any are set
+    needs_location = bool(region or country or rural_urban)
+    location_joins = ""
+    location_filters = ""
+    location_params = ()
+
+    if needs_location:
+        location_joins = """
+            JOIN stations s ON s.node_id = fp.node_id
+            LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
+            LEFT JOIN postcode_regions pr ON pr.postcode_area = (
+                CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{2}$'
+                     THEN LEFT(s.postcode, 2) ELSE LEFT(s.postcode, 1) END
+            )
+        """
+        filters = []
+        params_list = []
+
         if region:
-            cur.execute(bounds_cte + f"""
-                SELECT {time_col} AS bucket,
-                       ROUND(AVG(fp.price)::numeric, 1) AS avg_price,
-                       COUNT(DISTINCT fp.node_id) AS stations
-                FROM fuel_prices fp
-                JOIN stations s ON s.node_id = fp.node_id
-                LEFT JOIN postcode_regions pr ON pr.postcode_area = (
-                    CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{{2}}$'
-                         THEN LEFT(s.postcode, 2) ELSE LEFT(s.postcode, 1) END
-                )
-                LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
-                WHERE fp.fuel_type = %s
-                  AND {time_filter}
-                  AND pr.region = %s
-                  {node_filter}
-                  AND fp.anomaly_flags IS NULL
-                  AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
-                  AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
-                GROUP BY bucket
-                ORDER BY bucket
-            """, (*bounds_params, fuel_type, *time_params, region, *node_params))
-        else:
-            cur.execute(bounds_cte + f"""
-                SELECT {time_col} AS bucket,
-                       ROUND(AVG(fp.price)::numeric, 1) AS avg_price,
-                       COUNT(DISTINCT fp.node_id) AS stations
-                FROM fuel_prices fp
-                LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
-                WHERE fp.fuel_type = %s
-                  AND {time_filter}
-                  {node_filter}
-                  AND fp.anomaly_flags IS NULL
-                  AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
-                  AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
-                GROUP BY bucket
-                ORDER BY bucket
-            """, (*bounds_params, fuel_type, *time_params, *node_params))
+            vals = [v.strip() for v in region.split(",") if v.strip()]
+            if len(vals) == 1:
+                filters.append("AND COALESCE(pl.ons_region, pr.region) = %s")
+                params_list.append(vals[0])
+            elif vals:
+                ph = ", ".join(["%s"] * len(vals))
+                filters.append(f"AND COALESCE(pl.ons_region, pr.region) IN ({ph})")
+                params_list.extend(vals)
+
+        if country:
+            vals = [v.strip() for v in country.split(",") if v.strip()]
+            known = {'ENGLAND', 'SCOTLAND', 'WALES', 'NORTHERN IRELAND', 'N. IRELAND'}
+            named = [v for v in vals if v != "Other/Unknown"]
+            has_other = "Other/Unknown" in vals
+            parts = []
+            if named:
+                ph = ", ".join(["UPPER(%s)"] * len(named))
+                parts.append(f"UPPER(COALESCE(pl.country, s.country)) IN ({ph})")
+                params_list.extend(named)
+            if has_other:
+                known_ph = ", ".join(["'" + k + "'" for k in known])
+                parts.append(f"(COALESCE(pl.country, s.country) IS NULL OR UPPER(COALESCE(pl.country, s.country)) NOT IN ({known_ph}))")
+            if parts:
+                filters.append("AND (" + " OR ".join(parts) + ")")
+
+        if rural_urban:
+            vals = [v.strip() for v in rural_urban.split(",") if v.strip()]
+            if len(vals) == 1:
+                filters.append("AND pl.rural_urban = %s")
+                params_list.append(vals[0])
+            elif vals:
+                ph = ", ".join(["%s"] * len(vals))
+                filters.append(f"AND pl.rural_urban IN ({ph})")
+                params_list.extend(vals)
+
+        location_filters = "\n                  ".join(filters)
+        location_params = tuple(params_list)
+
+    with db.cursor() as cur:
+        cur.execute(bounds_cte + f"""
+            SELECT {time_col} AS bucket,
+                   ROUND(AVG(fp.price)::numeric, 1) AS avg_price,
+                   COUNT(DISTINCT fp.node_id) AS stations
+            FROM fuel_prices fp
+            {location_joins}
+            LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
+            WHERE fp.fuel_type = %s
+              AND {time_filter}
+              {node_filter}
+              {location_filters}
+              AND fp.anomaly_flags IS NULL
+              AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
+              AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
+            GROUP BY bucket
+            ORDER BY bucket
+        """, (*bounds_params, fuel_type, *time_params, *node_params, *location_params))
         return {"granularity": effective_granularity, "data": cur.fetchall()}
 
 

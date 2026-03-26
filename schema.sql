@@ -56,8 +56,9 @@ CREATE INDEX IF NOT EXISTS idx_fuel_prices_node_fuel_observed
 CREATE INDEX IF NOT EXISTS idx_fuel_prices_observed
     ON fuel_prices (observed_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_fuel_prices_fuel_type
-    ON fuel_prices (fuel_type, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fuel_prices_fuel_observed_covering
+    ON fuel_prices (fuel_type, observed_at DESC)
+    INCLUDE (price, node_id, anomaly_flags);
 
 -- Index for geographic queries on stations
 CREATE INDEX IF NOT EXISTS idx_stations_latlon
@@ -232,3 +233,9 @@ CREATE INDEX IF NOT EXISTS idx_current_prices_constituency
 
 CREATE INDEX IF NOT EXISTS idx_current_prices_rural_urban
     ON current_prices (rural_urban, fuel_type);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_brand_lower
+    ON current_prices (lower(brand_name) text_pattern_ops);
+
+CREATE INDEX IF NOT EXISTS idx_current_prices_country
+    ON current_prices (country, fuel_type);

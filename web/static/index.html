@@ -354,15 +354,54 @@
 
     <!-- ============ TRENDS ============ -->
     <div class="panel" id="panel-trends">
-        <div class="controls">
+        <div class="controls" style="display:block;">
+            <div class="filter-group">
             <div class="control">
                 <label>Fuel type</label>
                 <select id="trend-fuel"></select>
             </div>
             <div class="control">
-                <label>Region (optional)</label>
-                <select id="trend-region"><option value="">All regions</option></select>
+                <label>Country</label>
+                <div class="multi-select" id="trend-country-ms">
+                    <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
+                    <div class="multi-select-options">
+                        <label><input type="checkbox" value="England"> England</label>
+                        <label><input type="checkbox" value="Scotland"> Scotland</label>
+                        <label><input type="checkbox" value="Wales"> Wales</label>
+                        <label><input type="checkbox" value="Northern Ireland"> Northern Ireland</label>
+                        <label><input type="checkbox" value="Other/Unknown"> Other/Unknown</label>
+                    </div>
+                </div>
             </div>
+            <div class="control">
+                <label>Region</label>
+                <div class="multi-select" id="trend-region-ms">
+                    <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
+                    <div class="multi-select-options"></div>
+                </div>
+            </div>
+            <div class="control">
+                <label>Rural / Urban</label>
+                <div class="multi-select" id="trend-rural-urban-ms">
+                    <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
+                    <div class="multi-select-options">
+                        <label><input type="checkbox" value="Urban: Nearer to a major town or city"> Urban: Near city</label>
+                        <label><input type="checkbox" value="Urban: Further from a major town or city"> Urban: Far from city</label>
+                        <label><input type="checkbox" value="Smaller rural: Nearer to a major town or city"> Smaller rural: Near city</label>
+                        <label><input type="checkbox" value="Smaller rural: Further from a major town or city"> Smaller rural: Far from city</label>
+                        <label><input type="checkbox" value="Larger rural: Nearer to a major town or city"> Larger rural: Near city</label>
+                        <label><input type="checkbox" value="Larger rural: Further from a major town or city"> Larger rural: Far from city</label>
+                        <label><input type="checkbox" value="Large Urban Areas"> Large Urban Areas</label>
+                        <label><input type="checkbox" value="Other Urban Areas"> Other Urban Areas</label>
+                        <label><input type="checkbox" value="Accessible Small Towns"> Accessible Small Towns</label>
+                        <label><input type="checkbox" value="Remote Small Towns"> Remote Small Towns</label>
+                        <label><input type="checkbox" value="Accessible Rural"> Accessible Rural</label>
+                        <label><input type="checkbox" value="Remote Rural"> Remote Rural</label>
+                    </div>
+                </div>
+            </div>
+            </div>
+            <div class="filter-group">
             <div class="control">
                 <label>Range</label>
                 <select id="trend-range" onchange="setTrendRange(this.value)">
@@ -396,6 +435,7 @@
             <div class="download-btns" id="trend-download-btns">
                 <button onclick="downloadTrendData('csv')" disabled id="trend-dl-csv">⬇ CSV</button>
                 <button onclick="downloadTrendData('json')" disabled id="trend-dl-json">⬇ JSON</button>
+            </div>
             </div>
         </div>
         <div class="chart-container">
@@ -1303,7 +1343,7 @@ async function loadFuelTypes() {
 
 async function loadRegions() {
     const regions = await apiFetch('/regions');
-    ['trend-region', 'map-region'].forEach(id => {
+    ['map-region'].forEach(id => {
         const sel = document.getElementById(id);
         if (!sel) return;
         regions.forEach(r => {
@@ -1312,16 +1352,17 @@ async function loadRegions() {
             sel.appendChild(o);
         });
     });
-    // Populate the multi-select for search
-    const opts = document.querySelector('#search-region-ms .multi-select-options');
-    if (opts) {
+    // Populate multi-selects for search and trends
+    ['search-region-ms', 'trend-region-ms'].forEach(msId => {
+        const opts = document.querySelector('#' + msId + ' .multi-select-options');
+        if (!opts) return;
         opts.innerHTML = regions.map(r =>
             `<label><input type="checkbox" value="${r}"> ${r}</label>`
         ).join('');
         opts.querySelectorAll('input[type=checkbox]').forEach(cb => {
-            cb.addEventListener('change', () => updateMultiSelectDisplay('search-region-ms'));
+            cb.addEventListener('change', () => updateMultiSelectDisplay(msId));
         });
-    }
+    });
 }
 
 async function loadDistricts() {
@@ -1657,7 +1698,9 @@ setTrendRange('30');
 
 async function loadTrends() {
     const fuel = document.getElementById('trend-fuel').value;
-    const region = document.getElementById('trend-region').value;
+    const region = getMultiSelectValues('trend-region-ms');
+    const country = getMultiSelectValues('trend-country-ms');
+    const ruralUrban = getMultiSelectValues('trend-rural-urban-ms');
     const startDate = document.getElementById('trend-start').value;
     const endDate = document.getElementById('trend-end').value;
     const gran = document.getElementById('trend-granularity').value;
@@ -1667,6 +1710,8 @@ async function loadTrends() {
     if (!startDate && !endDate) url += '&days=30';
     if (gran !== 'auto') url += `&granularity=${gran}`;
     if (region) url += `&region=${encodeURIComponent(region)}`;
+    if (country) url += `&country=${encodeURIComponent(country)}`;
+    if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
     const resp = await apiFetch(url);
     const data = resp.data;
     lastTrendData = data;
@@ -1911,19 +1956,26 @@ function closeStationTrend() {
 
 function initStationTrendFuels() {
     const sel = document.getElementById('st-fuel');
-    if (sel.options.length) return;
-    fuelTypes.forEach(ft => {
-        const o = document.createElement('option');
-        o.value = ft.fuel_type_code;
-        o.textContent = ft.fuel_name;
-        if (ft.fuel_type_code === 'E10') o.selected = true;
-        sel.appendChild(o);
-    });
+    if (!sel.options.length) {
+        fuelTypes.forEach(ft => {
+            const o = document.createElement('option');
+            o.value = ft.fuel_type_code;
+            o.textContent = ft.fuel_name;
+            sel.appendChild(o);
+        });
+    }
+    // Sync fuel type from search panel
+    const searchFuel = document.getElementById('search-fuel').value;
+    if (searchFuel) sel.value = searchFuel;
+    else sel.value = 'E10';
 }
 
 function openStationTrend(nodeId, name, brand, city, postcode) {
     stationTrendState = { mode: 'single', nodeId, nodeIds: null, title: name };
     initStationTrendFuels();
+    // Reset range to 30 days
+    document.getElementById('st-range').value = '30';
+    document.getElementById('st-granularity').value = 'auto';
     document.getElementById('station-trend-title').textContent = name;
     const parts = [brand, city, postcode].filter(Boolean);
     document.getElementById('station-trend-subtitle').textContent = parts.join(' · ');
@@ -1945,6 +1997,9 @@ function viewSelectedTrend() {
 
     stationTrendState = { mode: 'multi', nodeId: null, nodeIds: ids, title: `${ids.length} stations` };
     initStationTrendFuels();
+    // Reset range to 30 days
+    document.getElementById('st-range').value = '30';
+    document.getElementById('st-granularity').value = 'auto';
     document.getElementById('station-trend-title').textContent = `Average trend for ${ids.length} stations`;
     const preview = names.length <= 5 ? names.join(', ') : names.slice(0, 5).join(', ') + ` + ${names.length - 5} more`;
     document.getElementById('station-trend-subtitle').textContent = preview;
@@ -1953,24 +2008,43 @@ function viewSelectedTrend() {
 }
 
 async function viewAllResultsTrend() {
-    const btn = document.getElementById('search-view-all-trend-btn');
-    btn.disabled = true;
-    btn.textContent = '⏳ Loading all results…';
-    try {
-        const data = await apiFetch(buildSearchUrl(10000, 0));
-        const ids = data.results.map(r => r.node_id);
-        if (!ids.length) return;
+    // Capture search filters to pass directly to the history endpoint
+    const searchFilters = {};
+    const brand = document.getElementById('search-brand').value;
+    const city = document.getElementById('search-city').value;
+    const postcode = document.getElementById('search-postcode').value;
+    const category = getSelectedCategories();
+    const district = document.getElementById('search-district').value;
+    const constituency = document.getElementById('search-constituency').value;
+    const ruralUrban = getMultiSelectValues('search-rural-urban-ms');
+    const region = getMultiSelectValues('search-region-ms');
+    const country = getMultiSelectValues('search-country-ms');
+    const supermarket = document.getElementById('search-supermarket').checked;
+    const motorway = document.getElementById('search-motorway').checked;
+    const excludeOutliers = document.getElementById('search-exclude-outliers').checked;
 
-        stationTrendState = { mode: 'multi', nodeId: null, nodeIds: ids, title: `${ids.length} stations` };
-        initStationTrendFuels();
-        document.getElementById('station-trend-title').textContent = `Average trend for all ${ids.length} search results`;
-        document.getElementById('station-trend-subtitle').textContent = 'Based on current search filters';
-        showStationTrendPanel();
-        setStationTrendRange('30');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = `📈 View trend for all ${searchState.total?.toLocaleString() || ''} results`;
-    }
+    if (brand) searchFilters.brand = brand;
+    if (city) searchFilters.city = city;
+    if (postcode) searchFilters.postcode = postcode;
+    if (category) searchFilters.category = category;
+    if (district) searchFilters.district = district;
+    if (constituency) searchFilters.constituency = constituency;
+    if (ruralUrban) searchFilters.rural_urban = ruralUrban;
+    if (region) searchFilters.region = region;
+    if (country) searchFilters.country = country;
+    if (supermarket) searchFilters.supermarket_only = true;
+    if (motorway) searchFilters.motorway_only = true;
+    if (excludeOutliers) searchFilters.exclude_outliers = true;
+
+    const total = searchState.total || 0;
+    stationTrendState = { mode: 'search', nodeId: null, nodeIds: null, searchFilters, title: `${total} stations` };
+    initStationTrendFuels();
+    document.getElementById('st-range').value = '30';
+    document.getElementById('st-granularity').value = 'auto';
+    document.getElementById('station-trend-title').textContent = `Average trend for all ${total.toLocaleString()} search results`;
+    document.getElementById('station-trend-subtitle').textContent = 'Based on current search filters';
+    showStationTrendPanel();
+    setStationTrendRange('30');
 }
 
 function setStationTrendRange(value) {
@@ -1997,9 +2071,30 @@ async function loadStationTrend() {
     const endDate = document.getElementById('st-end').value;
     const gran = document.getElementById('st-granularity').value;
 
+    // Show loading state
+    document.getElementById('st-trend-heading').textContent = 'Loading…';
+    document.getElementById('st-granularity-note').textContent = '';
+    if (charts['chart-station-trend']) { charts['chart-station-trend'].destroy(); delete charts['chart-station-trend']; }
+
     let url;
     if (stationTrendState.mode === 'single') {
         url = `/prices/station/${encodeURIComponent(stationTrendState.nodeId)}/history?fuel_type=${fuel}`;
+    } else if (stationTrendState.mode === 'search') {
+        // Pass search filters directly — much faster than sending thousands of node_ids
+        url = `/prices/history?fuel_type=${fuel}`;
+        const sf = stationTrendState.searchFilters;
+        if (sf.brand) url += `&brand=${encodeURIComponent(sf.brand)}`;
+        if (sf.city) url += `&city=${encodeURIComponent(sf.city)}`;
+        if (sf.postcode) url += `&postcode=${encodeURIComponent(sf.postcode)}`;
+        if (sf.category) url += `&category=${encodeURIComponent(sf.category)}`;
+        if (sf.district) url += `&district=${encodeURIComponent(sf.district)}`;
+        if (sf.constituency) url += `&constituency=${encodeURIComponent(sf.constituency)}`;
+        if (sf.rural_urban) url += `&rural_urban=${encodeURIComponent(sf.rural_urban)}`;
+        if (sf.region) url += `&region=${encodeURIComponent(sf.region)}`;
+        if (sf.country) url += `&country=${encodeURIComponent(sf.country)}`;
+        if (sf.supermarket_only) url += '&supermarket_only=true';
+        if (sf.motorway_only) url += '&motorway_only=true';
+        if (sf.exclude_outliers) url += '&exclude_outliers=true';
     } else {
         const ids = stationTrendState.nodeIds.join(',');
         url = `/prices/history?fuel_type=${fuel}&node_ids=${encodeURIComponent(ids)}`;
