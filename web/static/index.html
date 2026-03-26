@@ -205,6 +205,21 @@
         }
         #logout-btn:hover { border-color: #aaa; color: #fff; }
 
+        /* Download buttons */
+        .download-btns {
+            display: inline-flex; gap: 0.4rem; margin-left: auto;
+        }
+        .download-btns button {
+            padding: 0.35rem 0.75rem; border: 1px solid var(--border);
+            border-radius: 5px; background: var(--card-bg); cursor: pointer;
+            font-size: 0.8rem; color: var(--muted); font-weight: 500;
+        }
+        .download-btns button:hover { background: var(--bg); color: var(--text); }
+        .download-btns button:disabled { opacity: 0.4; cursor: default; }
+        .controls-row {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem;
+        }
+
         @media (max-width: 768px) {
             .chart-row { grid-template-columns: 1fr; }
             main { padding: 1rem; }
@@ -327,6 +342,10 @@
                 <label><input type="checkbox" id="map-exclude-outliers" checked> Exclude outliers</label>
             </div>
             <button class="primary" onclick="loadMapPrices()">Update map</button>
+            <div class="download-btns" id="map-download-btns">
+                <button onclick="downloadMapData('csv')" disabled id="map-dl-csv">⬇ CSV</button>
+                <button onclick="downloadMapData('json')" disabled id="map-dl-json">⬇ JSON</button>
+            </div>
         </div>
         <div id="map">
             <div class="map-loading" id="map-loading">Loading stations…</div>
@@ -374,6 +393,10 @@
                 </select>
             </div>
             <button class="primary" onclick="loadTrends()">Update</button>
+            <div class="download-btns" id="trend-download-btns">
+                <button onclick="downloadTrendData('csv')" disabled id="trend-dl-csv">⬇ CSV</button>
+                <button onclick="downloadTrendData('json')" disabled id="trend-dl-json">⬇ JSON</button>
+            </div>
         </div>
         <div class="chart-container">
             <h3 id="trend-heading">Average price</h3>
@@ -490,6 +513,10 @@
             </div>
             <div class="filter-group" style="border-top: none; padding-top: 0;">
                 <button class="primary" onclick="doSearch()">Search</button>
+                <div class="download-btns" id="search-download-btns">
+                    <button onclick="downloadSearchData('csv')" disabled id="search-dl-csv">⬇ CSV</button>
+                    <button onclick="downloadSearchData('json')" disabled id="search-dl-json">⬇ JSON</button>
+                </div>
             </div>
         </div>
         <div class="table-wrap">
@@ -1030,6 +1057,42 @@ function categoryTag(type) {
     return `<span class="category-tag ${cls}">${escHtml(type) || 'Independent'}</span>`;
 }
 
+// ---------------------------------------------------------------------------
+// Download helpers (CSV / JSON)
+// ---------------------------------------------------------------------------
+function toCsv(rows) {
+    if (!rows.length) return '';
+    const keys = Object.keys(rows[0]);
+    const escape = v => {
+        if (v == null) return '';
+        const s = String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n')
+            ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    return [keys.join(','), ...rows.map(r => keys.map(k => escape(r[k])).join(','))].join('\n');
+}
+
+function triggerDownload(content, filename, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function downloadFile(rows, baseName, format) {
+    if (!rows || !rows.length) return;
+    if (format === 'csv') {
+        triggerDownload(toCsv(rows), baseName + '.csv', 'text/csv');
+    } else {
+        triggerDownload(JSON.stringify(rows, null, 2), baseName + '.json', 'application/json');
+    }
+}
+
 const COLOURS = [
     '#1d70b8','#d4351c','#00703c','#f47738','#5694ca',
     '#912b88','#28a197','#b58840','#505a5f','#4c2c92',
@@ -1411,6 +1474,11 @@ function renderBarChart(canvasId, labels, values, label, colour) {
 // Map
 // ---------------------------------------------------------------------------
 let map, mapLayer, mapLegend;
+let lastMapData = [];
+let lastTrendData = [];
+
+function downloadMapData(fmt) { downloadFile(lastMapData, 'fuel-map-data', fmt); }
+function downloadTrendData(fmt) { downloadFile(lastTrendData, 'fuel-trend-data', fmt); }
 
 function initMap() {
     map = L.map('map').setView([53.5, -1.5], 6);
@@ -1442,6 +1510,10 @@ async function loadMapPrices() {
     const data = await apiFetch(url);
 
     loading.style.display = 'none';
+
+    lastMapData = data;
+    document.getElementById('map-dl-csv').disabled = !data.length;
+    document.getElementById('map-dl-json').disabled = !data.length;
 
     if (mapLayer) map.removeLayer(mapLayer);
     if (mapLegend) map.removeControl(mapLegend);
@@ -1538,6 +1610,9 @@ async function loadTrends() {
     if (region) url += `&region=${encodeURIComponent(region)}`;
     const resp = await apiFetch(url);
     const data = resp.data;
+    lastTrendData = data;
+    document.getElementById('trend-dl-csv').disabled = !data.length;
+    document.getElementById('trend-dl-json').disabled = !data.length;
     const hourly = resp.granularity === 'hourly';
     document.getElementById('trend-heading').textContent =
         hourly ? 'Hourly average price' : 'Daily average price';
@@ -1636,39 +1711,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function doSearch(offset = 0) {
-    const fuel = document.getElementById('search-fuel').value;
-    const postcode = document.getElementById('search-postcode').value;
-    const brand = document.getElementById('search-brand').value;
-    const city = document.getElementById('search-city').value;
-    const minP = document.getElementById('search-min').value;
-    const maxP = document.getElementById('search-max').value;
-    const supermarket = document.getElementById('search-supermarket').checked;
-    const motorway = document.getElementById('search-motorway').checked;
-    const excludeOutliers = document.getElementById('search-exclude-outliers').checked;
-    const category = getSelectedCategories();
-    const district = document.getElementById('search-district').value;
-    const constituency = document.getElementById('search-constituency').value;
-    const ruralUrban = getMultiSelectValues('search-rural-urban-ms');
-    const region = getMultiSelectValues('search-region-ms');
-    const country = getMultiSelectValues('search-country-ms');
-
-    let url = `/prices/search?fuel_type=${fuel}&limit=50&offset=${offset}`;
-    if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
-    if (brand) url += `&brand=${encodeURIComponent(brand)}`;
-    if (city) url += `&city=${encodeURIComponent(city)}`;
-    if (minP) url += `&min_price=${minP}`;
-    if (maxP) url += `&max_price=${maxP}`;
-    if (supermarket) url += '&supermarket_only=true';
-    if (motorway) url += '&motorway_only=true';
-    if (excludeOutliers) url += '&exclude_outliers=true';
-    if (category) url += `&category=${encodeURIComponent(category)}`;
-    if (district) url += `&district=${encodeURIComponent(district)}`;
-    if (constituency) url += `&constituency=${encodeURIComponent(constituency)}`;
-    if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
-    if (region) url += `&region=${encodeURIComponent(region)}`;
-    if (country) url += `&country=${encodeURIComponent(country)}`;
-
-    const data = await apiFetch(url);
+    const data = await apiFetch(buildSearchUrl(50, offset));
     searchState = { offset, total: data.total };
 
     const body = document.getElementById('search-body');
@@ -1695,6 +1738,57 @@ async function doSearch(offset = 0) {
         <span class="info">Page ${page} of ${pages} (${data.total.toLocaleString()} results)</span>
         <button ${offset + 50 >= data.total ? 'disabled' : ''} onclick="doSearch(${offset + 50})">Next →</button>
     `;
+
+    document.getElementById('search-dl-csv').disabled = !data.total;
+    document.getElementById('search-dl-json').disabled = !data.total;
+}
+
+function buildSearchUrl(limit, offset) {
+    const fuel = document.getElementById('search-fuel').value;
+    const postcode = document.getElementById('search-postcode').value;
+    const brand = document.getElementById('search-brand').value;
+    const city = document.getElementById('search-city').value;
+    const minP = document.getElementById('search-min').value;
+    const maxP = document.getElementById('search-max').value;
+    const supermarket = document.getElementById('search-supermarket').checked;
+    const motorway = document.getElementById('search-motorway').checked;
+    const excludeOutliers = document.getElementById('search-exclude-outliers').checked;
+    const category = getSelectedCategories();
+    const district = document.getElementById('search-district').value;
+    const constituency = document.getElementById('search-constituency').value;
+    const ruralUrban = getMultiSelectValues('search-rural-urban-ms');
+    const region = getMultiSelectValues('search-region-ms');
+    const country = getMultiSelectValues('search-country-ms');
+
+    let url = `/prices/search?fuel_type=${fuel}&limit=${limit}&offset=${offset}`;
+    if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
+    if (brand) url += `&brand=${encodeURIComponent(brand)}`;
+    if (city) url += `&city=${encodeURIComponent(city)}`;
+    if (minP) url += `&min_price=${minP}`;
+    if (maxP) url += `&max_price=${maxP}`;
+    if (supermarket) url += '&supermarket_only=true';
+    if (motorway) url += '&motorway_only=true';
+    if (excludeOutliers) url += '&exclude_outliers=true';
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    if (district) url += `&district=${encodeURIComponent(district)}`;
+    if (constituency) url += `&constituency=${encodeURIComponent(constituency)}`;
+    if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
+    if (region) url += `&region=${encodeURIComponent(region)}`;
+    if (country) url += `&country=${encodeURIComponent(country)}`;
+    return url;
+}
+
+async function downloadSearchData(fmt) {
+    const btn = document.getElementById('search-dl-' + fmt);
+    btn.disabled = true;
+    btn.textContent = '⏳ ' + fmt.toUpperCase();
+    try {
+        const data = await apiFetch(buildSearchUrl(10000, 0));
+        downloadFile(data.results, 'fuel-search-results', fmt);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⬇ ' + fmt.toUpperCase();
+    }
 }
 
 // ---------------------------------------------------------------------------

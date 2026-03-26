@@ -460,7 +460,7 @@ def price_search(
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
     sort: str = Query("price"),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(50, ge=1),
     offset: int = Query(0, ge=0),
     db=Depends(get_db),
     _auth=Depends(require_auth),
