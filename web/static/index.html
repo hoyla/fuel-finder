@@ -767,7 +767,7 @@
         <div class="controls">
             <div class="control">
                 <label>Email</label>
-                <input id="new-user-email" type="email" placeholder="user@example.com" />
+                <input id="new-user-email" type="email" placeholder="user@example.com" style="min-width:20rem" />
             </div>
             <div class="control" style="display:flex;align-items:end;gap:0.5rem;">
                 <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
@@ -2100,21 +2100,25 @@ async function loadUsers() {
     body.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
     try {
         const users = await apiFetch('/admin/users');
-        body.innerHTML = users.length ? users.map(u => `<tr>
+        const adminCount = users.filter(u => u.groups.includes('admin')).length;
+        body.innerHTML = users.length ? users.map(u => {
+            const isLastAdmin = u.groups.includes('admin') && adminCount === 1;
+            return `<tr>
             <td>${escHtml(u.email)}</td>
             <td>${escHtml(u.status)}${u.enabled ? '' : ' <span style="color:var(--red)">(disabled)</span>'}</td>
             <td>${u.groups.map(g => `<span class="tag">${escHtml(g)}</span>`).join(' ') || '—'}</td>
             <td>${new Date(u.created).toLocaleDateString()}</td>
             <td style="white-space:nowrap">
                 ${u.groups.includes('admin')
-                    ? `<button class="btn-delete" onclick="toggleGroup('${escHtml(u.username)}','admin',false)">Remove admin</button>`
+                    ? `<button class="btn-delete" onclick="toggleGroup('${escHtml(u.username)}','admin',false)"${isLastAdmin ? ' disabled title="Cannot demote the only admin"' : ''}>Remove admin</button>`
                     : `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="toggleGroup('${escHtml(u.username)}','admin',true)">Make admin</button>`}
                 ${u.enabled
-                    ? `<button class="btn-delete" onclick="toggleUser('${escHtml(u.username)}',false)">Disable</button>`
+                    ? `<button class="btn-delete" onclick="toggleUser('${escHtml(u.username)}',false)"${isLastAdmin ? ' disabled title="Cannot disable the only admin"' : ''}>Disable</button>`
                     : `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="toggleUser('${escHtml(u.username)}',true)">Enable</button>`}
-                <button class="btn-delete" onclick="deleteUser('${escHtml(u.username)}','${escHtml(u.email)}')">Delete</button>
+                <button class="btn-delete" onclick="deleteUser('${escHtml(u.username)}','${escHtml(u.email)}')"${isLastAdmin ? ' disabled title="Cannot delete the only admin"' : ''}>Delete</button>
             </td>
-        </tr>`).join('') : '<tr><td colspan="5">No users found</td></tr>';
+        </tr>`;
+        }).join('') : '<tr><td colspan="5">No users found</td></tr>';
     } catch (e) {
         body.innerHTML = `<tr><td colspan="5" style="color:var(--red)">${escHtml(e.message)}</td></tr>`;
     }
