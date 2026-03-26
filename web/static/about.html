@@ -97,7 +97,7 @@
 <main>
     <h2>How it works</h2>
 
-    <p>This tool scrapes the <a href="https://www.developer.fuel-finder.service.gov.uk/">GOV.UK Fuel Finder API</a> — the same data source behind the government's consumer fuel price finder — and stores it in a PostgreSQL database to build a <strong>historical price record</strong> that the API itself doesn't provide.</p>
+    <p>This tool gathers data from the government's <a href="https://www.find-fuel-prices.service.gov.uk/">consumer fuel price finder</a> — and stores it in a PostgreSQL database to build a <strong>historical price record</strong> that the API itself doesn't provide.</p>
 
     <p>The GOV.UK API only serves <strong>live snapshots</strong>: current prices at the time of the request. There is no way to retrieve yesterday's prices or see how prices have changed over time. By scraping regularly and storing every price change, we build a time-series dataset that enables trend analysis, regional comparisons, and anomaly detection.</p>
 
@@ -136,7 +136,8 @@ Fuel Finder API (GOV.UK)
 │  4. Insert prices   │  Append-only, deduplicated
 │  5. Detect anomalies│  Flag suspicious prices (not filter)
 │  6. Refresh view    │  Rebuild current_prices snapshot
-│  7. Backup to S3    │  Raw JSON (optional)
+│  7. Enrich postcodes│  Lookup new postcodes via postcodes.io
+│  8. Backup to S3    │  Raw JSON (optional)
 └─────────┬───────────┘
           │
           ▼
@@ -147,8 +148,11 @@ Fuel Finder API (GOV.UK)
 │  fuel_prices        │  append-only price change events
 │  brand_aliases      │  raw → canonical brand mapping
 │  brand_categories   │  brand → forecourt type
+│  station_brand_overrides │  per-station brand corrections
+│  fuel_type_labels   │  fuel code → human name
 │  postcode_regions   │  postcode → ONS region
 │  postcode_lookups   │  postcodes.io enrichment cache
+│  scrape_runs        │  scrape execution history
 │  current_prices     │  materialised view (live snapshot)
 └─────────────────────┘
 </pre>
