@@ -200,6 +200,7 @@
     <div class="tab" data-panel="search">Search</div>
     <div class="tab" data-panel="anomalies">Anomalies</div>
     <div class="tab" data-panel="data">Data Cleanup</div>
+    <div class="tab" data-panel="users">Users</div>
 </div>
 
 <main>
@@ -544,6 +545,33 @@
             </div>
         </div>
     </div>
+
+    <!-- ============ USERS ============ -->
+    <div class="panel" id="panel-users">
+        <div class="controls">
+            <div class="control">
+                <label>Email</label>
+                <input id="new-user-email" type="email" placeholder="user@example.com" />
+            </div>
+            <div class="control" style="display:flex;align-items:end;gap:0.5rem;">
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                    <input type="checkbox" id="new-user-admin"> Admin
+                </label>
+            </div>
+            <button class="primary" onclick="createUser()">Create User</button>
+        </div>
+        <div id="user-status" class="status-msg"></div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Email</th><th>Status</th><th>Groups</th><th>Created</th><th></th>
+                    </tr>
+                </thead>
+                <tbody id="users-body"></tbody>
+            </table>
+        </div>
+    </div>
 </main>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -756,6 +784,7 @@ tabs.forEach(t => t.addEventListener('click', () => {
         if (id === 'trends') loadTrends();
         if (id === 'anomalies') loadAnomalies();
         if (id === 'data') loadReport();
+        if (id === 'users') loadUsers();
     }
 }));
 
@@ -1399,6 +1428,66 @@ async function fixPostcodeCoords(postcode, apiLat, apiLon) {
     } catch (e) {
         alert('Error: ' + e.message);
     }
+}
+
+// ---------------------------------------------------------------------------
+// User management
+// ---------------------------------------------------------------------------
+async function loadUsers() {
+    const body = document.getElementById('users-body');
+    body.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+    try {
+        const users = await apiFetch('/admin/users');
+        body.innerHTML = users.length ? users.map(u => `<tr>
+            <td>${escHtml(u.email)}</td>
+            <td>${escHtml(u.status)}${u.enabled ? '' : ' <span style="color:var(--red)">(disabled)</span>'}</td>
+            <td>${u.groups.map(g => `<span class="tag">${escHtml(g)}</span>`).join(' ') || '—'}</td>
+            <td>${new Date(u.created).toLocaleDateString()}</td>
+            <td style="white-space:nowrap">
+                ${u.groups.includes('admin')
+                    ? `<button class="btn-delete" onclick="toggleGroup('${escHtml(u.username)}','admin',false)">Remove admin</button>`
+                    : `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="toggleGroup('${escHtml(u.username)}','admin',true)">Make admin</button>`}
+                ${u.enabled
+                    ? `<button class="btn-delete" onclick="toggleUser('${escHtml(u.username)}',false)">Disable</button>`
+                    : `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="toggleUser('${escHtml(u.username)}',true)">Enable</button>`}
+            </td>
+        </tr>`).join('') : '<tr><td colspan="5">No users found</td></tr>';
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="5" style="color:var(--red)">${escHtml(e.message)}</td></tr>`;
+    }
+}
+
+async function createUser() {
+    const email = document.getElementById('new-user-email').value.trim();
+    const admin = document.getElementById('new-user-admin').checked;
+    const status = document.getElementById('user-status');
+    if (!email) { alert('Email is required'); return; }
+    try {
+        await apiPost('/admin/users', { email, admin });
+        status.className = 'status-msg success';
+        status.textContent = `User ${email} created. They will receive an email with a temporary password.`;
+        document.getElementById('new-user-email').value = '';
+        document.getElementById('new-user-admin').checked = false;
+        await loadUsers();
+    } catch (e) {
+        status.className = 'status-msg error';
+        status.textContent = e.message;
+    }
+}
+
+async function toggleGroup(username, group, add) {
+    try {
+        if (add) await apiPost(`/admin/users/${encodeURIComponent(username)}/groups/${encodeURIComponent(group)}`, {});
+        else await apiDelete(`/admin/users/${encodeURIComponent(username)}/groups/${encodeURIComponent(group)}`);
+        await loadUsers();
+    } catch (e) { alert(e.message); }
+}
+
+async function toggleUser(username, enable) {
+    try {
+        await apiPost(`/admin/users/${encodeURIComponent(username)}/${enable ? 'enable' : 'disable'}`, {});
+        await loadUsers();
+    } catch (e) { alert(e.message); }
 }
 
 // ---------------------------------------------------------------------------

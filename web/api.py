@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
+import boto3
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from psycopg2.pool import SimpleConnectionPool
@@ -838,6 +839,109 @@ def refresh_view(db=Depends(get_db), _auth=Depends(require_admin)):
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
         db.commit()
     return {"status": "ok", "message": "current_prices view refreshed"}
+
+
+# ---------------------------------------------------------------------------
+# User management (Cognito)
+# ---------------------------------------------------------------------------
+
+def _cognito_client():
+    region = os.environ.get("COGNITO_REGION", os.environ.get("AWS_REGION", "eu-north-1"))
+    return boto3.client("cognito-idp", region_name=region)
+
+
+def _pool_id():
+    return os.environ.get("COGNITO_USER_POOL_ID", "")
+
+
+class CreateUserBody(BaseModel):
+    email: str
+    admin: bool = False
+
+
+@app.get("/api/admin/users")
+def list_users(_auth=Depends(require_admin)):
+    """List all Cognito users and their group memberships."""
+    client = _cognito_client()
+    pool = _pool_id()
+    users = []
+    paginator = client.get_paginator("list_users")
+    for page in paginator.paginate(UserPoolId=pool):
+        for u in page["Users"]:
+            attrs = {a["Name"]: a["Value"] for a in u.get("Attributes", [])}
+            groups_resp = client.admin_list_groups_for_user(
+                Username=u["Username"], UserPoolId=pool
+            )
+            groups = [g["GroupName"] for g in groups_resp.get("Groups", [])]
+            users.append({
+                "username": u["Username"],
+                "email": attrs.get("email", ""),
+                "status": u["UserStatus"],
+                "enabled": u["Enabled"],
+                "groups": groups,
+                "created": u["UserCreateDate"].isoformat(),
+            })
+    return users
+
+
+@app.post("/api/admin/users")
+def create_user(body: CreateUserBody, _auth=Depends(require_admin)):
+    """Create a new Cognito user (sends invitation email)."""
+    client = _cognito_client()
+    pool = _pool_id()
+    email = body.email.strip().lower()
+    if not email:
+        raise HTTPException(400, "email is required")
+    try:
+        resp = client.admin_create_user(
+            UserPoolId=pool,
+            Username=email,
+            UserAttributes=[{"Name": "email", "Value": email}, {"Name": "email_verified", "Value": "true"}],
+            DesiredDeliveryMediums=["EMAIL"],
+        )
+    except client.exceptions.UsernameExistsException:
+        raise HTTPException(409, f"User {email} already exists")
+    if body.admin:
+        client.admin_add_user_to_group(
+            UserPoolId=pool, Username=email, GroupName="admin"
+        )
+    return {"username": email, "status": resp["User"]["UserStatus"]}
+
+
+@app.post("/api/admin/users/{username}/groups/{group}")
+def add_user_to_group(username: str, group: str, _auth=Depends(require_admin)):
+    """Add a user to a Cognito group."""
+    client = _cognito_client()
+    client.admin_add_user_to_group(
+        UserPoolId=_pool_id(), Username=username, GroupName=group
+    )
+    return {"status": "ok"}
+
+
+@app.delete("/api/admin/users/{username}/groups/{group}")
+def remove_user_from_group(username: str, group: str, _auth=Depends(require_admin)):
+    """Remove a user from a Cognito group."""
+    client = _cognito_client()
+    client.admin_remove_user_from_group(
+        UserPoolId=_pool_id(), Username=username, GroupName=group
+    )
+    return {"status": "ok"}
+
+
+@app.post("/api/admin/users/{username}/disable")
+def disable_user(username: str, _auth=Depends(require_admin)):
+    """Disable a Cognito user account."""
+    client = _cognito_client()
+    client.admin_disable_user(UserPoolId=_pool_id(), Username=username)
+    return {"status": "ok"}
+
+
+@app.post("/api/admin/users/{username}/enable")
+def enable_user(username: str, _auth=Depends(require_admin)):
+    """Re-enable a disabled Cognito user account."""
+    client = _cognito_client()
+    client.admin_enable_user(UserPoolId=_pool_id(), Username=username)
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
