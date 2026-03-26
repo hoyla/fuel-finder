@@ -127,10 +127,11 @@ def summary(db=Depends(get_db), _auth=Depends(require_auth)):
             SELECT
                 fuel_type,
                 fuel_name,
-                ROUND(AVG(price)::numeric, 1) AS avg_price,
-                MIN(price) AS min_price,
-                MAX(price) AS max_price,
-                COUNT(*) AS station_count
+                ROUND(AVG(price) FILTER (WHERE NOT price_is_outlier)::numeric, 1) AS avg_price,
+                MIN(price) FILTER (WHERE NOT price_is_outlier) AS min_price,
+                MAX(price) FILTER (WHERE NOT price_is_outlier) AS max_price,
+                COUNT(*) FILTER (WHERE NOT price_is_outlier) AS station_count,
+                COUNT(*) FILTER (WHERE price_is_outlier) AS outliers_excluded
             FROM current_prices
             WHERE NOT temporary_closure
             GROUP BY fuel_type, fuel_name
@@ -179,6 +180,7 @@ def prices_by_region(
             WHERE fuel_type = %s
               AND region IS NOT NULL
               AND NOT temporary_closure
+              AND NOT price_is_outlier
             GROUP BY region
             ORDER BY avg_price DESC
         """, (fuel_type,))
@@ -205,6 +207,7 @@ def prices_by_brand(
             WHERE fuel_type = %s
               AND brand_name IS NOT NULL
               AND NOT temporary_closure
+              AND NOT price_is_outlier
             GROUP BY brand_name, forecourt_type
             HAVING COUNT(*) >= 3
             ORDER BY avg_price
@@ -230,6 +233,7 @@ def prices_by_category(
             FROM current_prices
             WHERE fuel_type = %s
               AND NOT temporary_closure
+              AND NOT price_is_outlier
             GROUP BY forecourt_type
             ORDER BY avg_price
         """, (fuel_type,))
@@ -244,10 +248,26 @@ def price_history(
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
-    """Daily average price over time, optionally filtered by region."""
+    """Daily average price over time, optionally filtered by region.
+
+    Excludes anomaly-flagged records and IQR-based statistical outliers.
+    """
+    # CTE to compute IQR fences per fuel type from recent non-anomalous data
+    bounds_cte = """
+        WITH bounds AS (
+            SELECT fuel_type,
+                   PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price) AS q1,
+                   PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price) AS q3
+            FROM fuel_prices
+            WHERE fuel_type = %s
+              AND anomaly_flags IS NULL
+              AND observed_at >= NOW() - make_interval(days => %s)
+            GROUP BY fuel_type
+        )
+    """
     with db.cursor() as cur:
         if region:
-            cur.execute("""
+            cur.execute(bounds_cte + """
                 SELECT DATE(fp.observed_at) AS day,
                        ROUND(AVG(fp.price)::numeric, 1) AS avg_price,
                        COUNT(DISTINCT fp.node_id) AS stations
@@ -257,25 +277,31 @@ def price_history(
                     CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{2}$'
                          THEN LEFT(s.postcode, 2) ELSE LEFT(s.postcode, 1) END
                 )
+                LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
                 WHERE fp.fuel_type = %s
                   AND fp.observed_at >= NOW() - make_interval(days => %s)
                   AND pr.region = %s
                   AND fp.anomaly_flags IS NULL
+                  AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
+                  AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
                 GROUP BY DATE(fp.observed_at)
                 ORDER BY day
-            """, (fuel_type, days, region))
+            """, (fuel_type, days, fuel_type, days, region))
         else:
-            cur.execute("""
+            cur.execute(bounds_cte + """
                 SELECT DATE(fp.observed_at) AS day,
                        ROUND(AVG(fp.price)::numeric, 1) AS avg_price,
                        COUNT(DISTINCT fp.node_id) AS stations
                 FROM fuel_prices fp
+                LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
                 WHERE fp.fuel_type = %s
                   AND fp.observed_at >= NOW() - make_interval(days => %s)
                   AND fp.anomaly_flags IS NULL
+                  AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
+                  AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
                 GROUP BY DATE(fp.observed_at)
                 ORDER BY day
-            """, (fuel_type, days))
+            """, (fuel_type, days, fuel_type, days))
         return cur.fetchall()
 
 
@@ -503,6 +529,7 @@ def prices_by_district(
             WHERE fuel_type = %s
               AND admin_district IS NOT NULL
               AND NOT temporary_closure
+              AND NOT price_is_outlier
             GROUP BY admin_district
             HAVING COUNT(*) >= 3
             ORDER BY avg_price DESC
@@ -529,6 +556,7 @@ def prices_by_rural_urban(
             WHERE fuel_type = %s
               AND rural_urban IS NOT NULL
               AND NOT temporary_closure
+              AND NOT price_is_outlier
             GROUP BY rural_urban
             ORDER BY avg_price DESC
         """, (fuel_type,))
@@ -554,6 +582,7 @@ def prices_by_constituency(
             WHERE fuel_type = %s
               AND parliamentary_constituency IS NOT NULL
               AND NOT temporary_closure
+              AND NOT price_is_outlier
             GROUP BY parliamentary_constituency
             HAVING COUNT(*) >= 2
             ORDER BY avg_price DESC
@@ -839,6 +868,69 @@ def refresh_view(db=Depends(get_db), _auth=Depends(require_admin)):
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
         db.commit()
     return {"status": "ok", "message": "current_prices view refreshed"}
+
+
+@app.get("/api/outliers")
+def outliers(
+    fuel_type: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Prices excluded as statistical outliers, with IQR bounds for context.
+
+    Returns the outlier records alongside the IQR fence values that caused
+    exclusion, so users can verify the methodology.
+    """
+    with db.cursor() as cur:
+        # Compute IQR bounds for context
+        cur.execute("""
+            SELECT fuel_type,
+                   ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)::numeric, 1) AS q1,
+                   ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)::numeric, 1) AS q3,
+                   ROUND((PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+                        - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price))::numeric, 1) AS iqr,
+                   ROUND((PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)
+                        - 1.5 * (PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+                        - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)))::numeric, 1) AS lower_fence,
+                   ROUND((PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+                        + 1.5 * (PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+                        - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)))::numeric, 1) AS upper_fence,
+                   COUNT(*) AS total_stations
+            FROM current_prices
+            WHERE NOT temporary_closure
+              AND NOT price_is_outlier
+            GROUP BY fuel_type
+            ORDER BY fuel_type
+        """)
+        bounds = {r["fuel_type"]: r for r in cur.fetchall()}
+
+        conditions = ["price_is_outlier", "NOT temporary_closure"]
+        params: list = []
+        if fuel_type:
+            conditions.append("fuel_type = %s")
+            params.append(fuel_type)
+
+        where = " AND ".join(conditions)
+        cur.execute(f"""
+            SELECT node_id, trading_name, city, postcode, fuel_type, fuel_name,
+                   price, brand_name, forecourt_type, anomaly_flags, observed_at,
+                   CASE
+                       WHEN anomaly_flags IS NOT NULL THEN 'anomaly_flagged'
+                       ELSE 'iqr_outlier'
+                   END AS exclusion_reason
+            FROM current_prices
+            WHERE {where}
+            ORDER BY fuel_type, price
+            LIMIT %s
+        """, params + [limit])
+        rows = cur.fetchall()
+
+    return {
+        "bounds": bounds,
+        "outliers": rows,
+        "total": len(rows),
+    }
 
 
 # ---------------------------------------------------------------------------

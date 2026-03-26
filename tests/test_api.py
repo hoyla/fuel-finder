@@ -61,6 +61,12 @@ class TestSummary:
         assert "min_price" in ft
         assert "station_count" in ft
 
+    def test_outliers_excluded_field(self, client, has_data):
+        data = client.get("/api/summary").json()
+        ft = data["by_fuel_type"][0]
+        assert "outliers_excluded" in ft
+        assert isinstance(ft["outliers_excluded"], int)
+
 
 class TestPricesByRegion:
     def test_returns_200(self, client, has_data):
@@ -196,6 +202,36 @@ class TestAnomalies:
     def test_respects_limit(self, client):
         data = client.get("/api/anomalies?limit=5").json()
         assert len(data) <= 5
+
+
+class TestOutliers:
+    def test_returns_200(self, client, has_data):
+        r = client.get("/api/outliers")
+        assert r.status_code == 200
+
+    def test_has_bounds_and_outliers(self, client, has_data):
+        data = client.get("/api/outliers").json()
+        assert "bounds" in data
+        assert "outliers" in data
+        assert isinstance(data["bounds"], dict)
+        assert isinstance(data["outliers"], list)
+
+    def test_bounds_have_iqr_fields(self, client, has_data):
+        data = client.get("/api/outliers").json()
+        if data["bounds"]:
+            b = next(iter(data["bounds"].values()))
+            for field in ("q1", "q3", "iqr", "lower_fence", "upper_fence"):
+                assert field in b
+
+    def test_fuel_type_filter(self, client, has_data):
+        data = client.get("/api/outliers?fuel_type=E10").json()
+        for r in data["outliers"]:
+            assert r["fuel_type"] == "E10"
+
+    def test_outlier_has_exclusion_reason(self, client, has_data):
+        data = client.get("/api/outliers?limit=5").json()
+        for r in data["outliers"]:
+            assert r["exclusion_reason"] in ("anomaly_flagged", "iqr_outlier")
 
 
 class TestStaticFiles:

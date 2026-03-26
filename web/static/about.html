@@ -198,6 +198,30 @@ Fuel Finder API (GOV.UK)
         </tbody>
     </table>
 
+    <h3 id="outlier-methodology">Statistical outlier exclusion</h3>
+
+    <p>Anomaly flags catch the most obvious errors, but the GOV.UK source data is manually entered by fuel station operators and inevitably contains subtler mistakes — a station reporting 1.50 instead of 150.0 (pounds not pence), or a stale test price that slipped through. Even a few of these can skew averages noticeably.</p>
+
+    <p>To avoid misleading statistics, <strong>all averages shown on the dashboard exclude statistical outliers</strong>. We use the <strong>Tukey IQR (interquartile range) fence</strong> method — the same technique commonly used in box-plot charts:</p>
+
+    <ol>
+        <li>For each fuel type, compute <strong>Q1</strong> (25th percentile) and <strong>Q3</strong> (75th percentile) of all current non-anomalous prices</li>
+        <li>Calculate <strong>IQR = Q3 − Q1</strong> — the spread of the middle 50% of prices</li>
+        <li>Set fences at <strong>Q1 − 1.5 × IQR</strong> (lower) and <strong>Q3 + 1.5 × IQR</strong> (upper)</li>
+        <li>Any price outside these fences is marked as an outlier</li>
+    </ol>
+
+    <p>The 1.5 × IQR multiplier is the standard Tukey threshold (introduced in John Tukey's <em>Exploratory Data Analysis</em>, 1977). It identifies values that are far enough from the central distribution to be suspect, without being so aggressive that it trims legitimate price variation.</p>
+
+    <div class="card">
+        <strong>Transparency:</strong> Outlier prices are never deleted or modified. They are flagged
+        in the materialised view (<code>price_is_outlier = true</code>) and can be inspected on the
+        <a href="/">Anomalies → Statistical outliers</a> page, which shows the IQR bounds for each
+        fuel type and every excluded price with its exclusion reason.
+    </div>
+
+    <p>The fences are recomputed each time the materialised view is refreshed (after every scrape), so they adapt automatically as prices change over time.</p>
+
     <h2>Brand normalisation</h2>
 
     <p>The API provides brand names inconsistently — <code>ESSO</code>, <code>Esso</code>, <code>esso</code> all appear for the same company. Three layers of normalisation clean this up:</p>

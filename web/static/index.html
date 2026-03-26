@@ -207,6 +207,9 @@
     <!-- ============ DASHBOARD ============ -->
     <div class="panel active" id="panel-dashboard">
         <div class="cards" id="summary-cards"></div>
+        <p style="font-size:0.8rem;color:var(--muted);margin:0.25rem 0 1rem;">
+            Averages exclude statistical outliers (<a href="/docs/about#outlier-methodology" style="color:var(--accent);">IQR method</a>) and anomaly-flagged prices.
+        </p>
         <div class="chart-row">
             <div class="chart-container">
                 <h3>Average price by region – Unleaded (E10)</h3>
@@ -369,22 +372,81 @@
 
     <!-- ============ ANOMALIES ============ -->
     <div class="panel" id="panel-anomalies">
-        <p style="color: var(--text-light); margin-bottom: 1rem;">
-            Price records flagged as potentially anomalous. A larger gap between
-            the previous and current dates makes a bigger price change more plausible.
-        </p>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Station</th><th>City</th><th>Fuel</th>
-                        <th>Previous Price</th><th>Previous Date</th>
-                        <th>Current Price</th><th>Current Date</th>
-                        <th>Change</th><th>Flags</th>
-                    </tr>
-                </thead>
-                <tbody id="anomaly-body"></tbody>
-            </table>
+        <div class="controls" style="margin-bottom: 1rem;">
+            <div class="control">
+                <label>Section</label>
+                <select id="anomaly-section" onchange="switchAnomalySection()">
+                    <option value="flagged">Anomaly-flagged prices</option>
+                    <option value="outliers">Statistical outliers excluded from averages</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Sub-section: Anomaly-flagged -->
+        <div id="anomaly-flagged">
+            <p style="color:var(--muted);margin-bottom:1rem;">
+                Price records flagged as potentially anomalous by rule-based checks on insert.
+                A larger gap between the previous and current dates makes a bigger price change more plausible.
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Station</th><th>City</th><th>Fuel</th>
+                            <th>Previous Price</th><th>Previous Date</th>
+                            <th>Current Price</th><th>Current Date</th>
+                            <th>Change</th><th>Flags</th>
+                        </tr>
+                    </thead>
+                    <tbody id="anomaly-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sub-section: Statistical outliers -->
+        <div id="anomaly-outliers" style="display:none;">
+            <div class="card" style="margin-bottom:1.25rem;background:#f0f4f8;">
+                <h3 style="margin-bottom:0.5rem;font-size:1rem;">How outlier exclusion works</h3>
+                <p style="font-size:0.9rem;margin-bottom:0.5rem;">
+                    Averages on the dashboard exclude prices that fall far outside the normal range for each fuel type.
+                    We use the <strong>Tukey IQR (interquartile range) method</strong>, a standard statistical technique:
+                </p>
+                <ol style="font-size:0.9rem;margin:0.5rem 0 0.5rem 1.5rem;">
+                    <li>For each fuel type, compute Q1 (25th percentile) and Q3 (75th percentile) of current prices</li>
+                    <li>Calculate IQR = Q3 − Q1 (the middle 50% spread)</li>
+                    <li>Any price below <strong>Q1 − 1.5 × IQR</strong> or above <strong>Q3 + 1.5 × IQR</strong> is an outlier</li>
+                    <li>Prices already flagged by anomaly detection (above) are also excluded</li>
+                </ol>
+                <p style="font-size:0.9rem;margin-top:0.5rem;">
+                    This adapts automatically to the current price distribution — thresholds aren't hardcoded.
+                    Common reasons for outlier prices include decimal-point errors (e.g. 1.50 instead of 150.0),
+                    stations submitting prices in pounds instead of pence, and stale or test data.
+                    The outlier prices are <strong>never deleted</strong> — they remain in the database
+                    and are shown below for full transparency.
+                </p>
+            </div>
+
+            <div id="outlier-bounds" style="margin-bottom:1.25rem;"></div>
+
+            <div class="controls" style="margin-bottom:1rem;">
+                <div class="control">
+                    <label>Fuel type</label>
+                    <select id="outlier-fuel" onchange="loadOutliers()"></select>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Station</th><th>City</th><th>Postcode</th>
+                            <th>Brand</th><th>Fuel</th><th>Price</th>
+                            <th>Reason</th><th>Last Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="outlier-body"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -887,13 +949,36 @@ async function loadDashboard() {
         </div>
     `;
     data.by_fuel_type.forEach(ft => {
+        const outlierNote = ft.outliers_excluded > 0
+            ? ` · <a href="#" class="outlier-link" data-fuel="${ft.fuel_type}" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${ft.outliers_excluded} outlier${ft.outliers_excluded === 1 ? '' : 's'} excl.</a>`
+            : '';
         cards.innerHTML += `
             <div class="card">
                 <div class="label">${ft.fuel_name || ft.fuel_type}</div>
                 <div class="value">${ppl(ft.avg_price)}</div>
-                <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)} · ${ft.station_count} stations</div>
+                <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)} · ${ft.station_count} stations${outlierNote}</div>
             </div>
         `;
+    });
+
+    // Wire up outlier links to jump to the anomalies → outliers sub-section
+    document.querySelectorAll('.outlier-link').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            const fuel = link.dataset.fuel;
+            // Switch to anomalies tab
+            tabs.forEach(x => x.classList.remove('active'));
+            panels.forEach(x => x.classList.remove('active'));
+            document.querySelector('[data-panel="anomalies"]').classList.add('active');
+            document.getElementById('panel-anomalies').classList.add('active');
+            // Switch to outliers sub-section
+            document.getElementById('anomaly-section').value = 'outliers';
+            switchAnomalySection();
+            // Set fuel type and load
+            const sel = document.getElementById('outlier-fuel');
+            if (sel.querySelector(`option[value="${fuel}"]`)) sel.value = fuel;
+            loadOutliers();
+        });
     });
 
     // Region chart
@@ -1172,6 +1257,85 @@ async function loadAnomalies() {
             <td>${fmtDate(r.observed_at)}</td>
             <td style="${changeStyle}"><strong>${changeTxt}</strong></td>
             <td>${(r.anomaly_flags || []).map(f => `<span class="tag">${f}</span>`).join(' ')}</td>
+        </tr>`;
+    }).join('');
+}
+
+function switchAnomalySection() {
+    const active = document.getElementById('anomaly-section').value;
+    document.getElementById('anomaly-flagged').style.display = active === 'flagged' ? '' : 'none';
+    document.getElementById('anomaly-outliers').style.display = active === 'outliers' ? '' : 'none';
+    if (active === 'outliers' && !document.getElementById('outlier-fuel').options.length) {
+        initOutlierFuelSelect();
+    }
+}
+
+async function initOutlierFuelSelect() {
+    const fuelTypes = await apiFetch('/fuel-types');
+    const sel = document.getElementById('outlier-fuel');
+    sel.innerHTML = '<option value="">All fuel types</option>';
+    fuelTypes.forEach(ft => {
+        const o = document.createElement('option');
+        o.value = ft.fuel_type_code;
+        o.textContent = ft.fuel_name;
+        sel.appendChild(o);
+    });
+    loadOutliers();
+}
+
+async function loadOutliers() {
+    const fuel = document.getElementById('outlier-fuel').value;
+    const url = fuel ? `/outliers?fuel_type=${fuel}&limit=200` : '/outliers?limit=200';
+    const data = await apiFetch(url);
+
+    // Show IQR bounds summary
+    const boundsDiv = document.getElementById('outlier-bounds');
+    const boundsArr = Object.values(data.bounds);
+    if (boundsArr.length) {
+        boundsDiv.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fuel Type</th><th>Q1 (25th pct)</th><th>Q3 (75th pct)</th>
+                        <th>IQR</th><th>Lower Fence</th><th>Upper Fence</th><th>Stations (clean)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${boundsArr.map(b => `<tr>
+                        <td>${b.fuel_type}</td>
+                        <td>${ppl(b.q1)}</td><td>${ppl(b.q3)}</td>
+                        <td>${b.iqr}p</td>
+                        <td>${ppl(b.lower_fence)}</td><td>${ppl(b.upper_fence)}</td>
+                        <td>${b.total_stations.toLocaleString()}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+            <p style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;">
+                Prices below the lower fence or above the upper fence are excluded from averages.
+            </p>
+        `;
+    }
+
+    // Show outlier table
+    const body = document.getElementById('outlier-body');
+    if (!data.outliers.length) {
+        body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">No outliers for this fuel type</td></tr>';
+        return;
+    }
+    const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
+    body.innerHTML = data.outliers.map(r => {
+        const reasonLabel = r.exclusion_reason === 'anomaly_flagged'
+            ? (r.anomaly_flags || []).map(f => `<span class="tag">${f}</span>`).join(' ')
+            : '<span class="tag" style="background:#fff3cd;color:#856404;">outside IQR fence</span>';
+        return `<tr>
+            <td>${r.trading_name}</td>
+            <td>${r.city || '—'}</td>
+            <td>${r.postcode || '—'}</td>
+            <td>${r.brand_name || '—'}</td>
+            <td>${r.fuel_name || r.fuel_type}</td>
+            <td><strong>${ppl(r.price)}</strong></td>
+            <td>${reasonLabel}</td>
+            <td>${fmtDate(r.observed_at)}</td>
         </tr>`;
     }).join('');
 }
