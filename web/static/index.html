@@ -85,6 +85,11 @@
         }
         table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
         th { background: var(--bg); text-align: left; padding: 0.6rem 1rem; font-weight: 600; border-bottom: 2px solid var(--border); }
+        th.sortable { cursor: pointer; user-select: none; position: relative; padding-right: 1.5rem; }
+        th.sortable:hover { background: #e8ecf0; }
+        th.sortable::after { content: '\2195'; position: absolute; right: 0.4rem; opacity: 0.3; font-size: 0.75rem; }
+        th.sortable.asc::after { content: '\25B2'; opacity: 0.7; }
+        th.sortable.desc::after { content: '\25BC'; opacity: 0.7; }
         td { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); }
         tr:hover td { background: #f0f4ff; }
         .tag { display: inline-block; background: #fef3c7; color: #92400e; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin: 0.1rem; }
@@ -357,7 +362,7 @@
             <button class="primary" onclick="doSearch()">Search</button>
         </div>
         <div class="table-wrap">
-            <table id="search-table">
+            <table id="search-table" class="sortable">
                 <thead>
                     <tr>
                         <th>Station</th><th>Brand</th><th>Category</th><th>City</th>
@@ -390,7 +395,7 @@
                 A larger gap between the previous and current dates makes a bigger price change more plausible.
             </p>
             <div class="table-wrap">
-                <table>
+                <table class="sortable">
                     <thead>
                         <tr>
                             <th>Station</th><th>City</th><th>Fuel</th>
@@ -437,7 +442,7 @@
             </div>
 
             <div class="table-wrap">
-                <table>
+                <table class="sortable">
                     <thead>
                         <tr>
                             <th>Station</th><th>City</th><th>Postcode</th>
@@ -488,7 +493,7 @@
                 <button class="primary" onclick="loadReport()">Filter</button>
             </div>
             <div class="table-wrap">
-                <table>
+                <table class="sortable">
                     <thead>
                         <tr>
                             <th>Raw Brand</th><th>Alias →</th><th>Override →</th>
@@ -880,6 +885,64 @@ const COLOURS = [
     '#912b88','#28a197','#b58840','#505a5f','#4c2c92',
     '#d53880','#006435','#1d70b8','#003078',
 ];
+
+// ---------------------------------------------------------------------------
+// Sortable tables
+// ---------------------------------------------------------------------------
+function initSortableTables() {
+    document.querySelectorAll('table.sortable').forEach(table => {
+        const headers = table.querySelectorAll('thead th');
+        headers.forEach((th, colIdx) => {
+            th.classList.add('sortable');
+            th.addEventListener('click', () => sortTable(table, colIdx, th));
+        });
+    });
+}
+
+function sortTable(table, colIdx, th) {
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (!rows.length) return;
+
+    // Toggle direction
+    const wasAsc = th.classList.contains('asc');
+    table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
+    const dir = wasAsc ? 'desc' : 'asc';
+    th.classList.add(dir);
+
+    rows.sort((a, b) => {
+        const aCell = a.cells[colIdx];
+        const bCell = b.cells[colIdx];
+        if (!aCell || !bCell) return 0;
+        let aVal = aCell.textContent.trim();
+        let bVal = bCell.textContent.trim();
+
+        // Try numeric comparison (handles prices like "149.9p", plain numbers, etc.)
+        const aNum = parseFloat(aVal.replace(/[^0-9.\-]/g, ''));
+        const bNum = parseFloat(bVal.replace(/[^0-9.\-]/g, ''));
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+            return dir === 'asc' ? aNum - bNum : bNum - aNum;
+        }
+
+        // Try date comparison
+        const aDate = Date.parse(aVal);
+        const bDate = Date.parse(bVal);
+        if (!isNaN(aDate) && !isNaN(bDate)) {
+            return dir === 'asc' ? aDate - bDate : bDate - aDate;
+        }
+
+        // String comparison
+        return dir === 'asc'
+            ? aVal.localeCompare(bVal, undefined, { sensitivity: 'base' })
+            : bVal.localeCompare(aVal, undefined, { sensitivity: 'base' });
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
+}
+
+// Initialise on page load
+document.addEventListener('DOMContentLoaded', initSortableTables);
 
 // ---------------------------------------------------------------------------
 // Populate fuel type selectors
