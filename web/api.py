@@ -260,18 +260,62 @@ def prices_by_category(
 @app.get("/api/prices/history")
 def price_history(
     fuel_type: str = Query("E10"),
-    days: int = Query(30, ge=1, le=365),
+    days: Optional[int] = Query(None, ge=1, le=365),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
     """Average price over time, optionally filtered by region.
 
+    Accepts either a date range (start_date/end_date as YYYY-MM-DD) or a
+    days parameter (relative to now). If none are provided, defaults to 30 days.
+
     Uses hourly granularity for ranges <= 30 days, daily for longer.
     Excludes anomaly-flagged records and IQR-based statistical outliers.
     """
-    # CTE to compute IQR fences per fuel type from recent non-anomalous data
-    bounds_cte = """
+    # Resolve the time range
+    if start_date or end_date:
+        range_start = datetime.fromisoformat(start_date) if start_date else None
+        range_end = datetime.fromisoformat(end_date) if end_date else None
+        if range_start and range_end:
+            span_days = (range_end - range_start).days
+        elif range_start:
+            span_days = (datetime.now() - range_start).days
+        else:
+            span_days = 30
+    else:
+        effective_days = days if days is not None else 30
+        range_start = None
+        range_end = None
+        span_days = effective_days
+
+    # Build time filter clause and params
+    if range_start and range_end:
+        time_filter = "fp.observed_at >= %s AND fp.observed_at < %s + interval '1 day'"
+        time_params = (range_start, range_end)
+        bounds_time_filter = "AND observed_at >= %s AND observed_at < %s + interval '1 day'"
+        bounds_time_params = (range_start, range_end)
+    elif range_start:
+        time_filter = "fp.observed_at >= %s"
+        time_params = (range_start,)
+        bounds_time_filter = "AND observed_at >= %s"
+        bounds_time_params = (range_start,)
+    elif range_end:
+        time_filter = "fp.observed_at < %s + interval '1 day'"
+        time_params = (range_end,)
+        bounds_time_filter = "AND observed_at < %s + interval '1 day'"
+        bounds_time_params = (range_end,)
+    else:
+        effective_days = days if days is not None else 30
+        time_filter = "fp.observed_at >= NOW() - make_interval(days => %s)"
+        time_params = (effective_days,)
+        bounds_time_filter = "AND observed_at >= NOW() - make_interval(days => %s)"
+        bounds_time_params = (effective_days,)
+
+    # CTE to compute IQR fences per fuel type from non-anomalous data in the range
+    bounds_cte = f"""
         WITH bounds AS (
             SELECT fuel_type,
                    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price) AS q1,
@@ -279,16 +323,18 @@ def price_history(
             FROM fuel_prices
             WHERE fuel_type = %s
               AND anomaly_flags IS NULL
-              AND observed_at >= NOW() - make_interval(days => %s)
+              {bounds_time_filter}
             GROUP BY fuel_type
         )
     """
+    bounds_params = (fuel_type, *bounds_time_params)
+
     # Hourly buckets for <= 30 days, daily for longer ranges
-    if days <= 30:
+    if span_days <= 30:
         time_col = "date_trunc('hour', fp.observed_at)"
     else:
         time_col = "DATE(fp.observed_at)"
-    granularity = "hourly" if days <= 30 else "daily"
+    granularity = "hourly" if span_days <= 30 else "daily"
 
     with db.cursor() as cur:
         if region:
@@ -304,14 +350,14 @@ def price_history(
                 )
                 LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
                 WHERE fp.fuel_type = %s
-                  AND fp.observed_at >= NOW() - make_interval(days => %s)
+                  AND {time_filter}
                   AND pr.region = %s
                   AND fp.anomaly_flags IS NULL
                   AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
                   AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
                 GROUP BY bucket
                 ORDER BY bucket
-            """, (fuel_type, days, fuel_type, days, region))
+            """, (*bounds_params, fuel_type, *time_params, region))
         else:
             cur.execute(bounds_cte + f"""
                 SELECT {time_col} AS bucket,
@@ -320,13 +366,13 @@ def price_history(
                 FROM fuel_prices fp
                 LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
                 WHERE fp.fuel_type = %s
-                  AND fp.observed_at >= NOW() - make_interval(days => %s)
+                  AND {time_filter}
                   AND fp.anomaly_flags IS NULL
                   AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
                   AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
                 GROUP BY bucket
                 ORDER BY bucket
-            """, (fuel_type, days, fuel_type, days))
+            """, (*bounds_params, fuel_type, *time_params))
         return {"granularity": granularity, "data": cur.fetchall()}
 
 
@@ -352,14 +398,26 @@ def price_map(
     params: list = [fuel_type]
 
     if region:
-        conditions.append("region = %s")
-        params.append(region)
+        vals = [v.strip() for v in region.split(",") if v.strip()]
+        if len(vals) == 1:
+            conditions.append("region = %s")
+            params.append(vals[0])
+        elif vals:
+            placeholders = ", ".join(["%s"] * len(vals))
+            conditions.append(f"region IN ({placeholders})")
+            params.extend(vals)
     if brand:
         conditions.append("UPPER(brand_name) LIKE %s")
         params.append("%" + brand.upper() + "%")
     if category:
-        conditions.append("forecourt_type = %s")
-        params.append(category)
+        cats = [c.strip() for c in category.split(",") if c.strip()]
+        if len(cats) == 1:
+            conditions.append("forecourt_type = %s")
+            params.append(cats[0])
+        elif cats:
+            placeholders = ", ".join(["%s"] * len(cats))
+            conditions.append(f"forecourt_type IN ({placeholders})")
+            params.extend(cats)
     if exclude_outliers:
         conditions.append("NOT price_is_outlier")
 
@@ -427,8 +485,14 @@ def price_search(
     if exclude_outliers:
         conditions.append("NOT price_is_outlier")
     if category:
-        conditions.append("forecourt_type = %s")
-        params.append(category)
+        cats = [c.strip() for c in category.split(",") if c.strip()]
+        if len(cats) == 1:
+            conditions.append("forecourt_type = %s")
+            params.append(cats[0])
+        elif cats:
+            placeholders = ", ".join(["%s"] * len(cats))
+            conditions.append(f"forecourt_type IN ({placeholders})")
+            params.extend(cats)
     if district:
         conditions.append("admin_district = %s")
         params.append(district)
@@ -436,20 +500,38 @@ def price_search(
         conditions.append("parliamentary_constituency = %s")
         params.append(constituency)
     if rural_urban:
-        conditions.append("rural_urban = %s")
-        params.append(rural_urban)
+        vals = [v.strip() for v in rural_urban.split(",") if v.strip()]
+        if len(vals) == 1:
+            conditions.append("rural_urban = %s")
+            params.append(vals[0])
+        elif vals:
+            placeholders = ", ".join(["%s"] * len(vals))
+            conditions.append(f"rural_urban IN ({placeholders})")
+            params.extend(vals)
     if region:
-        conditions.append("region = %s")
-        params.append(region)
+        vals = [v.strip() for v in region.split(",") if v.strip()]
+        if len(vals) == 1:
+            conditions.append("region = %s")
+            params.append(vals[0])
+        elif vals:
+            placeholders = ", ".join(["%s"] * len(vals))
+            conditions.append(f"region IN ({placeholders})")
+            params.extend(vals)
     if country:
-        if country == "Other/Unknown":
-            conditions.append(
-                "(country IS NULL OR UPPER(country) NOT IN "
-                "('ENGLAND','SCOTLAND','WALES','NORTHERN IRELAND','N. IRELAND'))"
-            )
-        else:
-            conditions.append("UPPER(country) = UPPER(%s)")
-            params.append(country)
+        vals = [v.strip() for v in country.split(",") if v.strip()]
+        known = {'ENGLAND', 'SCOTLAND', 'WALES', 'NORTHERN IRELAND', 'N. IRELAND'}
+        named = [v for v in vals if v != "Other/Unknown"]
+        has_other = "Other/Unknown" in vals
+        parts = []
+        if named:
+            placeholders = ", ".join(["UPPER(%s)"] * len(named))
+            parts.append(f"UPPER(country) IN ({placeholders})")
+            params.extend(named)
+        if has_other:
+            known_ph = ", ".join(["'" + k + "'" for k in known])
+            parts.append(f"(country IS NULL OR UPPER(country) NOT IN ({known_ph}))")
+        if parts:
+            conditions.append("(" + " OR ".join(parts) + ")")
 
     where = " AND ".join(conditions)
 
