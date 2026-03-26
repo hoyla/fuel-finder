@@ -365,6 +365,14 @@
                 <label>To</label>
                 <input type="date" id="trend-end">
             </div>
+            <div class="control">
+                <label>Detail</label>
+                <select id="trend-granularity">
+                    <option value="auto">Auto</option>
+                    <option value="hourly">Every scrape</option>
+                    <option value="daily">Daily average</option>
+                </select>
+            </div>
             <button class="primary" onclick="loadTrends()">Update</button>
         </div>
         <div class="chart-container">
@@ -1521,10 +1529,12 @@ async function loadTrends() {
     const region = document.getElementById('trend-region').value;
     const startDate = document.getElementById('trend-start').value;
     const endDate = document.getElementById('trend-end').value;
+    const gran = document.getElementById('trend-granularity').value;
     let url = `/prices/history?fuel_type=${fuel}`;
     if (startDate) url += `&start_date=${startDate}`;
     if (endDate) url += `&end_date=${endDate}`;
     if (!startDate && !endDate) url += '&days=30';
+    if (gran !== 'auto') url += `&granularity=${gran}`;
     if (region) url += `&region=${encodeURIComponent(region)}`;
     const resp = await apiFetch(url);
     const data = resp.data;
@@ -1532,8 +1542,8 @@ async function loadTrends() {
     document.getElementById('trend-heading').textContent =
         hourly ? 'Hourly average price' : 'Daily average price';
     document.getElementById('trend-granularity-note').textContent = hourly
-        ? 'Averages calculated per hourly scrape window (data is fetched every 30 minutes).'
-        : 'Averages calculated per day. Select a range of 30 days or fewer for hourly detail.';
+        ? 'Showing average per scrape window (data is fetched every 30 minutes).'
+        : 'Showing daily averages.';
 
     // Format labels: show time for hourly, date-only for daily
     const labels = data.map(d => {

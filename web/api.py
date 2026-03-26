@@ -263,6 +263,7 @@ def price_history(
     days: Optional[int] = Query(None, ge=1, le=365),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    granularity: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
     db=Depends(get_db),
     _auth=Depends(require_auth),
@@ -272,7 +273,8 @@ def price_history(
     Accepts either a date range (start_date/end_date as YYYY-MM-DD) or a
     days parameter (relative to now). If none are provided, defaults to 30 days.
 
-    Uses hourly granularity for ranges <= 30 days, daily for longer.
+    Granularity can be 'hourly' or 'daily'. If not specified, defaults to
+    hourly for ranges <= 30 days and daily for longer.
     Excludes anomaly-flagged records and IQR-based statistical outliers.
     """
     # Resolve the time range
@@ -329,12 +331,16 @@ def price_history(
     """
     bounds_params = (fuel_type, *bounds_time_params)
 
-    # Hourly buckets for <= 30 days, daily for longer ranges
-    if span_days <= 30:
+    # Determine granularity
+    if granularity in ('hourly', 'daily'):
+        effective_granularity = granularity
+    else:
+        effective_granularity = "hourly" if span_days <= 30 else "daily"
+
+    if effective_granularity == 'hourly':
         time_col = "date_trunc('hour', fp.observed_at)"
     else:
         time_col = "DATE(fp.observed_at)"
-    granularity = "hourly" if span_days <= 30 else "daily"
 
     with db.cursor() as cur:
         if region:
@@ -373,7 +379,7 @@ def price_history(
                 GROUP BY bucket
                 ORDER BY bucket
             """, (*bounds_params, fuel_type, *time_params))
-        return {"granularity": granularity, "data": cur.fetchall()}
+        return {"granularity": effective_granularity, "data": cur.fetchall()}
 
 
 @app.get("/api/prices/map")
