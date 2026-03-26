@@ -223,6 +223,7 @@
     <div class="tab" data-panel="trends">Trends</div>
     <div class="tab" data-panel="search">Search</div>
     <div class="tab" data-panel="anomalies">Anomalies</div>
+    <div class="tab" data-panel="scrapes">Scrapes</div>
     <div class="tab" data-panel="data">Data Cleanup</div>
     <div class="tab" data-panel="users">Users</div>
 </div>
@@ -518,13 +519,29 @@
         </div>
     </div>
 
+    <!-- ============ SCRAPE HISTORY ============ -->
+    <div class="panel" id="panel-scrapes">
+        <div class="table-wrap">
+            <table class="sortable">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Started</th><th>Finished</th>
+                        <th>Duration</th><th>Type</th><th>Status</th>
+                        <th>Batches</th><th>Stations</th><th>Price Records</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody id="scrapes-body"></tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- ============ DATA / ADMIN ============ -->
     <div class="panel" id="panel-data">
         <div class="controls" style="margin-bottom: 1rem;">
             <div class="control">
-                <label>Normalisation tables and overrides</label>
+                <label>Section</label>
                 <select id="data-section" onchange="switchDataSection()">
-                    <option value="scrapes">Scrape History</option>
                     <option value="report">Normalisation Report</option>
                     <option value="aliases">Brand Aliases</option>
                     <option value="categories">Brand Categories</option>
@@ -535,23 +552,6 @@
             <button class="primary" id="btn-refresh-view" onclick="refreshView()" style="margin-left: auto;">
                 Refresh View
             </button>
-        </div>
-
-        <!-- Scrape History -->
-        <div id="data-scrapes">
-            <div class="table-wrap">
-                <table class="sortable">
-                    <thead>
-                        <tr>
-                            <th>ID</th><th>Started</th><th>Finished</th>
-                            <th>Duration</th><th>Type</th><th>Status</th>
-                            <th>Batches</th><th>Stations</th><th>Price Records</th>
-                            <th>Error</th>
-                        </tr>
-                    </thead>
-                    <tbody id="scrapes-body"></tbody>
-                </table>
-            </div>
         </div>
 
         <!-- Normalisation Report -->
@@ -932,7 +932,8 @@ tabs.forEach(t => t.addEventListener('click', () => {
         if (id === 'map') initMap();
         if (id === 'trends') loadTrends();
         if (id === 'anomalies') loadAnomalies();
-        if (id === 'data') loadScrapeHistory();
+        if (id === 'scrapes') loadScrapeHistory();
+        if (id === 'data') loadReport();
         if (id === 'users') loadUsers();
     }
 }));
@@ -1688,15 +1689,14 @@ async function loadOutliers() {
 // Data / Admin tab
 // ---------------------------------------------------------------------------
 
-const dataSections = ['scrapes', 'report', 'aliases', 'categories', 'overrides', 'postcodes'];
+const dataSections = ['report', 'aliases', 'categories', 'overrides', 'postcodes'];
 function switchDataSection() {
     const active = document.getElementById('data-section').value;
     dataSections.forEach(s => {
         document.getElementById('data-' + s).style.display = s === active ? '' : 'none';
     });
     // Lazy-load the section
-    if (active === 'scrapes') loadScrapeHistory();
-    else if (active === 'report') loadReport();
+    if (active === 'report') loadReport();
     else if (active === 'aliases') loadAliases();
     else if (active === 'categories') loadCategories();
     else if (active === 'overrides') loadOverrides();
