@@ -153,7 +153,7 @@ def summary(db=Depends(get_db), _auth=Depends(require_auth)):
                     WHEN UPPER(country) IN ('SCOTLAND') THEN 'Scotland'
                     WHEN UPPER(country) IN ('WALES') THEN 'Wales'
                     WHEN UPPER(country) IN ('NORTHERN IRELAND', 'N. IRELAND') THEN 'Northern Ireland'
-                    ELSE 'Other'
+                    ELSE 'Other/Unknown'
                 END AS country_name,
                 COUNT(DISTINCT node_id) AS station_count
             FROM current_prices
@@ -369,6 +369,7 @@ def price_search(
     constituency: Optional[str] = Query(None),
     rural_urban: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
@@ -418,6 +419,15 @@ def price_search(
     if region:
         conditions.append("region = %s")
         params.append(region)
+    if country:
+        if country == "Other/Unknown":
+            conditions.append(
+                "(country IS NULL OR UPPER(country) NOT IN "
+                "('ENGLAND','SCOTLAND','WALES','NORTHERN IRELAND','N. IRELAND'))"
+            )
+        else:
+            conditions.append("UPPER(country) = UPPER(%s)")
+            params.append(country)
 
     where = " AND ".join(conditions)
 

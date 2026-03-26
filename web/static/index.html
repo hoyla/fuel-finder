@@ -343,6 +343,17 @@
                 <select id="search-constituency"><option value="">All</option></select>
             </div>
             <div class="control">
+                <label>Country</label>
+                <select id="search-country">
+                    <option value="">All</option>
+                    <option>England</option>
+                    <option>Scotland</option>
+                    <option>Wales</option>
+                    <option>Northern Ireland</option>
+                    <option>Other/Unknown</option>
+                </select>
+            </div>
+            <div class="control">
                 <label>Region</label>
                 <select id="search-region"><option value="">All</option></select>
             </div>
@@ -967,6 +978,7 @@ function navigateToSearch(filters) {
     document.getElementById('search-constituency').value = '';
     document.getElementById('search-rural-urban').value = '';
     document.getElementById('search-region').value = '';
+    document.getElementById('search-country').value = '';
 
     // Set fuel type
     if (filters.fuel_type) {
@@ -996,6 +1008,9 @@ function navigateToSearch(filters) {
         for (const opt of sel.options) {
             if (opt.value === filters.region) { sel.value = opt.value; break; }
         }
+    }
+    if (filters.country) {
+        document.getElementById('search-country').value = filters.country;
     }
     if (filters.exclude_outliers) {
         document.getElementById('search-exclude-outliers').checked = true;
@@ -1096,7 +1111,7 @@ async function loadDashboard() {
 
     const cards = document.getElementById('summary-cards');
     const countryLines = (data.by_country || [])
-        .map(c => `<div class="sub">${c.country_name}: ${c.station_count.toLocaleString()}</div>`)
+        .map(c => `<div class="sub"><a href="#" class="country-link" data-country="${c.country_name}" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${c.country_name}: ${c.station_count.toLocaleString()}</a></div>`)
         .join('');
     cards.innerHTML = `
         <div class="card">
@@ -1137,6 +1152,14 @@ async function loadDashboard() {
             const sel = document.getElementById('outlier-fuel');
             if (sel.querySelector(`option[value="${fuel}"]`)) sel.value = fuel;
             loadOutliers();
+        });
+    });
+
+    // Wire up country links to search by country
+    document.querySelectorAll('.country-link').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            navigateToSearch({ fuel_type: 'E10', country: link.dataset.country });
         });
     });
 
@@ -1391,6 +1414,7 @@ async function doSearch(offset = 0) {
     const constituency = document.getElementById('search-constituency').value;
     const ruralUrban = document.getElementById('search-rural-urban').value;
     const region = document.getElementById('search-region').value;
+    const country = document.getElementById('search-country').value;
 
     let url = `/prices/search?fuel_type=${fuel}&limit=50&offset=${offset}`;
     if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
@@ -1406,6 +1430,7 @@ async function doSearch(offset = 0) {
     if (constituency) url += `&constituency=${encodeURIComponent(constituency)}`;
     if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
     if (region) url += `&region=${encodeURIComponent(region)}`;
+    if (country) url += `&country=${encodeURIComponent(country)}`;
 
     const data = await apiFetch(url);
     searchState = { offset, total: data.total };
