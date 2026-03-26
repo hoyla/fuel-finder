@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Reference — Fuel Finder</title>
+    <title>API Reference &mdash; Fuel Finder</title>
     <style>
         :root {
             --bg:       #f5f6f7;
@@ -14,6 +14,7 @@
             --border:   #d2d6db;
             --green:    #00703c;
             --red:      #d4351c;
+            --orange:   #e67e22;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -56,6 +57,7 @@
         }
         .method.get { background: var(--green); }
         .method.post { background: var(--accent); }
+        .method.patch { background: var(--orange); }
         .method.delete { background: var(--red); }
         .endpoint .desc { color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0; }
         table {
@@ -99,7 +101,7 @@
 <body>
 
 <header>
-    <h1>⛽ Fuel Finder</h1>
+    <h1>&#9981; Fuel Finder</h1>
     <nav>
         <a href="/">Dashboard</a>
         <a href="/docs/api">API</a>
@@ -110,7 +112,8 @@
 <main>
     <h2>API Reference</h2>
 
-    <p>All endpoints return JSON. Base URL: <code>/api/</code>. No authentication required by default.</p>
+    <p>All endpoints return JSON. Base URL: <code>/api/</code></p>
+    <p><strong>Authentication</strong> (checked in order): <strong>1.</strong> API key (<code>X-Api-Key</code> header) &mdash; grants admin access. <strong>2.</strong> Cognito JWT (<code>Authorization: Bearer &lt;id_token&gt;</code>) &mdash; admin requires <code>admin</code> group. <strong>3.</strong> No auth when <code>AUTH_ENABLED=false</code> (local dev default).</p>
 
     <div class="section-nav">
         <h4>Sections</h4>
@@ -124,11 +127,16 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/summary</div>
-        <div class="desc">Dashboard headline numbers: average/min/max prices per fuel type, station count, last scrape time.</div>
+        <div class="desc">Dashboard headline numbers: average/min/max prices per fuel type, station count, country breakdown, last scrape time.</div>
         <pre>{
   "by_fuel_type": [
     { "fuel_type": "E10", "fuel_name": "Unleaded (E10)",
-      "avg_price": 149.3, "min_price": 135.9, "max_price": 199.9, "station_count": 7277 }
+      "avg_price": 149.3, "min_price": 135.9, "max_price": 199.9,
+      "station_count": 7277, "outliers_excluded": 12 }
+  ],
+  "by_country": [
+    { "country_name": "England", "station_count": 5854 },
+    { "country_name": "Scotland", "station_count": 742 }
   ],
   "total_stations": 7466,
   "total_prices": 24551,
@@ -155,7 +163,7 @@
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
                 <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
-                <tr><td><code>limit</code></td><td>int</td><td>20</td><td>Max brands (1–100)</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>20</td><td>Max brands (1&ndash;100)</td></tr>
             </tbody>
         </table>
         <p>Returns: <code>[ { brand_name, forecourt_type, avg_price, min_price, max_price, station_count } ]</code></p>
@@ -163,7 +171,7 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/prices/by-category</div>
-        <div class="desc">Average price by forecourt category (Supermarket, Major Oil, Motorway, etc.).</div>
+        <div class="desc">Average price by forecourt category (Supermarket, Major Oil, Motorway Operator, etc.).</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
@@ -174,14 +182,52 @@
     </div>
 
     <div class="endpoint">
-        <div class="method-path"><span class="method get">GET</span> /api/prices/history</div>
-        <div class="desc">Average price over time. Uses hourly granularity for ≤30 days, daily for longer. Excludes outliers and anomaly-flagged prices.</div>
+        <div class="method-path"><span class="method get">GET</span> /api/prices/by-district</div>
+        <div class="desc">Average price by local authority district (minimum 3 stations).</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
                 <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
-                <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1–365)</td></tr>
-                <tr><td><code>region</code></td><td>string</td><td>—</td><td>Optional region filter</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>30</td><td>Max districts (1&ndash;500)</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { admin_district, avg_price, min_price, max_price, station_count } ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/by-constituency</div>
+        <div class="desc">Average price by parliamentary constituency (minimum 2 stations).</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>30</td><td>Max constituencies (1&ndash;650)</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { parliamentary_constituency, avg_price, min_price, max_price, station_count } ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/by-rural-urban</div>
+        <div class="desc">Average price by rural/urban classification. England/Wales ONS RUC and Scottish Government classifications unified into common labels.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { unified_label, avg_price, min_price, max_price, station_count, rural_urban_values } ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/history</div>
+        <div class="desc">Average price over time. Uses hourly granularity for &le;30 days, daily for longer. Excludes outliers and anomaly-flagged prices.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+                <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365)</td></tr>
+                <tr><td><code>region</code></td><td>string</td><td>&mdash;</td><td>Optional region filter</td></tr>
             </tbody>
         </table>
         <p>Returns: <code>{ granularity: "hourly"|"daily", data: [ { bucket, avg_price, stations } ] }</code></p>
@@ -194,9 +240,13 @@
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
                 <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+                <tr><td><code>region</code></td><td>string</td><td>&mdash;</td><td>Region filter</td></tr>
+                <tr><td><code>brand</code></td><td>string</td><td>&mdash;</td><td>Brand name substring</td></tr>
+                <tr><td><code>category</code></td><td>string</td><td>&mdash;</td><td>Forecourt type filter</td></tr>
+                <tr><td><code>exclude_outliers</code></td><td>bool</td><td>false</td><td>Exclude statistical outliers</td></tr>
             </tbody>
         </table>
-        <p>Returns: array with <code>node_id, trading_name, brand_name, city, postcode, price, fuel_name, forecourt_type, latitude, longitude</code></p>
+        <p>Returns: array with <code>node_id, trading_name, brand_name, city, postcode, price, fuel_name, forecourt_type, admin_district, rural_urban, parliamentary_constituency, latitude, longitude, is_motorway_service_station, is_supermarket_service_station</code></p>
     </div>
 
     <div class="endpoint">
@@ -206,14 +256,22 @@
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
                 <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
-                <tr><td><code>postcode</code></td><td>string</td><td>—</td><td>Postcode prefix (e.g. SW1)</td></tr>
-                <tr><td><code>brand</code></td><td>string</td><td>—</td><td>Brand substring</td></tr>
-                <tr><td><code>city</code></td><td>string</td><td>—</td><td>City substring</td></tr>
-                <tr><td><code>min_price</code></td><td>float</td><td>—</td><td>Min price (pence)</td></tr>
-                <tr><td><code>max_price</code></td><td>float</td><td>—</td><td>Max price (pence)</td></tr>
-                <tr><td><code>category</code></td><td>string</td><td>—</td><td>Forecourt type filter</td></tr>
-                <tr><td><code>sort</code></td><td>string</td><td>price</td><td>price, brand, city, postcode</td></tr>
-                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Results per page (1–500)</td></tr>
+                <tr><td><code>postcode</code></td><td>string</td><td>&mdash;</td><td>Postcode prefix (e.g. SW1)</td></tr>
+                <tr><td><code>brand</code></td><td>string</td><td>&mdash;</td><td>Brand substring</td></tr>
+                <tr><td><code>city</code></td><td>string</td><td>&mdash;</td><td>City substring</td></tr>
+                <tr><td><code>min_price</code></td><td>float</td><td>&mdash;</td><td>Min price (pence)</td></tr>
+                <tr><td><code>max_price</code></td><td>float</td><td>&mdash;</td><td>Max price (pence)</td></tr>
+                <tr><td><code>category</code></td><td>string</td><td>&mdash;</td><td>Forecourt type filter</td></tr>
+                <tr><td><code>district</code></td><td>string</td><td>&mdash;</td><td>Local authority district</td></tr>
+                <tr><td><code>constituency</code></td><td>string</td><td>&mdash;</td><td>Parliamentary constituency</td></tr>
+                <tr><td><code>rural_urban</code></td><td>string</td><td>&mdash;</td><td>Rural/urban classification</td></tr>
+                <tr><td><code>region</code></td><td>string</td><td>&mdash;</td><td>Region filter</td></tr>
+                <tr><td><code>country</code></td><td>string</td><td>&mdash;</td><td>Country filter</td></tr>
+                <tr><td><code>supermarket_only</code></td><td>bool</td><td>false</td><td>Only supermarket stations</td></tr>
+                <tr><td><code>motorway_only</code></td><td>bool</td><td>false</td><td>Only motorway stations</td></tr>
+                <tr><td><code>exclude_outliers</code></td><td>bool</td><td>false</td><td>Exclude statistical outliers</td></tr>
+                <tr><td><code>sort</code></td><td>string</td><td>price</td><td>price, brand, city, postcode, district</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Results per page (1&ndash;500)</td></tr>
                 <tr><td><code>offset</code></td><td>int</td><td>0</td><td>Pagination offset</td></tr>
             </tbody>
         </table>
@@ -222,13 +280,14 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/anomalies</div>
-        <div class="desc">Price records flagged by anomaly detection.</div>
+        <div class="desc">Price records flagged by anomaly detection, with previous price context.</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Max records (1–500)</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Max records (1&ndash;500)</td></tr>
             </tbody>
         </table>
+        <p>Returns: <code>[ { id, node_id, trading_name, city, fuel_type, price, prev_price, anomaly_flags, observed_at, prev_observed_at } ]</code></p>
         <p>Flags: <code>price_below_floor</code>, <code>price_above_ceiling</code>, <code>likely_decimal_error</code>, <code>large_price_jump</code></p>
     </div>
 
@@ -238,15 +297,15 @@
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-                <tr><td><code>fuel_type</code></td><td>string</td><td>—</td><td>Optional fuel type filter</td></tr>
-                <tr><td><code>limit</code></td><td>int</td><td>100</td><td>Max records (1–500)</td></tr>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Optional fuel type filter</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>100</td><td>Max records (1&ndash;500)</td></tr>
             </tbody>
         </table>
         <p>Returns: <code>{ bounds: { fuel_type: { q1, q3, iqr, lower_fence, upper_fence, total_stations } }, outliers: [...], total }</code></p>
         <p>Each outlier has <code>exclusion_reason</code>: <code>"anomaly_flagged"</code> or <code>"iqr_outlier"</code>.</p>
     </div>
 
-    <div class="note">All price aggregation endpoints (summary, by-region, by-brand, by-category, history) exclude statistical outliers and anomaly-flagged prices. See <a href="/docs/about#outlier-methodology">outlier methodology</a> for details.</div>
+    <div class="note">All price aggregation endpoints (summary, by-region, by-brand, by-category, by-district, by-constituency, by-rural-urban, history) exclude statistical outliers and anomaly-flagged prices. See <a href="/docs/about#outlier-methodology">outlier methodology</a> for details.</div>
 
     <!-- ===== REFERENCE ===== -->
     <h2 id="reference">Reference</h2>
@@ -263,13 +322,41 @@
         <p>Returns: <code>[ "London", "North West", "Scotland", ... ]</code></p>
     </div>
 
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/districts</div>
+        <div class="desc">List available local authority districts.</div>
+        <p>Returns: <code>[ "Birmingham", "Leeds", "Manchester", ... ]</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/constituencies</div>
+        <div class="desc">List available parliamentary constituencies.</div>
+        <p>Returns: <code>[ "Aldershot", "Aldridge-Brownhills", ... ]</code></p>
+    </div>
+
     <!-- ===== ADMIN ===== -->
     <h2 id="admin">Admin / lookup tables</h2>
 
-    <div class="note"> Changes to lookup tables are not reflected in the dashboard until you call <code>POST /api/admin/refresh-view</code> to rebuild the materialised view.</div>
+    <p>Admin endpoints require a valid API key or Cognito <code>admin</code> group membership.</p>
+
+    <div class="note">Changes to lookup tables are not reflected in the dashboard until you call <code>POST /api/admin/refresh-view</code> to rebuild the materialised view.</div>
+
+    <h3>Scrape history</h3>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/scrape-runs</div>
+        <div class="desc">Recent scrape runs with timing and record counts.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Max runs (1&ndash;500)</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { id, started_at, finished_at, run_type, status, batches_fetched, stations_count, price_records_count, s3_key, error_message, duration_secs } ]</code></p>
+    </div>
 
     <h3>Brand aliases</h3>
-    <p>Map raw API brand strings to canonical names (e.g. <code>"TESCO PFS"</code> → <code>"Tesco"</code>).</p>
+    <p>Map raw API brand strings to canonical names (e.g. <code>"TESCO PFS"</code> &rarr; <code>"Tesco"</code>).</p>
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/admin/brand-aliases</div>
@@ -328,13 +415,55 @@
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-                <tr><td><code>limit</code></td><td>int</td><td>100</td><td>Max rows (1–1000)</td></tr>
-                <tr><td><code>type</code></td><td>string</td><td>—</td><td><code>aliased</code>, <code>overridden</code>, or <code>unmapped</code></td></tr>
-                <tr><td><code>brand</code></td><td>string</td><td>—</td><td>Brand substring filter</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>100</td><td>Max rows (1&ndash;1000)</td></tr>
+                <tr><td><code>type</code></td><td>string</td><td>&mdash;</td><td><code>aliased</code>, <code>overridden</code>, or <code>unmapped</code></td></tr>
+                <tr><td><code>brand</code></td><td>string</td><td>&mdash;</td><td>Brand substring filter</td></tr>
             </tbody>
         </table>
         <p>Returns: <code>[ { raw_brand, alias_resolved, override_resolved, final_brand, forecourt_type, resolution_method, station_count } ]</code></p>
-        <p><code>resolution_method</code>: <code>raw</code> (no transformation), <code>alias</code> (via brand_aliases), <code>override</code> (via station_brand_overrides)</p>
+    </div>
+
+    <h3>Postcode issues</h3>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/postcode-issues</div>
+        <div class="desc">Stations whose postcodes were not recognised by postcodes.io.</div>
+        <p>Returns: <code>[ { node_id, trading_name, brand_name, postcode, api_latitude, api_longitude, city, county, coords_outside_uk, fixed_latitude, fixed_longitude } ]</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method patch">PATCH</span> /api/admin/postcode-lookups/{postcode}</div>
+        <div class="desc">Manually set coordinates for a postcode that postcodes.io didn't recognise.</div>
+        <pre>{ "latitude": 51.5, "longitude": -0.1 }</pre>
+        <p>Returns: <code>{ postcode, latitude, longitude }</code></p>
+    </div>
+
+    <h3>User management (Cognito)</h3>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/users</div>
+        <div class="desc">List all Cognito users with group memberships.</div>
+        <p>Returns: <code>[ { username, email, status, enabled, groups, created } ]</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/users</div>
+        <div class="desc">Create/invite a new user (sends invitation email).</div>
+        <pre>{ "email": "user@example.com", "admin": false }</pre>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/users/{username}/groups/{group}</div>
+        <div class="desc">Add a user to a Cognito group.</div>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method delete">DEL</span> /api/admin/users/{username}/groups/{group}</div>
+        <div class="desc">Remove a user from a Cognito group.</div>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/users/{username}/disable</div>
+        <div class="desc">Disable a user account.</div>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/users/{username}/enable</div>
+        <div class="desc">Re-enable a disabled user account.</div>
     </div>
 
     <h3>Refresh view</h3>
