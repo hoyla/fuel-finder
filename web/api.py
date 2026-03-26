@@ -147,6 +147,22 @@ def summary(db=Depends(get_db), _auth=Depends(require_auth)):
         totals = cur.fetchone()
 
         cur.execute("""
+            SELECT
+                CASE
+                    WHEN UPPER(country) IN ('ENGLAND') THEN 'England'
+                    WHEN UPPER(country) IN ('SCOTLAND') THEN 'Scotland'
+                    WHEN UPPER(country) IN ('WALES') THEN 'Wales'
+                    WHEN UPPER(country) IN ('NORTHERN IRELAND', 'N. IRELAND') THEN 'Northern Ireland'
+                    ELSE 'Other'
+                END AS country_name,
+                COUNT(DISTINCT node_id) AS station_count
+            FROM current_prices
+            GROUP BY country_name
+            ORDER BY station_count DESC
+        """)
+        by_country = cur.fetchall()
+
+        cur.execute("""
             SELECT finished_at FROM scrape_runs
             WHERE status = 'completed'
             ORDER BY finished_at DESC LIMIT 1
@@ -156,6 +172,7 @@ def summary(db=Depends(get_db), _auth=Depends(require_auth)):
 
     return {
         "by_fuel_type": by_fuel,
+        "by_country": by_country,
         "total_stations": totals["total_stations"],
         "total_prices": totals["total_prices"],
         "last_scrape": last_scrape,

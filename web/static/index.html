@@ -1095,21 +1095,27 @@ async function loadDashboard() {
     }
 
     const cards = document.getElementById('summary-cards');
+    const countryLines = (data.by_country || [])
+        .map(c => `<div class="sub">${c.country_name}: ${c.station_count.toLocaleString()}</div>`)
+        .join('');
     cards.innerHTML = `
         <div class="card">
             <div class="label">Stations</div>
             <div class="value">${data.total_stations.toLocaleString()}</div>
+            ${countryLines}
         </div>
     `;
     data.by_fuel_type.forEach(ft => {
         const outlierNote = ft.outliers_excluded > 0
-            ? ` · <a href="#" class="outlier-link" data-fuel="${ft.fuel_type}" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${ft.outliers_excluded} outlier${ft.outliers_excluded === 1 ? '' : 's'} excl.</a>`
+            ? `<div class="sub"><a href="#" class="outlier-link" data-fuel="${ft.fuel_type}" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${ft.outliers_excluded} outlier${ft.outliers_excluded === 1 ? '' : 's'} excluded</a></div>`
             : '';
         cards.innerHTML += `
             <div class="card">
                 <div class="label">${ft.fuel_name || ft.fuel_type}</div>
                 <div class="value">${ppl(ft.avg_price)}</div>
-                <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)} · ${ft.station_count} stations${outlierNote}</div>
+                <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)}</div>
+                <div class="sub">${ft.station_count} stations</div>
+                ${outlierNote}
             </div>
         `;
     });
