@@ -248,8 +248,9 @@ def price_history(
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
-    """Daily average price over time, optionally filtered by region.
+    """Average price over time, optionally filtered by region.
 
+    Uses hourly granularity for ranges <= 30 days, daily for longer.
     Excludes anomaly-flagged records and IQR-based statistical outliers.
     """
     # CTE to compute IQR fences per fuel type from recent non-anomalous data
@@ -265,16 +266,23 @@ def price_history(
             GROUP BY fuel_type
         )
     """
+    # Hourly buckets for <= 30 days, daily for longer ranges
+    if days <= 30:
+        time_col = "date_trunc('hour', fp.observed_at)"
+    else:
+        time_col = "DATE(fp.observed_at)"
+    granularity = "hourly" if days <= 30 else "daily"
+
     with db.cursor() as cur:
         if region:
-            cur.execute(bounds_cte + """
-                SELECT DATE(fp.observed_at) AS day,
+            cur.execute(bounds_cte + f"""
+                SELECT {time_col} AS bucket,
                        ROUND(AVG(fp.price)::numeric, 1) AS avg_price,
                        COUNT(DISTINCT fp.node_id) AS stations
                 FROM fuel_prices fp
                 JOIN stations s ON s.node_id = fp.node_id
                 LEFT JOIN postcode_regions pr ON pr.postcode_area = (
-                    CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{2}$'
+                    CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{{2}}$'
                          THEN LEFT(s.postcode, 2) ELSE LEFT(s.postcode, 1) END
                 )
                 LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
@@ -284,12 +292,12 @@ def price_history(
                   AND fp.anomaly_flags IS NULL
                   AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
                   AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
-                GROUP BY DATE(fp.observed_at)
-                ORDER BY day
+                GROUP BY bucket
+                ORDER BY bucket
             """, (fuel_type, days, fuel_type, days, region))
         else:
-            cur.execute(bounds_cte + """
-                SELECT DATE(fp.observed_at) AS day,
+            cur.execute(bounds_cte + f"""
+                SELECT {time_col} AS bucket,
                        ROUND(AVG(fp.price)::numeric, 1) AS avg_price,
                        COUNT(DISTINCT fp.node_id) AS stations
                 FROM fuel_prices fp
@@ -299,10 +307,10 @@ def price_history(
                   AND fp.anomaly_flags IS NULL
                   AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
                   AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
-                GROUP BY DATE(fp.observed_at)
-                ORDER BY day
+                GROUP BY bucket
+                ORDER BY bucket
             """, (fuel_type, days, fuel_type, days))
-        return cur.fetchall()
+        return {"granularity": granularity, "data": cur.fetchall()}
 
 
 @app.get("/api/prices/map")

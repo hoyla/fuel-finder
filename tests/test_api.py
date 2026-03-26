@@ -111,9 +111,14 @@ class TestPriceHistory:
         assert r.status_code == 200
 
     def test_returns_days(self, client, has_data):
-        data = client.get("/api/prices/history?fuel_type=E10&days=365").json()
-        # Should return at least one day if data exists
-        assert isinstance(data, list)
+        resp = client.get("/api/prices/history?fuel_type=E10&days=365").json()
+        assert resp["granularity"] == "daily"
+        assert isinstance(resp["data"], list)
+
+    def test_hourly_granularity_for_short_range(self, client, has_data):
+        resp = client.get("/api/prices/history?fuel_type=E10&days=7").json()
+        assert resp["granularity"] == "hourly"
+        assert isinstance(resp["data"], list)
 
 
 class TestPriceMap:
