@@ -1230,6 +1230,14 @@ def enable_user(username: str, _auth=Depends(require_admin)):
     return {"status": "ok"}
 
 
+@app.delete("/api/admin/users/{username}")
+def delete_user(username: str, _auth=Depends(require_admin)):
+    """Permanently delete a Cognito user account."""
+    client = _cognito_client()
+    client.admin_delete_user(UserPoolId=_pool_id(), Username=username)
+    return {"status": "ok"}
+
+
 # ---------------------------------------------------------------------------
 # Serve static frontend
 # ---------------------------------------------------------------------------

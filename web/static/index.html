@@ -2112,6 +2112,7 @@ async function loadUsers() {
                 ${u.enabled
                     ? `<button class="btn-delete" onclick="toggleUser('${escHtml(u.username)}',false)">Disable</button>`
                     : `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="toggleUser('${escHtml(u.username)}',true)">Enable</button>`}
+                <button class="btn-delete" onclick="deleteUser('${escHtml(u.username)}','${escHtml(u.email)}')">Delete</button>
             </td>
         </tr>`).join('') : '<tr><td colspan="5">No users found</td></tr>';
     } catch (e) {
@@ -2148,6 +2149,15 @@ async function toggleGroup(username, group, add) {
 async function toggleUser(username, enable) {
     try {
         await apiPost(`/admin/users/${encodeURIComponent(username)}/${enable ? 'enable' : 'disable'}`, {});
+        await loadUsers();
+    } catch (e) { alert(e.message); }
+}
+
+async function deleteUser(username, email) {
+    if (!confirm(`Permanently delete user ${email}? This cannot be undone.`)) return;
+    try {
+        const r = await fetch(API + `/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE', headers: authHeaders() });
+        if (!r.ok) throw new Error(`API error: ${r.status}`);
         await loadUsers();
     } catch (e) { alert(e.message); }
 }
