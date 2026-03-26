@@ -319,6 +319,7 @@
             <div class="control" style="display: flex; gap: 0.75rem; align-items: end; padding-bottom: 0.5rem;">
                 <label><input type="checkbox" id="search-supermarket"> Supermarket only</label>
                 <label><input type="checkbox" id="search-motorway"> Motorway only</label>
+                <label><input type="checkbox" id="search-exclude-outliers"> Exclude outliers</label>
             </div>
             <div class="control">
                 <label>Category</label>
@@ -340,6 +341,10 @@
             <div class="control">
                 <label>Constituency</label>
                 <select id="search-constituency"><option value="">All</option></select>
+            </div>
+            <div class="control">
+                <label>Region</label>
+                <select id="search-region"><option value="">All</option></select>
             </div>
             <div class="control">
                 <label>Rural / Urban</label>
@@ -945,6 +950,87 @@ function sortTable(table, colIdx, th) {
 document.addEventListener('DOMContentLoaded', initSortableTables);
 
 // ---------------------------------------------------------------------------
+// Navigate to Search with pre-filled filters
+// ---------------------------------------------------------------------------
+function navigateToSearch(filters) {
+    // Reset all search fields
+    document.getElementById('search-postcode').value = '';
+    document.getElementById('search-brand').value = '';
+    document.getElementById('search-city').value = '';
+    document.getElementById('search-min').value = '';
+    document.getElementById('search-max').value = '';
+    document.getElementById('search-supermarket').checked = false;
+    document.getElementById('search-motorway').checked = false;
+    document.getElementById('search-exclude-outliers').checked = false;
+    document.getElementById('search-category').value = '';
+    document.getElementById('search-district').value = '';
+    document.getElementById('search-constituency').value = '';
+    document.getElementById('search-rural-urban').value = '';
+    document.getElementById('search-region').value = '';
+
+    // Set fuel type
+    if (filters.fuel_type) {
+        document.getElementById('search-fuel').value = filters.fuel_type;
+    }
+    // Set filters by matching select options or input values
+    if (filters.brand) document.getElementById('search-brand').value = filters.brand;
+    if (filters.category) document.getElementById('search-category').value = filters.category;
+    if (filters.rural_urban) {
+        // Match the select option that starts with the short label
+        const sel = document.getElementById('search-rural-urban');
+        for (const opt of sel.options) {
+            if (opt.value && opt.value.toLowerCase().startsWith(filters.rural_urban.toLowerCase())) {
+                sel.value = opt.value;
+                break;
+            }
+        }
+    }
+    if (filters.district) {
+        const sel = document.getElementById('search-district');
+        for (const opt of sel.options) {
+            if (opt.value === filters.district) { sel.value = opt.value; break; }
+        }
+    }
+    if (filters.region) {
+        const sel = document.getElementById('search-region');
+        for (const opt of sel.options) {
+            if (opt.value === filters.region) { sel.value = opt.value; break; }
+        }
+    }
+    if (filters.exclude_outliers) {
+        document.getElementById('search-exclude-outliers').checked = true;
+    }
+
+    // Switch to search tab
+    tabs.forEach(x => x.classList.remove('active'));
+    panels.forEach(x => x.classList.remove('active'));
+    document.querySelector('[data-panel="search"]').classList.add('active');
+    document.getElementById('panel-search').classList.add('active');
+
+    // Run the search
+    doSearch(0);
+}
+
+// Helper to add click-through on a Chart.js bar chart
+function addChartClickHandler(chartId, dataArray, mapFn) {
+    const chart = charts[chartId];
+    if (!chart) return;
+    chart.options.onClick = (evt, elements) => {
+        if (!elements.length) return;
+        const idx = elements[0].index;
+        const item = dataArray[idx];
+        if (item) navigateToSearch(mapFn(item));
+    };
+    // Show pointer cursor on hover over bars
+    const canvas = document.getElementById(chartId);
+    canvas.style.cursor = 'default';
+    canvas.addEventListener('mousemove', (evt) => {
+        const points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
+        canvas.style.cursor = points.length ? 'pointer' : 'default';
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Populate fuel type selectors
 // ---------------------------------------------------------------------------
 let fuelTypes = [];
@@ -965,11 +1051,14 @@ async function loadFuelTypes() {
 
 async function loadRegions() {
     const regions = await apiFetch('/regions');
-    const sel = document.getElementById('trend-region');
-    regions.forEach(r => {
-        const o = document.createElement('option');
-        o.value = r; o.textContent = r;
-        sel.appendChild(o);
+    ['trend-region', 'search-region'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        regions.forEach(r => {
+            const o = document.createElement('option');
+            o.value = r; o.textContent = r;
+            sel.appendChild(o);
+        });
     });
 }
 
@@ -1087,8 +1176,8 @@ async function loadDashboard() {
     // Rural/Urban chart
     const ruData = await apiFetch('/prices/by-rural-urban?fuel_type=E10');
     const ruColours = ruData.map(r => {
-        if (!r.rural_urban) return '#999';
-        const lc = r.rural_urban.toLowerCase();
+        if (!r.unified_label) return '#999';
+        const lc = r.unified_label.toLowerCase();
         if (lc.includes('urban')) return '#1d70b8';
         if (lc.includes('remote')) return '#d4351c';
         return '#00703c';
@@ -1098,7 +1187,7 @@ async function loadDashboard() {
     charts['chart-rural-urban'] = new Chart(ruCtx, {
         type: 'bar',
         data: {
-            labels: ruData.map(r => `${(r.rural_urban || 'Unknown').replace(/:.*/,'')} (${r.station_count})`),
+            labels: ruData.map(r => `${r.unified_label || 'Unknown'} (${r.station_count})`),
             datasets: [{
                 label: 'Avg pence/litre',
                 data: ruData.map(r => r.avg_price),
@@ -1124,6 +1213,25 @@ async function loadDashboard() {
     renderBarChart('chart-district-cheap',
         cheapest15.map(d => `${d.admin_district} (${d.station_count})`),
         cheapest15.map(d => d.avg_price), 'Avg pence/litre', '#00703c');
+
+    // Wire up chart click-throughs to Search
+    addChartClickHandler('chart-region', regionData,
+        r => ({ fuel_type: 'E10', region: r.region, exclude_outliers: true }));
+
+    addChartClickHandler('chart-category', catData,
+        c => ({ fuel_type: 'E10', category: c.forecourt_type, exclude_outliers: true }));
+
+    addChartClickHandler('chart-brand', brandData,
+        b => ({ fuel_type: 'E10', brand: b.brand_name, exclude_outliers: true }));
+
+    addChartClickHandler('chart-rural-urban', ruData,
+        r => ({ fuel_type: 'E10', rural_urban: r.rural_urban_values[0], exclude_outliers: true }));
+
+    addChartClickHandler('chart-district-expensive', distExpensive,
+        d => ({ fuel_type: 'E10', district: d.admin_district, exclude_outliers: true }));
+
+    addChartClickHandler('chart-district-cheap', cheapest15,
+        d => ({ fuel_type: 'E10', district: d.admin_district, exclude_outliers: true }));
 }
 
 let charts = {};
@@ -1271,10 +1379,12 @@ async function doSearch(offset = 0) {
     const maxP = document.getElementById('search-max').value;
     const supermarket = document.getElementById('search-supermarket').checked;
     const motorway = document.getElementById('search-motorway').checked;
+    const excludeOutliers = document.getElementById('search-exclude-outliers').checked;
     const category = document.getElementById('search-category').value;
     const district = document.getElementById('search-district').value;
     const constituency = document.getElementById('search-constituency').value;
     const ruralUrban = document.getElementById('search-rural-urban').value;
+    const region = document.getElementById('search-region').value;
 
     let url = `/prices/search?fuel_type=${fuel}&limit=50&offset=${offset}`;
     if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
@@ -1284,10 +1394,12 @@ async function doSearch(offset = 0) {
     if (maxP) url += `&max_price=${maxP}`;
     if (supermarket) url += '&supermarket_only=true';
     if (motorway) url += '&motorway_only=true';
+    if (excludeOutliers) url += '&exclude_outliers=true';
     if (category) url += `&category=${encodeURIComponent(category)}`;
     if (district) url += `&district=${encodeURIComponent(district)}`;
     if (constituency) url += `&constituency=${encodeURIComponent(constituency)}`;
     if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
+    if (region) url += `&region=${encodeURIComponent(region)}`;
 
     const data = await apiFetch(url);
     searchState = { offset, total: data.total };

@@ -351,8 +351,10 @@ def price_search(
     district: Optional[str] = Query(None),
     constituency: Optional[str] = Query(None),
     rural_urban: Optional[str] = Query(None),
+    region: Optional[str] = Query(None),
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
+    exclude_outliers: bool = Query(False),
     sort: str = Query("price"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -382,6 +384,8 @@ def price_search(
         conditions.append("is_supermarket_service_station = TRUE")
     if motorway_only:
         conditions.append("is_motorway_service_station = TRUE")
+    if exclude_outliers:
+        conditions.append("NOT price_is_outlier")
     if category:
         conditions.append("forecourt_type = %s")
         params.append(category)
@@ -394,6 +398,9 @@ def price_search(
     if rural_urban:
         conditions.append("rural_urban = %s")
         params.append(rural_urban)
+    if region:
+        conditions.append("region = %s")
+        params.append(region)
 
     where = " AND ".join(conditions)
 
@@ -552,20 +559,42 @@ def prices_by_rural_urban(
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
-    """Average price by rural/urban classification."""
+    """Average price by rural/urban classification.
+
+    England/Wales use the ONS RUC and Scotland uses the Scottish Government
+    classification.  We map both into a unified set of labels so the chart
+    is not confusing, while returning the underlying values for drill-down.
+    """
     with db.cursor() as cur:
         cur.execute("""
-            SELECT rural_urban,
+            SELECT unified_label,
                    ROUND(AVG(price)::numeric, 1) AS avg_price,
                    MIN(price) AS min_price,
                    MAX(price) AS max_price,
-                   COUNT(*) AS station_count
-            FROM current_prices
-            WHERE fuel_type = %s
-              AND rural_urban IS NOT NULL
-              AND NOT temporary_closure
-              AND NOT price_is_outlier
-            GROUP BY rural_urban
+                   COUNT(*) AS station_count,
+                   ARRAY_AGG(DISTINCT rural_urban) AS rural_urban_values
+            FROM (
+                SELECT price, rural_urban,
+                    CASE
+                        -- England/Wales ONS RUC
+                        WHEN rural_urban LIKE 'Urban:%%' THEN 'Urban'
+                        WHEN rural_urban LIKE 'Smaller rural:%%' THEN 'Rural (smaller)'
+                        WHEN rural_urban LIKE 'Larger rural:%%' THEN 'Rural (larger)'
+                        -- Scotland
+                        WHEN rural_urban IN ('Large Urban Areas', 'Other Urban Areas') THEN 'Urban'
+                        WHEN rural_urban = 'Accessible Small Towns' THEN 'Small towns'
+                        WHEN rural_urban = 'Remote Small Towns' THEN 'Remote small towns'
+                        WHEN rural_urban = 'Accessible Rural' THEN 'Rural (accessible)'
+                        WHEN rural_urban = 'Remote Rural' THEN 'Remote rural'
+                        ELSE rural_urban
+                    END AS unified_label
+                FROM current_prices
+                WHERE fuel_type = %s
+                  AND rural_urban IS NOT NULL
+                  AND NOT temporary_closure
+                  AND NOT price_is_outlier
+            ) sub
+            GROUP BY unified_label
             ORDER BY avg_price DESC
         """, (fuel_type,))
         return cur.fetchall()
