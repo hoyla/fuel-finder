@@ -1,14 +1,15 @@
 """
 Authentication for the Fuel Finder API.
 
-Supports three modes (in priority order):
+Supports multiple authentication methods (checked in order):
 
-1. **Cognito JWT** – when ``COGNITO_USER_POOL_ID`` is set, requests must carry
-   a valid Cognito ID token in the ``Authorization: Bearer <token>`` header.
+1. **API key** – when ``API_KEY`` is set, requests with a valid
+   ``X-Api-Key`` header are accepted.  Works alongside Cognito.
+   API key holders are treated as admin for mutation endpoints.
+
+2. **Cognito JWT** – when ``COGNITO_USER_POOL_ID`` is set, requests must
+   carry a valid Cognito ID token in ``Authorization: Bearer <token>``.
    Admin endpoints require membership of the ``admin`` Cognito group.
-
-2. **Shared API key** – when only ``API_KEY`` is set, requests must send the
-   key in the ``X-Api-Key`` header.
 
 3. **No auth** – when neither is configured, auth is disabled.
    This is the local-dev experience.
@@ -171,10 +172,14 @@ async def require_auth(
 ) -> None:
     """Authenticate the request.
 
-    - Cognito mode:  validates the Bearer JWT.
-    - API-key mode:  checks ``X-Api-Key`` header.
-    - No-auth mode:  passes through.
+    - Cognito JWT in ``Authorization: Bearer <token>`` header.
+    - API key in ``X-Api-Key`` header (works alongside Cognito).
+    - No-auth mode:  passes through when neither is configured.
     """
+    # Try API key first (works in all modes when API_KEY is set)
+    if API_KEY and x_api_key == API_KEY:
+        return
+
     if _USE_COGNITO:
         _extract_claims(request)
         return
@@ -182,12 +187,11 @@ async def require_auth(
     if not API_KEY:
         return
 
-    if x_api_key != API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API key",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or missing credentials",
+        headers={"WWW-Authenticate": "Bearer, ApiKey"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -201,10 +205,14 @@ async def require_admin(
 ) -> None:
     """Require admin-level access for mutation endpoints.
 
+    - API key:       any valid key is treated as admin.
     - Cognito mode:  user must be in the ``admin`` Cognito group.
-    - API-key mode:  any valid key is treated as admin.
     - No-auth mode:  passes through.
     """
+    # API key holders get admin access
+    if API_KEY and x_api_key == API_KEY:
+        return
+
     if _USE_COGNITO:
         claims = _extract_claims(request)
         groups = set(claims.get("cognito:groups", []))
@@ -215,7 +223,7 @@ async def require_admin(
             )
         return
 
-    # API-key or no-auth — delegate to require_auth
+    # No-auth — delegate to require_auth
     await require_auth(request, x_api_key)
 
 
