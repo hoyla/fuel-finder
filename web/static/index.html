@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fuel Finder</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <style>
         :root {
             --bg:       #f5f6f7;
@@ -76,7 +78,24 @@
         button.primary:hover { opacity: 0.9; }
 
         /* Map */
-        #map { height: 500px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 1.5rem; }
+        #map { height: calc(100vh - 220px); min-height: 400px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 1.5rem; position: relative; }
+        .map-legend {
+            position: absolute; bottom: 20px; right: 10px; z-index: 1000;
+            background: rgba(255,255,255,0.92); padding: 8px 12px; border-radius: 6px;
+            border: 1px solid var(--border); font-size: 0.78rem; line-height: 1.6;
+        }
+        .map-legend .gradient {
+            width: 120px; height: 12px; border-radius: 3px;
+            background: linear-gradient(to right, #00703c, #f47738, #d4351c);
+            margin: 4px 0;
+        }
+        .map-legend .labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); }
+        .map-loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 1000; background: rgba(255,255,255,0.9); padding: 0.75rem 1.5rem;
+            border-radius: 6px; border: 1px solid var(--border); font-size: 0.9rem;
+            display: none;
+        }
 
         /* Table */
         .table-wrap {
@@ -254,8 +273,35 @@
                 <label>Fuel type</label>
                 <select id="map-fuel"></select>
             </div>
+            <div class="control">
+                <label>Region</label>
+                <select id="map-region"><option value="">All</option></select>
+            </div>
+            <div class="control">
+                <label>Brand</label>
+                <input id="map-brand" placeholder="e.g. Tesco" />
+            </div>
+            <div class="control">
+                <label>Category</label>
+                <select id="map-category">
+                    <option value="">All</option>
+                    <option>Supermarket</option>
+                    <option>Major Oil</option>
+                    <option>Motorway Operator</option>
+                    <option>Fuel Group</option>
+                    <option>Convenience</option>
+                    <option>Independent</option>
+                    <option>Motorway</option>
+                </select>
+            </div>
+            <div class="control" style="display:flex;align-items:end;padding-bottom:0.5rem;">
+                <label><input type="checkbox" id="map-exclude-outliers" checked> Exclude outliers</label>
+            </div>
+            <button class="primary" onclick="loadMapPrices()">Update map</button>
         </div>
-        <div id="map"></div>
+        <div id="map">
+            <div class="map-loading" id="map-loading">Loading stations…</div>
+        </div>
     </div>
 
     <!-- ============ TRENDS ============ -->
@@ -659,6 +705,7 @@
 </main>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
 // ---------------------------------------------------------------------------
@@ -1066,7 +1113,7 @@ async function loadFuelTypes() {
 
 async function loadRegions() {
     const regions = await apiFetch('/regions');
-    ['trend-region', 'search-region'].forEach(id => {
+    ['trend-region', 'search-region', 'map-region'].forEach(id => {
         const sel = document.getElementById(id);
         if (!sel) return;
         regions.forEach(r => {
@@ -1285,27 +1332,50 @@ function renderBarChart(canvasId, labels, values, label, colour) {
 // ---------------------------------------------------------------------------
 // Map
 // ---------------------------------------------------------------------------
-let map, mapLayer;
+let map, mapLayer, mapLegend;
 
 function initMap() {
     map = L.map('map').setView([53.5, -1.5], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
+        attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 18,
     }).addTo(map);
+
     loadMapPrices();
     document.getElementById('map-fuel').addEventListener('change', loadMapPrices);
 }
 
 async function loadMapPrices() {
     const fuel = document.getElementById('map-fuel').value;
-    const data = await apiFetch(`/prices/map?fuel_type=${fuel}`);
+    const region = document.getElementById('map-region').value;
+    const brand = document.getElementById('map-brand').value;
+    const category = document.getElementById('map-category').value;
+    const excludeOutliers = document.getElementById('map-exclude-outliers').checked;
+
+    let url = `/prices/map?fuel_type=${encodeURIComponent(fuel)}`;
+    if (region) url += `&region=${encodeURIComponent(region)}`;
+    if (brand) url += `&brand=${encodeURIComponent(brand)}`;
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    if (excludeOutliers) url += '&exclude_outliers=true';
+
+    const loading = document.getElementById('map-loading');
+    loading.style.display = 'block';
+
+    const data = await apiFetch(url);
+
+    loading.style.display = 'none';
 
     if (mapLayer) map.removeLayer(mapLayer);
+    if (mapLegend) map.removeControl(mapLegend);
 
-    const prices = data.map(d => d.price);
-    const minP = Math.min(...prices);
-    const maxP = Math.max(...prices);
+    if (!data.length) return;
+
+    // Safe min/max (no stack overflow with spread on large arrays)
+    let minP = Infinity, maxP = -Infinity;
+    for (const d of data) {
+        if (d.price < minP) minP = d.price;
+        if (d.price > maxP) maxP = d.price;
+    }
 
     function priceColour(p) {
         const t = (p - minP) / (maxP - minP || 1);
@@ -1315,20 +1385,42 @@ async function loadMapPrices() {
         return `rgb(${r},${g},${b})`;
     }
 
-    const markers = data.map(d =>
-        L.circleMarker([d.latitude, d.longitude], {
-            radius: 4, fillColor: priceColour(d.price), color: '#333',
-            weight: 0.5, fillOpacity: 0.8,
+    const cluster = L.markerClusterGroup({
+        maxClusterRadius: 40,
+        disableClusteringAtZoom: 12,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+    });
+
+    for (const d of data) {
+        const marker = L.circleMarker([d.latitude, d.longitude], {
+            radius: 5, fillColor: priceColour(d.price), color: '#333',
+            weight: 0.5, fillOpacity: 0.85,
         }).bindPopup(`
-            <strong>${d.trading_name}</strong><br>
-            ${d.brand_name || ''} · ${d.forecourt_type || 'Independent'}<br>
-            ${d.city} ${d.postcode}<br>
-            ${d.admin_district ? d.admin_district + '<br>' : ''}
-            ${d.rural_urban ? '<em>' + d.rural_urban + '</em><br>' : ''}
-            <strong>${ppl(d.price)}</strong> ${d.fuel_name || fuel}
-        `)
-    );
-    mapLayer = L.layerGroup(markers).addTo(map);
+            <strong>${escHtml(d.trading_name)}</strong><br>
+            ${escHtml(d.brand_name) || ''} · ${escHtml(d.forecourt_type) || 'Independent'}<br>
+            ${escHtml(d.city)} ${escHtml(d.postcode)}<br>
+            ${d.admin_district ? escHtml(d.admin_district) + '<br>' : ''}
+            ${d.rural_urban ? '<em>' + escHtml(d.rural_urban) + '</em><br>' : ''}
+            <strong>${ppl(d.price)}</strong> ${escHtml(d.fuel_name) || fuel}
+        `);
+        cluster.addLayer(marker);
+    }
+    mapLayer = cluster;
+    map.addLayer(cluster);
+
+    // Legend
+    mapLegend = L.control({ position: 'bottomright' });
+    mapLegend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'map-legend');
+        div.innerHTML = `
+            <strong>${data.length.toLocaleString()} stations</strong>
+            <div class="gradient"></div>
+            <div class="labels"><span>${ppl(minP)}</span><span>${ppl(maxP)}</span></div>
+        `;
+        return div;
+    };
+    mapLegend.addTo(map);
 }
 
 // ---------------------------------------------------------------------------

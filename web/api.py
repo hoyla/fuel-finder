@@ -333,26 +333,48 @@ def price_history(
 @app.get("/api/prices/map")
 def price_map(
     fuel_type: str = Query("E10"),
+    region: Optional[str] = Query(None),
+    brand: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    exclude_outliers: bool = Query(False),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
     """Current prices with lat/lng for map display."""
+    conditions = [
+        "fuel_type = %s",
+        "latitude IS NOT NULL",
+        "longitude IS NOT NULL",
+        "latitude BETWEEN 49 AND 61",
+        "longitude BETWEEN -9 AND 2",
+        "NOT temporary_closure",
+    ]
+    params: list = [fuel_type]
+
+    if region:
+        conditions.append("region = %s")
+        params.append(region)
+    if brand:
+        conditions.append("UPPER(brand_name) LIKE %s")
+        params.append("%" + brand.upper() + "%")
+    if category:
+        conditions.append("forecourt_type = %s")
+        params.append(category)
+    if exclude_outliers:
+        conditions.append("NOT price_is_outlier")
+
+    where = " AND ".join(conditions)
     with db.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT node_id, trading_name, brand_name, city, postcode,
                    price, fuel_name, forecourt_type,
                    admin_district, rural_urban, parliamentary_constituency,
                    latitude, longitude,
                    is_motorway_service_station, is_supermarket_service_station
             FROM current_prices
-            WHERE fuel_type = %s
-              AND latitude IS NOT NULL
-              AND longitude IS NOT NULL
-              AND latitude BETWEEN 49 AND 61
-              AND longitude BETWEEN -9 AND 2
-              AND NOT temporary_closure
+            WHERE {where}
             ORDER BY price
-        """, (fuel_type,))
+        """, params)
         return cur.fetchall()
 
 
