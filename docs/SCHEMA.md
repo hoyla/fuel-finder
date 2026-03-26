@@ -68,7 +68,7 @@ Raw station data from the API. Upserted on each full scrape — always reflects 
 **Key indexes:**
 - `(node_id, fuel_type, observed_at DESC)` — fast per-station history lookups
 - `(observed_at DESC)` — recent changes across all stations
-- `(fuel_type, observed_at DESC)` — changes by fuel type
+- `(fuel_type, observed_at DESC) INCLUDE (price, node_id, anomaly_flags)` — covering index for time-series aggregation (enables Index Only Scans, avoids heap access)
 
 ### `brand_aliases`
 
@@ -169,7 +169,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `anomaly_flags` | `fuel_prices` | `NULL` = no issues. Array of flag strings if anomalous |
 | `price_is_outlier` | Computed | `true` if anomaly-flagged OR outside IQR fences (Q1 − 1.5×IQR .. Q3 + 1.5×IQR) |
 
-**Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`, `(region, fuel_type)`, `(forecourt_type, fuel_type)`, `(admin_district, fuel_type)`, `(parliamentary_constituency, fuel_type)`, `(rural_urban, fuel_type)`, `(fuel_type, price_is_outlier)` partial WHERE NOT price_is_outlier
+**Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`, `(region, fuel_type)`, `(forecourt_type, fuel_type)`, `(admin_district, fuel_type)`, `(parliamentary_constituency, fuel_type)`, `(rural_urban, fuel_type)`, `(country, fuel_type)`, `(lower(brand_name) text_pattern_ops)`, `(fuel_type, price_is_outlier)` partial WHERE NOT price_is_outlier
 
 ## Fuel types
 

@@ -220,14 +220,45 @@
     </div>
 
     <div class="endpoint">
-        <div class="method-path"><span class="method get">GET</span> /api/prices/history</div>
-        <div class="desc">Average price over time. Uses hourly granularity for &le;30 days, daily for longer. Excludes outliers and anomaly-flagged prices.</div>
+        <div class="method-path"><span class="method get">GET</span> /api/prices/station/{node_id}/history</div>
+        <div class="desc">Price history for a single station. Click a station name in Search results to view its trend.</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
                 <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
                 <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365)</td></tr>
-                <tr><td><code>region</code></td><td>string</td><td>&mdash;</td><td>Optional region filter</td></tr>
+                <tr><td><code>start_date</code></td><td>string</td><td>&mdash;</td><td>Start date (YYYY-MM-DD)</td></tr>
+                <tr><td><code>end_date</code></td><td>string</td><td>&mdash;</td><td>End date (YYYY-MM-DD)</td></tr>
+                <tr><td><code>granularity</code></td><td>string</td><td>auto</td><td><code>hourly</code> or <code>daily</code> (auto: hourly &le;30d)</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>{ granularity, station: { trading_name, brand_name, city, postcode }, data: [ { bucket, avg_price } ] }</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/history</div>
+        <div class="desc">Average price over time. Uses hourly granularity for &le;30 days, daily for longer. Supports location, brand, and search-style filters for aggregate trends.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+                <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365)</td></tr>
+                <tr><td><code>start_date</code></td><td>string</td><td>&mdash;</td><td>Start date (YYYY-MM-DD)</td></tr>
+                <tr><td><code>end_date</code></td><td>string</td><td>&mdash;</td><td>End date (YYYY-MM-DD)</td></tr>
+                <tr><td><code>granularity</code></td><td>string</td><td>auto</td><td><code>hourly</code> or <code>daily</code> (auto: hourly &le;30d)</td></tr>
+                <tr><td><code>region</code></td><td>string</td><td>&mdash;</td><td>Region filter (comma-separated)</td></tr>
+                <tr><td><code>country</code></td><td>string</td><td>&mdash;</td><td>Country filter (comma-separated)</td></tr>
+                <tr><td><code>rural_urban</code></td><td>string</td><td>&mdash;</td><td>Rural/urban classification (comma-separated)</td></tr>
+                <tr><td><code>node_ids</code></td><td>string</td><td>&mdash;</td><td>Comma-separated station node IDs</td></tr>
+                <tr><td><code>brand</code></td><td>string</td><td>&mdash;</td><td>Brand name substring</td></tr>
+                <tr><td><code>category</code></td><td>string</td><td>&mdash;</td><td>Forecourt type (comma-separated)</td></tr>
+                <tr><td><code>postcode</code></td><td>string</td><td>&mdash;</td><td>Postcode prefix</td></tr>
+                <tr><td><code>city</code></td><td>string</td><td>&mdash;</td><td>City substring</td></tr>
+                <tr><td><code>district</code></td><td>string</td><td>&mdash;</td><td>Local authority district</td></tr>
+                <tr><td><code>constituency</code></td><td>string</td><td>&mdash;</td><td>Parliamentary constituency</td></tr>
+                <tr><td><code>supermarket_only</code></td><td>bool</td><td>false</td><td>Only supermarket stations</td></tr>
+                <tr><td><code>motorway_only</code></td><td>bool</td><td>false</td><td>Only motorway stations</td></tr>
+                <tr><td><code>exclude_outliers</code></td><td>bool</td><td>false</td><td>Exclude statistical outliers</td></tr>
             </tbody>
         </table>
         <p>Returns: <code>{ granularity: "hourly"|"daily", data: [ { bucket, avg_price, stations } ] }</code></p>
@@ -271,7 +302,7 @@
                 <tr><td><code>motorway_only</code></td><td>bool</td><td>false</td><td>Only motorway stations</td></tr>
                 <tr><td><code>exclude_outliers</code></td><td>bool</td><td>false</td><td>Exclude statistical outliers</td></tr>
                 <tr><td><code>sort</code></td><td>string</td><td>price</td><td>price, brand, city, postcode, district</td></tr>
-                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Results per page (1&ndash;500)</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Results per page (min 1)</td></tr>
                 <tr><td><code>offset</code></td><td>int</td><td>0</td><td>Pagination offset</td></tr>
             </tbody>
         </table>

@@ -373,3 +373,129 @@ class TestSearchCategory:
         data = client.get("/api/prices/search?fuel_type=E10&limit=5").json()
         for row in data["results"]:
             assert "forecourt_type" in row
+
+
+class TestSearchExtendedFilters:
+    def test_country_filter(self, client, has_data):
+        data = client.get("/api/prices/search?fuel_type=E10&country=England&limit=5").json()
+        assert data["total"] > 0
+
+    def test_motorway_only_filter(self, client, has_data):
+        data = client.get("/api/prices/search?fuel_type=E10&motorway_only=true&limit=10").json()
+        for row in data["results"]:
+            assert row["is_motorway_service_station"] is True
+
+    def test_district_filter(self, client, has_data):
+        data = client.get("/api/prices/search?fuel_type=E10&limit=1").json()
+        if data["results"] and data["results"][0].get("admin_district"):
+            dist = data["results"][0]["admin_district"]
+            filtered = client.get(f"/api/prices/search?fuel_type=E10&district={dist}&limit=5").json()
+            for row in filtered["results"]:
+                assert row["admin_district"] == dist
+
+    def test_exclude_outliers_filter(self, client, has_data):
+        r = client.get("/api/prices/search?fuel_type=E10&exclude_outliers=true&limit=5")
+        assert r.status_code == 200
+
+    def test_no_upper_limit_cap(self, client, has_data):
+        """Search limit has no upper bound."""
+        r = client.get("/api/prices/search?fuel_type=E10&limit=1000")
+        assert r.status_code == 200
+
+
+class TestStationHistory:
+    def _get_station_id(self, client):
+        data = client.get("/api/prices/search?fuel_type=E10&limit=1").json()
+        return data["results"][0]["node_id"] if data["results"] else None
+
+    def test_returns_200(self, client, has_data):
+        node_id = self._get_station_id(client)
+        r = client.get(f"/api/prices/station/{node_id}/history?fuel_type=E10&days=30")
+        assert r.status_code == 200
+
+    def test_has_station_info(self, client, has_data):
+        node_id = self._get_station_id(client)
+        data = client.get(f"/api/prices/station/{node_id}/history?fuel_type=E10&days=7").json()
+        assert "station" in data
+        assert data["station"]["trading_name"] is not None
+
+    def test_has_granularity_and_data(self, client, has_data):
+        node_id = self._get_station_id(client)
+        data = client.get(f"/api/prices/station/{node_id}/history?fuel_type=E10&days=7").json()
+        assert data["granularity"] in ("hourly", "daily")
+        assert isinstance(data["data"], list)
+
+    def test_daily_granularity_for_long_range(self, client, has_data):
+        node_id = self._get_station_id(client)
+        data = client.get(f"/api/prices/station/{node_id}/history?fuel_type=E10&days=60").json()
+        assert data["granularity"] == "daily"
+
+    def test_explicit_granularity_override(self, client, has_data):
+        node_id = self._get_station_id(client)
+        data = client.get(f"/api/prices/station/{node_id}/history?fuel_type=E10&days=7&granularity=daily").json()
+        assert data["granularity"] == "daily"
+
+    def test_date_range_params(self, client, has_data):
+        node_id = self._get_station_id(client)
+        r = client.get(f"/api/prices/station/{node_id}/history?fuel_type=E10&start_date=2026-01-01&end_date=2026-03-01")
+        assert r.status_code == 200
+
+
+class TestHistoryExtendedFilters:
+    def test_country_filter(self, client, has_data):
+        resp = client.get("/api/prices/history?fuel_type=E10&days=7&country=England").json()
+        assert resp["granularity"] in ("hourly", "daily")
+        assert isinstance(resp["data"], list)
+
+    def test_brand_filter(self, client, has_data):
+        resp = client.get("/api/prices/history?fuel_type=E10&days=7&brand=tesco").json()
+        assert isinstance(resp["data"], list)
+
+    def test_supermarket_only_filter(self, client, has_data):
+        resp = client.get("/api/prices/history?fuel_type=E10&days=7&supermarket_only=true").json()
+        assert isinstance(resp["data"], list)
+
+    def test_node_ids_filter(self, client, has_data):
+        search = client.get("/api/prices/search?fuel_type=E10&limit=3").json()
+        ids = ",".join(r["node_id"] for r in search["results"])
+        resp = client.get(f"/api/prices/history?fuel_type=E10&days=7&node_ids={ids}").json()
+        assert isinstance(resp["data"], list)
+
+    def test_date_range_params(self, client, has_data):
+        resp = client.get("/api/prices/history?fuel_type=E10&start_date=2026-01-01&end_date=2026-03-01").json()
+        assert resp["granularity"] == "daily"
+        assert isinstance(resp["data"], list)
+
+    def test_explicit_granularity_override(self, client, has_data):
+        resp = client.get("/api/prices/history?fuel_type=E10&days=7&granularity=daily").json()
+        assert resp["granularity"] == "daily"
+
+    def test_multiple_regions(self, client, has_data):
+        resp = client.get("/api/prices/history?fuel_type=E10&days=7&region=London,Scotland").json()
+        assert isinstance(resp["data"], list)
+
+    def test_category_filter(self, client, has_data):
+        resp = client.get("/api/prices/history?fuel_type=E10&days=7&category=Supermarket").json()
+        assert isinstance(resp["data"], list)
+
+
+class TestDistricts:
+    def test_returns_200(self, client, has_data):
+        r = client.get("/api/districts")
+        assert r.status_code == 200
+
+    def test_has_entries(self, client, has_data):
+        data = client.get("/api/districts").json()
+        assert len(data) > 0
+        assert isinstance(data[0], str)
+
+
+class TestConstituencies:
+    def test_returns_200(self, client, has_data):
+        r = client.get("/api/constituencies")
+        assert r.status_code == 200
+
+    def test_has_entries(self, client, has_data):
+        data = client.get("/api/constituencies").json()
+        assert len(data) > 0
+        assert isinstance(data[0], str)

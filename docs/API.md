@@ -103,6 +103,29 @@ Average price by rural/urban classification. England/Wales ONS RUC and Scottish 
 
 `rural_urban_values` is an array of the raw classification strings mapped to each unified label.
 
+### `GET /api/prices/station/{node_id}/history`
+
+Price history for a single station.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fuel_type` | string | `E10` | Fuel type code |
+| `days` | int | `30` | Days back (1–365) |
+| `start_date` | string | — | Start date (YYYY-MM-DD) |
+| `end_date` | string | — | End date (YYYY-MM-DD) |
+| `granularity` | string | auto | `hourly` or `daily` (auto: hourly ≤30d) |
+
+**Response:**
+```json
+{
+  "granularity": "hourly",
+  "station": { "trading_name": "Tesco Extra", "brand_name": "Tesco", "city": "Leeds", "postcode": "LS11 5TZ" },
+  "data": [
+    { "bucket": "2026-03-25T13:00:00+00:00", "avg_price": 139.9 }
+  ]
+}
+```
+
 ### `GET /api/prices/history`
 
 Average price over time. Uses **hourly** granularity for ranges of 30 days or fewer, **daily** for longer ranges.
@@ -110,8 +133,25 @@ Average price over time. Uses **hourly** granularity for ranges of 30 days or fe
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `fuel_type` | string | `E10` | Fuel type code |
-| `days` | int | `30` | Number of days back (1–365) |
-| `region` | string | — | Optional region filter |
+| `days` | int | `30` | Days back (1–365) |
+| `start_date` | string | — | Start date (YYYY-MM-DD) |
+| `end_date` | string | — | End date (YYYY-MM-DD) |
+| `granularity` | string | auto | `hourly` or `daily` (auto: hourly ≤30d) |
+| `region` | string | — | Region filter (comma-separated for multiple) |
+| `country` | string | — | Country filter (comma-separated) |
+| `rural_urban` | string | — | Rural/urban classification filter (comma-separated) |
+| `node_ids` | string | — | Comma-separated station node IDs |
+| `brand` | string | — | Brand name substring filter |
+| `category` | string | — | Forecourt type filter (comma-separated) |
+| `postcode` | string | — | Postcode prefix filter |
+| `city` | string | — | City substring filter |
+| `district` | string | — | Local authority district filter |
+| `constituency` | string | — | Parliamentary constituency filter |
+| `supermarket_only` | bool | `false` | Only supermarket stations |
+| `motorway_only` | bool | `false` | Only motorway stations |
+| `exclude_outliers` | bool | `false` | Exclude statistical outliers from station selection |
+
+When search-style filters (brand, category, postcode, etc.) are provided, the endpoint uses a subquery against `current_prices` to select matching stations — much faster than passing thousands of node IDs.
 
 **Response:**
 ```json
@@ -162,7 +202,7 @@ Flexible search/filter endpoint with pagination.
 | `motorway_only` | bool | `false` | Only motorway service stations |
 | `exclude_outliers` | bool | `false` | Exclude statistical outliers |
 | `sort` | string | `price` | Sort field: `price`, `brand`, `city`, `postcode`, `district` |
-| `limit` | int | `50` | Results per page (1–500) |
+| `limit` | int | `50` | Results per page (minimum 1) |
 | `offset` | int | `0` | Pagination offset |
 
 **Response:**
