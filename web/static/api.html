@@ -175,7 +175,7 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/prices/history</div>
-        <div class="desc">Daily average price over time, optionally filtered by region.</div>
+        <div class="desc">Average price over time. Uses hourly granularity for ≤30 days, daily for longer. Excludes outliers and anomaly-flagged prices.</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
@@ -184,7 +184,7 @@
                 <tr><td><code>region</code></td><td>string</td><td>—</td><td>Optional region filter</td></tr>
             </tbody>
         </table>
-        <p>Returns: <code>[ { day, avg_price, stations } ]</code></p>
+        <p>Returns: <code>{ granularity: "hourly"|"daily", data: [ { bucket, avg_price, stations } ] }</code></p>
     </div>
 
     <div class="endpoint">
@@ -231,6 +231,22 @@
         </table>
         <p>Flags: <code>price_below_floor</code>, <code>price_above_ceiling</code>, <code>likely_decimal_error</code>, <code>large_price_jump</code></p>
     </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/outliers</div>
+        <div class="desc">Prices excluded as statistical outliers, with IQR bounds for transparency.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>—</td><td>Optional fuel type filter</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>100</td><td>Max records (1–500)</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>{ bounds: { fuel_type: { q1, q3, iqr, lower_fence, upper_fence, total_stations } }, outliers: [...], total }</code></p>
+        <p>Each outlier has <code>exclusion_reason</code>: <code>"anomaly_flagged"</code> or <code>"iqr_outlier"</code>.</p>
+    </div>
+
+    <div class="note">All price aggregation endpoints (summary, by-region, by-brand, by-category, history) exclude statistical outliers and anomaly-flagged prices. See <a href="/docs/about#outlier-methodology">outlier methodology</a> for details.</div>
 
     <!-- ===== REFERENCE ===== -->
     <h2 id="reference">Reference</h2>

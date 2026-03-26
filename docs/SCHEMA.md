@@ -166,8 +166,10 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `is_motorway_service_station` | `stations` | |
 | `is_supermarket_service_station` | `stations` | |
 | `temporary_closure` | `stations` | |
+| `anomaly_flags` | `fuel_prices` | `NULL` = no issues. Array of flag strings if anomalous |
+| `price_is_outlier` | Computed | `true` if anomaly-flagged OR outside IQR fences (Q1 − 1.5×IQR .. Q3 + 1.5×IQR) |
 
-**Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`, `(region, fuel_type)`, `(forecourt_type, fuel_type)`
+**Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`, `(region, fuel_type)`, `(forecourt_type, fuel_type)`, `(admin_district, fuel_type)`, `(parliamentary_constituency, fuel_type)`, `(rural_urban, fuel_type)`, `(fuel_type, price_is_outlier)` partial WHERE NOT price_is_outlier
 
 ## Fuel types
 
@@ -183,16 +185,17 @@ Joins station info, resolves canonical brand names via `station_override > brand
 ## Example queries
 
 ```sql
--- Average current price by fuel type
+-- Average current price by fuel type (excluding outliers)
 SELECT fuel_type, ROUND(AVG(price), 1) AS avg_ppl, COUNT(*) AS stations
 FROM current_prices
+WHERE NOT price_is_outlier
 GROUP BY fuel_type
 ORDER BY avg_ppl;
 
--- Cheapest E10 by brand
+-- Cheapest E10 by brand (excluding outliers)
 SELECT brand_name, ROUND(AVG(price), 1) AS avg, MIN(price), COUNT(*)
 FROM current_prices
-WHERE fuel_type = 'E10'
+WHERE fuel_type = 'E10' AND NOT price_is_outlier
 GROUP BY brand_name
 ORDER BY avg;
 

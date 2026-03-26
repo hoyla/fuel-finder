@@ -131,6 +131,7 @@ docker compose run --rm scraper python scrape.py incremental
 - **Regional grouping**: Postcode area prefixes are mapped to ONS-style regions (London, North West, Scotland, etc.) for regional comparisons. Seeded from `seed_postcode_regions.sql`.
 - **Fuel type labels**: API codes like `B7_STANDARD` are mapped to human names like "Diesel" via the `fuel_type_labels` table. Seeded from `seed_fuel_types.sql`.
 - **Anomaly detection**: On insert, prices are flagged (not filtered) if they fall outside 80–300p, look like decimal-place errors, or jump by more than 30%. Flags are stored in `anomaly_flags` on each `fuel_prices` row. See `queries/anomaly_detection.sql`.
+- **Statistical outlier exclusion**: All dashboard averages exclude prices that fall outside the Tukey IQR (interquartile range) fences — Q1 − 1.5×IQR and Q3 + 1.5×IQR — computed per fuel type at materialisation time. Anomaly-flagged prices are also excluded. Outlier prices are never deleted; they are flagged (`price_is_outlier = true`) and visible on the Anomalies → Statistical Outliers page for full transparency.
 - **Forecourt categories**: The API's `is_supermarket_service_station` flag is unreliable (flags BP, Texaco, Maxol as supermarkets). Instead, `brand_categories` maps canonical brands to forecourt types (Supermarket, Major Oil, Motorway Operator, Fuel Group, Convenience). Motorway flag always takes priority; unmapped brands default to Independent.
 - **Numbered migrations**: Schema changes go through `migrations/NNN_name.sql` files, tracked in `schema_migrations`. No external tools — `migrate.py` handles discovery, ordering, and idempotent application.
 - **Postcodes.io enrichment**: Each unique postcode is looked up via the free [postcodes.io](https://postcodes.io) bulk API. Results are cached in `postcode_lookups` and provide authoritative lat/lng (fixing ~85 stations with bad API coordinates), admin district, parliamentary constituency, rural/urban classification, LSOA and MSOA. Failed lookups are recorded (NULL coords + timestamp) so they aren't retried.
@@ -143,9 +144,9 @@ The project includes a web dashboard at http://localhost:8080 (started via Docke
 **Tabs:**
 - **Dashboard** — headline prices, regional chart, forecourt category chart, cheapest brands, rural/urban price comparison, most/least expensive local authorities
 - **Map** — every station on a Leaflet map, colour-coded by price, with admin district and rural/urban classification in popups
-- **Trends** — daily average price line chart, filterable by region
+- **Trends** — average price line chart with hourly granularity for ≤30 days and daily for longer ranges, filterable by region
 - **Search** — query builder with postcode, brand, city, price range, category, local authority, constituency, and rural/urban filters
-- **Anomalies** — flagged price records
+- **Anomalies** — anomaly-flagged price records and statistical outliers excluded from averages (with IQR bounds for transparency)
 - **Data** — normalisation report, brand aliases, brand categories, station overrides, postcode issues (stations with unrecognised postcodes + coordinate fix tool), and materialised view refresh
 
 **API documentation:** see the [API docs page](http://localhost:8080/docs/api) (served from the web UI) or [docs/API.md](docs/API.md).
@@ -174,7 +175,9 @@ fuel-finder-scraper/
 │   ├── 006_brand_categories.sql
 │   ├── 007_current_prices_forecourt_type.sql
 │   ├── 008_postcode_lookups.sql
-│   └── 009_current_prices_postcode_enrichment.sql
+│   ├── 009_current_prices_postcode_enrichment.sql
+│   ├── 010_update_fuel_names.sql
+│   └── 011_outlier_exclusion.sql
 ├── seed_brand_aliases.sql    # Legacy seed file (superseded by migrations)
 ├── seed_postcode_regions.sql # Legacy seed file (superseded by migrations)
 ├── seed_fuel_types.sql       # Legacy seed file (superseded by migrations)

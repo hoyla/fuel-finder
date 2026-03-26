@@ -12,12 +12,15 @@ Dashboard headline numbers: average/min/max prices per fuel type, station count,
 ```json
 {
   "by_fuel_type": [
-    { "fuel_type": "E10", "fuel_name": "Unleaded (E10)", "avg_price": 149.3, "min_price": 135.9, "max_price": 199.9, "station_count": 7277 }
+    { "fuel_type": "E10", "fuel_name": "Unleaded (E10)", "avg_price": 149.3, "min_price": 135.9, "max_price": 199.9, "station_count": 7277, "outliers_excluded": 12 }
   ],
   "total_stations": 7466,
   "total_prices": 24551,
   "last_scrape": "2026-03-25T14:00:00Z"
 }
+```
+
+Averages, min/max, and station counts exclude statistical outliers and anomaly-flagged prices. `outliers_excluded` shows how many prices were excluded for that fuel type.
 ```
 
 ### `GET /api/prices/by-region`
@@ -30,6 +33,8 @@ Average price by ONS region.
 
 **Response:** Array of `{ region, avg_price, min_price, max_price, station_count }`
 
+Excludes outliers and anomaly-flagged prices.
+
 ### `GET /api/prices/by-brand`
 
 Average price by canonical brand name (minimum 3 stations).
@@ -39,7 +44,7 @@ Average price by canonical brand name (minimum 3 stations).
 | `fuel_type` | string | `E10` | Fuel type code |
 | `limit` | int | `20` | Max brands to return (1–100) |
 
-**Response:** Array of `{ brand_name, forecourt_type, avg_price, min_price, max_price, station_count }`, sorted by `avg_price` ascending.
+**Response:** Array of `{ brand_name, forecourt_type, avg_price, min_price, max_price, station_count }`, sorted by `avg_price` ascending. Excludes outliers and anomaly-flagged prices.
 
 ### `GET /api/prices/by-category`
 
@@ -49,11 +54,11 @@ Average price by forecourt category (Supermarket, Major Oil, Motorway, etc.).
 |---|---|---|---|
 | `fuel_type` | string | `E10` | Fuel type code |
 
-**Response:** Array of `{ forecourt_type, avg_price, min_price, max_price, station_count }`, sorted by `avg_price` ascending.
+**Response:** Array of `{ forecourt_type, avg_price, min_price, max_price, station_count }`, sorted by `avg_price` ascending. Excludes outliers and anomaly-flagged prices.
 
 ### `GET /api/prices/history`
 
-Daily average price over time.
+Average price over time. Uses **hourly** granularity for ranges of 30 days or fewer, **daily** for longer ranges. Excludes anomaly-flagged records and IQR-based statistical outliers.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -61,7 +66,18 @@ Daily average price over time.
 | `days` | int | `30` | Number of days back (1–365) |
 | `region` | string | — | Optional region filter |
 
-**Response:** Array of `{ day, avg_price, stations }`
+**Response:**
+```json
+{
+  "granularity": "hourly",
+  "data": [
+    { "bucket": "2026-03-25T13:00:00+00:00", "avg_price": 149.1, "stations": 6998 }
+  ]
+}
+```
+
+- `granularity`: `"hourly"` (≤30 days) or `"daily"` (>30 days)
+- `bucket`: ISO timestamp (hourly) or date string (daily)
 
 ### `GET /api/prices/map`
 
@@ -113,6 +129,34 @@ Recent price records flagged by anomaly detection.
 **Response:** Array of `{ id, node_id, trading_name, city, fuel_type, price, anomaly_flags, observed_at }`
 
 **Anomaly flags:** `price_below_floor`, `price_above_ceiling`, `likely_decimal_error`, `large_price_jump`
+
+### `GET /api/outliers`
+
+Prices excluded as statistical outliers, with IQR bounds for transparency.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fuel_type` | string | — | Optional fuel type filter |
+| `limit` | int | `100` | Max records (1–500) |
+
+**Response:**
+```json
+{
+  "bounds": {
+    "E10": { "fuel_type": "E10", "q1": 146.9, "q3": 153.9, "iqr": 7.0, "lower_fence": 136.4, "upper_fence": 164.4, "total_stations": 7277 }
+  },
+  "outliers": [
+    { "node_id": "abc...", "trading_name": "Example", "city": "London", "postcode": "SW1A 1AA", "fuel_type": "E10", "fuel_name": "Unleaded (E10)", "price": 1.5, "brand_name": "Shell", "forecourt_type": "Major Oil", "anomaly_flags": null, "observed_at": "2026-03-25T14:00:00Z", "exclusion_reason": "iqr_outlier" }
+  ],
+  "total": 1
+}
+```
+
+`exclusion_reason` is either `"anomaly_flagged"` (rule-based detection on insert) or `"iqr_outlier"` (Tukey IQR fence method).
+
+---
+
+> **Note on outlier exclusion:** All price aggregation endpoints (`/api/summary`, `/api/prices/by-region`, `/api/prices/by-brand`, `/api/prices/by-category`, `/api/prices/by-district`, `/api/prices/by-rural-urban`, `/api/prices/by-constituency`, `/api/prices/history`) exclude statistical outliers and anomaly-flagged prices. The `/api/outliers` endpoint provides full transparency into which prices were excluded and why.
 
 ## Reference endpoints
 
