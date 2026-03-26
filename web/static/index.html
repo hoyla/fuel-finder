@@ -1701,7 +1701,9 @@ async function loadTrends() {
                 borderColor: '#1d70b8',
                 backgroundColor: '#1d70b833',
                 fill: true, tension: 0.3,
-                pointRadius: hourly ? 0 : 2,
+                pointRadius: hourly ? 1.5 : 4,
+                pointHoverRadius: hourly ? 4 : 7,
+                pointBackgroundColor: '#1d70b8',
                 borderWidth: hourly ? 1.5 : 2,
             }]
         },
@@ -1716,7 +1718,7 @@ async function loadTrends() {
                 tooltip: {
                     callbacks: {
                         title: (items) => items[0].label,
-                        label: (item) => `${item.parsed.y}p · ${data[item.dataIndex].stations} stations`
+                        label: (item) => `${item.parsed.y}p · averaged from ${data[item.dataIndex].stations} stations`
                     }
                 }
             }
@@ -2044,7 +2046,9 @@ async function loadStationTrend() {
                 borderColor: '#1d70b8',
                 backgroundColor: '#1d70b833',
                 fill: true, tension: 0.3,
-                pointRadius: hourly ? 0 : 2,
+                pointRadius: hourly ? 1.5 : 4,
+                pointHoverRadius: hourly ? 4 : 7,
+                pointBackgroundColor: '#1d70b8',
                 borderWidth: hourly ? 1.5 : 2,
             }]
         },
@@ -2061,7 +2065,7 @@ async function loadStationTrend() {
                         title: (items) => items[0].label,
                         label: (item) => {
                             const d = data[item.dataIndex];
-                            const suffix = d.stations ? ` · ${d.stations} stations` : '';
+                            const suffix = d.stations ? ` · averaged from ${d.stations} stations` : '';
                             return `${item.parsed.y}p${suffix}`;
                         }
                     }
