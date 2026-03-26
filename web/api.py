@@ -257,6 +257,76 @@ def prices_by_category(
         return cur.fetchall()
 
 
+@app.get("/api/prices/station/{node_id}/history")
+def station_price_history(
+    node_id: str,
+    fuel_type: str = Query("E10"),
+    days: Optional[int] = Query(None, ge=1, le=365),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    granularity: Optional[str] = Query(None),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Price history for a single station."""
+    if start_date or end_date:
+        range_start = datetime.fromisoformat(start_date) if start_date else None
+        range_end = datetime.fromisoformat(end_date) if end_date else None
+        span_days = ((range_end or datetime.now()) - (range_start or range_end)).days if range_start or range_end else 30
+    else:
+        effective_days = days if days is not None else 30
+        range_start = range_end = None
+        span_days = effective_days
+
+    if range_start and range_end:
+        time_filter = "fp.observed_at >= %s AND fp.observed_at < %s + interval '1 day'"
+        time_params = (range_start, range_end)
+    elif range_start:
+        time_filter = "fp.observed_at >= %s"
+        time_params = (range_start,)
+    elif range_end:
+        time_filter = "fp.observed_at < %s + interval '1 day'"
+        time_params = (range_end,)
+    else:
+        effective_days = days if days is not None else 30
+        time_filter = "fp.observed_at >= NOW() - make_interval(days => %s)"
+        time_params = (effective_days,)
+
+    if granularity in ('hourly', 'daily'):
+        effective_granularity = granularity
+    else:
+        effective_granularity = "hourly" if span_days <= 30 else "daily"
+
+    time_col = "date_trunc('hour', fp.observed_at)" if effective_granularity == 'hourly' else "DATE(fp.observed_at)"
+
+    with db.cursor() as cur:
+        cur.execute(f"""
+            SELECT {time_col} AS bucket,
+                   ROUND(AVG(fp.price)::numeric, 1) AS avg_price
+            FROM fuel_prices fp
+            WHERE fp.node_id = %s
+              AND fp.fuel_type = %s
+              AND {time_filter}
+              AND fp.anomaly_flags IS NULL
+            GROUP BY bucket
+            ORDER BY bucket
+        """, (node_id, fuel_type, *time_params))
+        data = cur.fetchall()
+
+        # Also fetch station info
+        cur.execute("""
+            SELECT s.trading_name, s.brand_name, s.city, s.postcode
+            FROM stations s WHERE s.node_id = %s
+        """, (node_id,))
+        station = cur.fetchone()
+
+    return {
+        "granularity": effective_granularity,
+        "station": station,
+        "data": data,
+    }
+
+
 @app.get("/api/prices/history")
 def price_history(
     fuel_type: str = Query("E10"),
@@ -265,6 +335,7 @@ def price_history(
     end_date: Optional[str] = Query(None),
     granularity: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
+    node_ids: Optional[str] = Query(None),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
@@ -342,6 +413,16 @@ def price_history(
     else:
         time_col = "DATE(fp.observed_at)"
 
+    # Optional node_ids filter
+    node_filter = ""
+    node_params = ()
+    if node_ids:
+        ids = [n.strip() for n in node_ids.split(",") if n.strip()]
+        if ids:
+            placeholders = ", ".join(["%s"] * len(ids))
+            node_filter = f"AND fp.node_id IN ({placeholders})"
+            node_params = tuple(ids)
+
     with db.cursor() as cur:
         if region:
             cur.execute(bounds_cte + f"""
@@ -358,12 +439,13 @@ def price_history(
                 WHERE fp.fuel_type = %s
                   AND {time_filter}
                   AND pr.region = %s
+                  {node_filter}
                   AND fp.anomaly_flags IS NULL
                   AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
                   AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
                 GROUP BY bucket
                 ORDER BY bucket
-            """, (*bounds_params, fuel_type, *time_params, region))
+            """, (*bounds_params, fuel_type, *time_params, region, *node_params))
         else:
             cur.execute(bounds_cte + f"""
                 SELECT {time_col} AS bucket,
@@ -373,12 +455,13 @@ def price_history(
                 LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
                 WHERE fp.fuel_type = %s
                   AND {time_filter}
+                  {node_filter}
                   AND fp.anomaly_flags IS NULL
                   AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
                   AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
                 GROUP BY bucket
                 ORDER BY bucket
-            """, (*bounds_params, fuel_type, *time_params))
+            """, (*bounds_params, fuel_type, *time_params, *node_params))
         return {"granularity": effective_granularity, "data": cur.fetchall()}
 
 

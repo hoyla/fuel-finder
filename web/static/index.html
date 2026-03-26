@@ -513,6 +513,8 @@
             </div>
             <div class="filter-group" style="border-top: none; padding-top: 0;">
                 <button class="primary" onclick="doSearch()">Search</button>
+                <button class="primary" id="search-view-trend-btn" onclick="viewSelectedTrend()" disabled style="background:#00703c;">📈 View trend for selected</button>
+                <button class="primary" id="search-view-all-trend-btn" onclick="viewAllResultsTrend()" disabled style="background:#00703c;">📈 View trend for all results</button>
                 <div class="download-btns" id="search-download-btns">
                     <button onclick="downloadSearchData('csv')" disabled id="search-dl-csv">⬇ CSV</button>
                     <button onclick="downloadSearchData('json')" disabled id="search-dl-json">⬇ JSON</button>
@@ -523,6 +525,7 @@
             <table id="search-table" class="sortable">
                 <thead>
                     <tr>
+                        <th style="width:2rem;"><input type="checkbox" id="search-select-all" onchange="toggleSearchSelectAll(this)"></th>
                         <th>Station</th><th>Brand</th><th>Category</th><th>City</th>
                         <th>Postcode</th><th>Local authority</th><th>Rural/Urban</th>
                         <th>Price (p)</th><th>Fuel</th><th>Last seen</th>
@@ -532,6 +535,62 @@
             </table>
         </div>
         <div class="pagination" id="search-pagination"></div>
+    </div>
+
+    <!-- ============ STATION / SELECTION TREND ============ -->
+    <div class="panel" id="panel-station-trend">
+        <div style="margin-bottom: 1rem;">
+            <button onclick="closeStationTrend()" style="background:none;border:1px solid var(--border);border-radius:5px;padding:0.35rem 0.75rem;cursor:pointer;font-size:0.85rem;color:var(--muted);">← Back to search</button>
+        </div>
+        <div id="station-trend-header" style="margin-bottom: 1rem;">
+            <h2 id="station-trend-title" style="font-size:1.2rem;margin-bottom:0.25rem;"></h2>
+            <p id="station-trend-subtitle" style="font-size:0.9rem;color:var(--muted);"></p>
+        </div>
+        <div class="controls">
+            <div class="control">
+                <label>Fuel type</label>
+                <select id="st-fuel"></select>
+            </div>
+            <div class="control">
+                <label>Range</label>
+                <select id="st-range" onchange="setStationTrendRange(this.value)">
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30" selected>Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="180">Last 180 days</option>
+                    <option value="365">Last year</option>
+                    <option value="all">All data</option>
+                    <option value="custom">Custom range</option>
+                </select>
+            </div>
+            <div class="control" id="st-start-ctl" style="display:none;">
+                <label>From</label>
+                <input type="date" id="st-start">
+            </div>
+            <div class="control" id="st-end-ctl" style="display:none;">
+                <label>To</label>
+                <input type="date" id="st-end">
+            </div>
+            <div class="control">
+                <label>Detail</label>
+                <select id="st-granularity">
+                    <option value="auto">Auto</option>
+                    <option value="hourly">Every scrape</option>
+                    <option value="daily">Daily average</option>
+                </select>
+            </div>
+            <button class="primary" onclick="loadStationTrend()">Update</button>
+            <div class="download-btns">
+                <button onclick="downloadStationTrendData('csv')" disabled id="st-dl-csv">⬇ CSV</button>
+                <button onclick="downloadStationTrendData('json')" disabled id="st-dl-json">⬇ JSON</button>
+            </div>
+        </div>
+        <div class="chart-container">
+            <h3 id="st-trend-heading">Price history</h3>
+            <canvas id="chart-station-trend"></canvas>
+            <p id="st-granularity-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
+        </div>
     </div>
 
     <!-- ============ ANOMALIES ============ -->
@@ -1717,7 +1776,8 @@ async function doSearch(offset = 0) {
     const body = document.getElementById('search-body');
     body.innerHTML = data.results.map(r => `
         <tr>
-            <td>${r.trading_name}</td>
+            <td><input type="checkbox" class="search-row-cb" value="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" onchange="updateTrendButton()"></td>
+            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
             <td>${r.brand_name || '—'}</td>
             <td>${categoryTag(r.forecourt_type)}</td>
             <td>${r.city || '—'}</td>
@@ -1729,6 +1789,23 @@ async function doSearch(offset = 0) {
             <td>${new Date(r.observed_at).toLocaleDateString()}</td>
         </tr>
     `).join('');
+    document.getElementById('search-select-all').checked = false;
+    updateTrendButton();
+
+    // Enable/disable the "all results" trend button
+    const allBtn = document.getElementById('search-view-all-trend-btn');
+    allBtn.disabled = !data.total;
+    allBtn.textContent = data.total
+        ? `📈 View trend for all ${data.total.toLocaleString()} results`
+        : '📈 View trend for all results';
+
+    // Attach click handlers for station links via delegation
+    body.querySelectorAll('.station-link').forEach(a => {
+        a.addEventListener('click', e => {
+            e.preventDefault();
+            openStationTrend(a.dataset.node, a.dataset.name, a.dataset.brand, a.dataset.city, a.dataset.postcode);
+        });
+    });
 
     const pag = document.getElementById('search-pagination');
     const page = Math.floor(offset / 50) + 1;
@@ -1789,6 +1866,216 @@ async function downloadSearchData(fmt) {
         btn.disabled = false;
         btn.textContent = '⬇ ' + fmt.toUpperCase();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Search → Station / Selection Trend
+// ---------------------------------------------------------------------------
+let stationTrendState = { mode: null, nodeId: null, nodeIds: null, title: '' };
+let lastStationTrendData = [];
+
+function toggleSearchSelectAll(master) {
+    document.querySelectorAll('.search-row-cb').forEach(cb => cb.checked = master.checked);
+    updateTrendButton();
+}
+
+function updateTrendButton() {
+    const count = document.querySelectorAll('.search-row-cb:checked').length;
+    const btn = document.getElementById('search-view-trend-btn');
+    if (count === 0) {
+        btn.disabled = true;
+        btn.textContent = '📈 View trend for selected';
+    } else if (count === 1) {
+        const cb = document.querySelector('.search-row-cb:checked');
+        btn.disabled = false;
+        btn.textContent = `📈 View trend for ${cb.dataset.name}`;
+    } else {
+        btn.disabled = false;
+        btn.textContent = `📈 View trend for ${count} stations`;
+    }
+}
+
+function showStationTrendPanel() {
+    tabs.forEach(x => x.classList.remove('active'));
+    panels.forEach(x => x.classList.remove('active'));
+    document.getElementById('panel-station-trend').classList.add('active');
+}
+
+function closeStationTrend() {
+    panels.forEach(x => x.classList.remove('active'));
+    document.querySelector('[data-panel="search"]').classList.add('active');
+    document.getElementById('panel-search').classList.add('active');
+}
+
+function initStationTrendFuels() {
+    const sel = document.getElementById('st-fuel');
+    if (sel.options.length) return;
+    fuelTypes.forEach(ft => {
+        const o = document.createElement('option');
+        o.value = ft.fuel_type_code;
+        o.textContent = ft.fuel_name;
+        if (ft.fuel_type_code === 'E10') o.selected = true;
+        sel.appendChild(o);
+    });
+}
+
+function openStationTrend(nodeId, name, brand, city, postcode) {
+    stationTrendState = { mode: 'single', nodeId, nodeIds: null, title: name };
+    initStationTrendFuels();
+    document.getElementById('station-trend-title').textContent = name;
+    const parts = [brand, city, postcode].filter(Boolean);
+    document.getElementById('station-trend-subtitle').textContent = parts.join(' · ');
+    showStationTrendPanel();
+    setStationTrendRange('30');
+}
+
+function viewSelectedTrend() {
+    const checked = document.querySelectorAll('.search-row-cb:checked');
+    if (!checked.length) return;
+    const ids = Array.from(checked).map(cb => cb.value);
+    const names = Array.from(checked).map(cb => cb.dataset.name);
+
+    if (ids.length === 1) {
+        const cb = checked[0];
+        openStationTrend(cb.value, cb.dataset.name, cb.dataset.brand, cb.dataset.city, cb.dataset.postcode);
+        return;
+    }
+
+    stationTrendState = { mode: 'multi', nodeId: null, nodeIds: ids, title: `${ids.length} stations` };
+    initStationTrendFuels();
+    document.getElementById('station-trend-title').textContent = `Average trend for ${ids.length} stations`;
+    const preview = names.length <= 5 ? names.join(', ') : names.slice(0, 5).join(', ') + ` + ${names.length - 5} more`;
+    document.getElementById('station-trend-subtitle').textContent = preview;
+    showStationTrendPanel();
+    setStationTrendRange('30');
+}
+
+async function viewAllResultsTrend() {
+    const btn = document.getElementById('search-view-all-trend-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Loading all results…';
+    try {
+        const data = await apiFetch(buildSearchUrl(10000, 0));
+        const ids = data.results.map(r => r.node_id);
+        if (!ids.length) return;
+
+        stationTrendState = { mode: 'multi', nodeId: null, nodeIds: ids, title: `${ids.length} stations` };
+        initStationTrendFuels();
+        document.getElementById('station-trend-title').textContent = `Average trend for all ${ids.length} search results`;
+        document.getElementById('station-trend-subtitle').textContent = 'Based on current search filters';
+        showStationTrendPanel();
+        setStationTrendRange('30');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = `📈 View trend for all ${searchState.total?.toLocaleString() || ''} results`;
+    }
+}
+
+function setStationTrendRange(value) {
+    const customFields = value === 'custom';
+    document.getElementById('st-start-ctl').style.display = customFields ? '' : 'none';
+    document.getElementById('st-end-ctl').style.display = customFields ? '' : 'none';
+    if (!customFields) {
+        const end = new Date();
+        document.getElementById('st-end').value = end.toISOString().slice(0, 10);
+        if (value === 'all') {
+            document.getElementById('st-start').value = '';
+        } else {
+            const start = new Date();
+            start.setDate(start.getDate() - parseInt(value));
+            document.getElementById('st-start').value = start.toISOString().slice(0, 10);
+        }
+        loadStationTrend();
+    }
+}
+
+async function loadStationTrend() {
+    const fuel = document.getElementById('st-fuel').value;
+    const startDate = document.getElementById('st-start').value;
+    const endDate = document.getElementById('st-end').value;
+    const gran = document.getElementById('st-granularity').value;
+
+    let url;
+    if (stationTrendState.mode === 'single') {
+        url = `/prices/station/${encodeURIComponent(stationTrendState.nodeId)}/history?fuel_type=${fuel}`;
+    } else {
+        const ids = stationTrendState.nodeIds.join(',');
+        url = `/prices/history?fuel_type=${fuel}&node_ids=${encodeURIComponent(ids)}`;
+    }
+    if (startDate) url += `&start_date=${startDate}`;
+    if (endDate) url += `&end_date=${endDate}`;
+    if (!startDate && !endDate) url += '&days=30';
+    if (gran !== 'auto') url += `&granularity=${gran}`;
+
+    const resp = await apiFetch(url);
+    const data = resp.data;
+    lastStationTrendData = data;
+
+    document.getElementById('st-dl-csv').disabled = !data.length;
+    document.getElementById('st-dl-json').disabled = !data.length;
+
+    const hourly = resp.granularity === 'hourly';
+    const isSingle = stationTrendState.mode === 'single';
+    document.getElementById('st-trend-heading').textContent =
+        isSingle ? (hourly ? 'Hourly price' : 'Daily price')
+                 : (hourly ? 'Hourly average price' : 'Daily average price');
+    document.getElementById('st-granularity-note').textContent = hourly
+        ? 'Showing per scrape window (data is fetched every 30 minutes).'
+        : 'Showing daily ' + (isSingle ? 'prices.' : 'averages.');
+
+    const labels = data.map(d => {
+        const dt = new Date(d.bucket);
+        if (hourly) {
+            return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+                 + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        }
+        return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    });
+
+    if (charts['chart-station-trend']) charts['chart-station-trend'].destroy();
+    const ctx = document.getElementById('chart-station-trend').getContext('2d');
+    charts['chart-station-trend'] = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: isSingle ? 'Pence/litre' : 'Avg pence/litre',
+                data: data.map(d => d.avg_price),
+                borderColor: '#1d70b8',
+                backgroundColor: '#1d70b833',
+                fill: true, tension: 0.3,
+                pointRadius: hourly ? 0 : 2,
+                borderWidth: hourly ? 1.5 : 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: { ticks: { maxTicksAutoSkip: true, maxRotation: 45 } },
+                y: { beginAtZero: false }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => items[0].label,
+                        label: (item) => {
+                            const d = data[item.dataIndex];
+                            const suffix = d.stations ? ` · ${d.stations} stations` : '';
+                            return `${item.parsed.y}p${suffix}`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function downloadStationTrendData(fmt) {
+    const name = stationTrendState.mode === 'single'
+        ? 'station-trend-' + stationTrendState.title.replace(/\s+/g, '-').toLowerCase()
+        : 'multi-station-trend';
+    downloadFile(lastStationTrendData, name, fmt);
 }
 
 // ---------------------------------------------------------------------------
