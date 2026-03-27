@@ -225,6 +225,26 @@
             main { padding: 1rem; }
             .tabs { padding: 0 1rem; overflow-x: auto; }
         }
+
+        /* Price editor */
+        .price-editor-row td { vertical-align: middle; }
+        .price-editor-row .correction-input {
+            width: 5rem; padding: 0.25rem 0.4rem; border: 1px solid var(--accent);
+            border-radius: 4px; font-size: 0.85rem; text-align: right;
+        }
+        .price-editor-row .btn-correct {
+            padding: 0.2rem 0.5rem; border: 1px solid var(--green); border-radius: 4px;
+            background: #fff; color: var(--green); cursor: pointer; font-size: 0.78rem;
+        }
+        .price-editor-row .btn-correct:hover { background: var(--green); color: #fff; }
+        .price-editor-row .btn-revert {
+            padding: 0.2rem 0.5rem; border: 1px solid var(--muted); border-radius: 4px;
+            background: #fff; color: var(--muted); cursor: pointer; font-size: 0.78rem;
+        }
+        .price-editor-row .btn-revert:hover { background: var(--muted); color: #fff; }
+        .corrected { background: #d4edda !important; }
+        .anomaly-row { background: #fff3cd; }
+        .suggest-link { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.78rem; }
     </style>
 </head>
 <body>
@@ -642,6 +662,9 @@
             <canvas id="chart-station-trend"></canvas>
             <p id="st-granularity-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
         </div>
+        <div id="st-edit-section" style="margin-top:1rem;display:none;">
+            <button class="primary" id="st-edit-btn" onclick="openPriceEditor(stationTrendState.nodeId, stationTrendState.title, 'station-trend')" style="background:#505a5f;">✏️ Edit prices for this station</button>
+        </div>
     </div>
 
     <!-- ============ ANOMALIES ============ -->
@@ -661,6 +684,7 @@
             <p style="color:var(--muted);margin-bottom:1rem;">
                 Price records flagged as potentially anomalous by rule-based checks on insert.
                 A larger gap between the previous and current dates makes a bigger price change more plausible.
+                Click <strong>Edit prices</strong> to correct misreported values for a station.
             </p>
             <div class="table-wrap">
                 <table class="sortable">
@@ -669,7 +693,7 @@
                             <th>Station</th><th>City</th><th>Fuel</th>
                             <th>Previous Price</th><th>Previous Date</th>
                             <th>Current Price</th><th>Current Date</th>
-                            <th>Change</th><th>Flags</th>
+                            <th>Change</th><th>Flags</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="anomaly-body"></tbody>
@@ -722,6 +746,40 @@
                 </table>
             </div>
         </div>
+    </div>
+
+    <!-- ============ PRICE EDITOR ============ -->
+    <div class="panel" id="panel-price-editor">
+        <div style="margin-bottom: 1rem;">
+            <button id="price-editor-back" onclick="closePriceEditor()" style="background:none;border:1px solid var(--border);border-radius:5px;padding:0.35rem 0.75rem;cursor:pointer;font-size:0.85rem;color:var(--muted);">← Back</button>
+        </div>
+        <div style="margin-bottom: 1rem;">
+            <h2 id="price-editor-title" style="font-size:1.2rem;margin-bottom:0.25rem;"></h2>
+            <p id="price-editor-subtitle" style="font-size:0.9rem;color:var(--muted);"></p>
+        </div>
+        <div class="controls" style="margin-bottom:1rem;">
+            <div class="control">
+                <label>Fuel type</label>
+                <select id="pe-fuel" onchange="loadPriceEditorRecords()"></select>
+            </div>
+        </div>
+        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:0.75rem;">
+            Click a suggested correction to pre-fill, or type a corrected price and click ✓ to save.
+            Corrections are stored separately — original data is never modified.
+        </p>
+        <div class="table-wrap">
+            <table class="sortable">
+                <thead>
+                    <tr>
+                        <th>Fuel</th><th>Original Price</th><th>Corrected Price</th>
+                        <th>Effective Price</th><th>Observed</th>
+                        <th>Flags</th><th>Suggestion</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="price-editor-body"></tbody>
+            </table>
+        </div>
+        <div id="price-editor-status" class="status-msg" style="margin-top:1rem;"></div>
     </div>
 
     <!-- ============ SCRAPE HISTORY ============ -->
@@ -2196,6 +2254,10 @@ async function loadStationTrend() {
     document.getElementById('st-dl-csv').disabled = !data.length;
     document.getElementById('st-dl-json').disabled = !data.length;
 
+    // Show edit button only for single-station views
+    document.getElementById('st-edit-section').style.display =
+        stationTrendState.mode === 'single' ? '' : 'none';
+
     const hourly = resp.granularity === 'hourly';
     const isSingle = stationTrendState.mode === 'single';
     document.getElementById('st-trend-heading').textContent =
@@ -2263,13 +2325,161 @@ function downloadStationTrendData(fmt) {
 }
 
 // ---------------------------------------------------------------------------
+// Price Editor
+// ---------------------------------------------------------------------------
+let priceEditorState = { nodeId: null, backTo: 'anomalies' };
+
+function openPriceEditor(nodeId, stationName, backTo) {
+    priceEditorState = { nodeId, backTo: backTo || 'anomalies' };
+    // Hide all panels, show editor
+    panels.forEach(x => x.classList.remove('active'));
+    tabs.forEach(x => x.classList.remove('active'));
+    document.getElementById('panel-price-editor').classList.add('active');
+    document.getElementById('price-editor-title').textContent = stationName;
+    document.getElementById('price-editor-subtitle').textContent = 'Edit individual price records for this station';
+    // Populate fuel select
+    const sel = document.getElementById('pe-fuel');
+    if (!sel.options.length) {
+        const allOpt = document.createElement('option');
+        allOpt.value = ''; allOpt.textContent = 'All fuel types';
+        sel.appendChild(allOpt);
+        fuelTypes.forEach(ft => {
+            const o = document.createElement('option');
+            o.value = ft.fuel_type_code;
+            o.textContent = ft.fuel_name || ft.fuel_type_code;
+            sel.appendChild(o);
+        });
+    }
+    loadPriceEditorRecords();
+}
+
+function closePriceEditor() {
+    panels.forEach(x => x.classList.remove('active'));
+    if (priceEditorState.backTo === 'station-trend') {
+        document.getElementById('panel-station-trend').classList.add('active');
+        // Reload trend to reflect corrections
+        loadStationTrend();
+    } else {
+        document.querySelector('[data-panel="anomalies"]').classList.add('active');
+        document.getElementById('panel-anomalies').classList.add('active');
+        tabs.forEach(x => x.classList.remove('active'));
+        document.querySelector('[data-panel="anomalies"]').classList.add('active');
+        loadAnomalies();
+    }
+}
+
+function suggestCorrection(price) {
+    // Common misreporting: pounds instead of pence
+    if (price < 10) return (price * 100).toFixed(1);
+    if (price > 500) return (price / 10).toFixed(1);
+    return null;
+}
+
+async function loadPriceEditorRecords() {
+    const nodeId = priceEditorState.nodeId;
+    const fuel = document.getElementById('pe-fuel').value;
+    let url = `/prices/station/${encodeURIComponent(nodeId)}/records?limit=500`;
+    if (fuel) url += `&fuel_type=${encodeURIComponent(fuel)}`;
+    const resp = await apiFetch(url);
+    const records = resp.records;
+    const station = resp.station;
+    if (station) {
+        const parts = [station.brand_name, station.city, station.postcode].filter(Boolean);
+        document.getElementById('price-editor-subtitle').textContent = parts.join(' · ');
+    }
+    const body = document.getElementById('price-editor-body');
+    if (!records.length) {
+        body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">No records found</td></tr>';
+        return;
+    }
+    const fmtDate = ts => ts ? new Date(ts).toLocaleString() : '—';
+    body.innerHTML = records.map(r => {
+        const hasCorrection = r.corrected_price != null;
+        const isAnomaly = r.anomaly_flags && r.anomaly_flags.length > 0;
+        const rowClass = hasCorrection ? 'corrected' : (isAnomaly ? 'anomaly-row' : '');
+        const suggestion = suggestCorrection(r.original_price);
+        const suggestHtml = suggestion && !hasCorrection
+            ? `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}'">${suggestion}p</a>`
+            : (hasCorrection ? `<span style="font-size:0.78rem;color:var(--muted);">${r.correction_reason || ''}</span>` : '—');
+        const actions = hasCorrection
+            ? `<button class="btn-revert" onclick="revertCorrection(${r.fuel_price_id})">↩ Revert</button>`
+            : `<input id="corr-${r.fuel_price_id}" class="correction-input" type="text" inputmode="decimal" placeholder="pence">
+               <button class="btn-correct" onclick="saveCorrection(${r.fuel_price_id})">✓</button>`;
+        return `<tr class="price-editor-row ${rowClass}">
+            <td>${r.fuel_name || r.fuel_type}</td>
+            <td>${ppl(r.original_price)}</td>
+            <td>${hasCorrection ? ppl(r.corrected_price) : '—'}</td>
+            <td><strong>${ppl(r.effective_price)}</strong></td>
+            <td>${fmtDate(r.observed_at)}</td>
+            <td>${isAnomaly ? (r.anomaly_flags || []).map(f => '<span class="tag">' + f + '</span>').join(' ') : '—'}</td>
+            <td>${suggestHtml}</td>
+            <td style="white-space:nowrap;">${actions}</td>
+        </tr>`;
+    }).join('');
+    document.getElementById('price-editor-status').className = 'status-msg';
+    document.getElementById('price-editor-status').textContent = '';
+}
+
+async function saveCorrection(fuelPriceId) {
+    const input = document.getElementById('corr-' + fuelPriceId);
+    const val = (input?.value || '').trim();
+    if (!val || isNaN(val)) {
+        alert('Please enter a valid number (price in pence, e.g. 136.9)');
+        return;
+    }
+    const correctedPrice = parseFloat(val);
+    if (correctedPrice <= 0) {
+        alert('Price must be greater than zero');
+        return;
+    }
+    const reason = 'Manual correction via price editor';
+    try {
+        const resp = await fetch(API + '/corrections', {
+            method: 'POST',
+            headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fuel_price_id: fuelPriceId, corrected_price: correctedPrice, reason }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `API error: ${resp.status}`);
+        }
+        const status = document.getElementById('price-editor-status');
+        status.className = 'status-msg success';
+        status.textContent = `Corrected to ${correctedPrice}p`;
+        await loadPriceEditorRecords();
+    } catch (e) {
+        alert('Failed to save correction: ' + e.message);
+    }
+}
+
+async function revertCorrection(fuelPriceId) {
+    if (!confirm('Revert this correction and restore the original price?')) return;
+    try {
+        const resp = await fetch(API + '/corrections/' + fuelPriceId, {
+            method: 'DELETE',
+            headers: authHeaders(),
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `API error: ${resp.status}`);
+        }
+        const status = document.getElementById('price-editor-status');
+        status.className = 'status-msg success';
+        status.textContent = 'Correction reverted';
+        await loadPriceEditorRecords();
+    } catch (e) {
+        alert('Failed to revert: ' + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Anomalies
 // ---------------------------------------------------------------------------
 async function loadAnomalies() {
     const data = await apiFetch('/anomalies');
     const body = document.getElementById('anomaly-body');
     if (!data.length) {
-        body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">No anomalies detected</td></tr>';
+        body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">No anomalies detected</td></tr>';
         return;
     }
     const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
@@ -2283,7 +2493,7 @@ async function loadAnomalies() {
             changeTxt = `${sign}${pct}%`;
         }
         return `<tr>
-            <td>${r.trading_name}</td>
+            <td>${escHtml(r.trading_name)}</td>
             <td>${r.city || '—'}</td>
             <td>${r.fuel_type}</td>
             <td>${r.prev_price != null ? ppl(r.prev_price) : '—'}</td>
@@ -2292,6 +2502,7 @@ async function loadAnomalies() {
             <td>${fmtDate(r.observed_at)}</td>
             <td style="${changeStyle}"><strong>${changeTxt}</strong></td>
             <td>${(r.anomaly_flags || []).map(f => `<span class="tag">${f}</span>`).join(' ')}</td>
+            <td><a href="#" onclick="openPriceEditor('${escHtml(r.node_id)}','${escHtml(r.trading_name)}','anomalies');return false;" style="color:var(--accent);font-size:0.8rem;white-space:nowrap;">Edit prices</a></td>
         </tr>`;
     }).join('');
 }

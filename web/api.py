@@ -100,6 +100,11 @@ class StationOverrideBody(BaseModel):
     canonical_brand: str
     notes: Optional[str] = None
 
+class PriceCorrectionBody(BaseModel):
+    fuel_price_id: int
+    corrected_price: float
+    reason: Optional[str] = None
+
 class PostcodeCoordsBody(BaseModel):
     latitude: float
     longitude: float
@@ -304,8 +309,9 @@ def station_price_history(
     with db.cursor() as cur:
         cur.execute(f"""
             SELECT {time_col} AS bucket,
-                   ROUND(AVG(fp.price)::numeric, 1) AS avg_price
+                   ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1) AS avg_price
             FROM fuel_prices fp
+            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
             WHERE fp.node_id = %s
               AND fp.fuel_type = %s
               AND {time_filter}
@@ -541,9 +547,10 @@ def price_history(
     with db.cursor() as cur:
         cur.execute(bounds_cte + f"""
             SELECT {time_col} AS bucket,
-                   ROUND(AVG(fp.price)::numeric, 1) AS avg_price,
+                   ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1) AS avg_price,
                    COUNT(DISTINCT fp.node_id) AS stations
             FROM fuel_prices fp
+            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
             {location_joins}
             LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
             WHERE fp.fuel_type = %s
@@ -551,8 +558,8 @@ def price_history(
               {node_filter}
               {location_filters}
               AND fp.anomaly_flags IS NULL
-              AND (b.q1 IS NULL OR fp.price >= b.q1 - 1.5 * (b.q3 - b.q1))
-              AND (b.q3 IS NULL OR fp.price <= b.q3 + 1.5 * (b.q3 - b.q1))
+              AND (b.q1 IS NULL OR COALESCE(pc.corrected_price, fp.price) >= b.q1 - 1.5 * (b.q3 - b.q1))
+              AND (b.q3 IS NULL OR COALESCE(pc.corrected_price, fp.price) <= b.q3 + 1.5 * (b.q3 - b.q1))
             GROUP BY bucket
             ORDER BY bucket
         """, (*bounds_params, fuel_type, *time_params, *node_params, *location_params))
@@ -641,7 +648,9 @@ def price_history_export(
                COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name) AS brand,
                fp.fuel_type,
                COALESCE(ftl.fuel_name, fp.fuel_type) AS fuel_name,
-               fp.price,
+               fp.price AS original_price,
+               pc.corrected_price,
+               COALESCE(pc.corrected_price, fp.price) AS price,
                fp.observed_at,
                fp.anomaly_flags,
                s.postcode,
@@ -659,6 +668,7 @@ def price_history_export(
                s.is_supermarket_service_station
         FROM fuel_prices fp
         JOIN stations s ON s.node_id = fp.node_id
+        LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
         LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
         LEFT JOIN postcode_regions pr ON pr.postcode_area = (
             CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{{2}}$'
@@ -678,7 +688,8 @@ def price_history_export(
 
     columns = [
         "node_id", "trading_name", "raw_brand", "brand", "fuel_type",
-        "fuel_name", "price", "observed_at", "anomaly_flags",
+        "fuel_name", "original_price", "corrected_price", "price",
+        "observed_at", "anomaly_flags",
         "postcode", "city", "county", "country", "region",
         "admin_district", "parliamentary_constituency", "rural_urban",
         "forecourt_type", "latitude", "longitude",
@@ -953,6 +964,7 @@ def anomalies(
                    prev.observed_at AS prev_observed_at
             FROM fuel_prices fp
             JOIN stations s ON s.node_id = fp.node_id
+            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
             LEFT JOIN LATERAL (
                 SELECT p2.price, p2.observed_at
                 FROM fuel_prices p2
@@ -963,6 +975,7 @@ def anomalies(
                 LIMIT 1
             ) prev ON true
             WHERE fp.anomaly_flags IS NOT NULL
+              AND pc.id IS NULL
             ORDER BY fp.observed_at DESC
             LIMIT %s
         """, (limit,))
@@ -1473,6 +1486,108 @@ def outliers(
         "outliers": rows,
         "total": len(rows),
     }
+
+
+# ---------------------------------------------------------------------------
+# Price corrections
+# ---------------------------------------------------------------------------
+
+@app.get("/api/prices/station/{node_id}/records")
+def station_price_records(
+    node_id: str,
+    fuel_type: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Raw individual price records for a station, with any corrections."""
+    conditions = ["fp.node_id = %s"]
+    params: list = [node_id]
+    if fuel_type:
+        conditions.append("fp.fuel_type = %s")
+        params.append(fuel_type)
+    where = " AND ".join(conditions)
+    with db.cursor() as cur:
+        cur.execute(f"""
+            SELECT fp.id AS fuel_price_id,
+                   fp.fuel_type,
+                   COALESCE(ftl.fuel_name, fp.fuel_type) AS fuel_name,
+                   fp.price AS original_price,
+                   pc.corrected_price,
+                   COALESCE(pc.corrected_price, fp.price) AS effective_price,
+                   fp.anomaly_flags,
+                   fp.observed_at,
+                   pc.reason AS correction_reason,
+                   pc.corrected_by,
+                   pc.corrected_at
+            FROM fuel_prices fp
+            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+            LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
+            WHERE {where}
+            ORDER BY fp.observed_at DESC
+            LIMIT %s
+        """, params + [limit])
+        records = cur.fetchall()
+
+        cur.execute("""
+            SELECT s.trading_name, s.brand_name, s.city, s.postcode
+            FROM stations s WHERE s.node_id = %s
+        """, (node_id,))
+        station = cur.fetchone()
+
+    return {"station": station, "records": records}
+
+
+@app.post("/api/corrections")
+def create_correction(
+    body: PriceCorrectionBody,
+    request: Request,
+    db=Depends(get_db),
+    _auth=Depends(require_admin),
+):
+    """Create or update a price correction. Original data is preserved."""
+    corrected_by = getattr(request.state, "user_email", None) or "admin"
+    with db.cursor() as cur:
+        # Verify the fuel_price_id exists and get original price
+        cur.execute("SELECT price FROM fuel_prices WHERE id = %s", (body.fuel_price_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Fuel price record not found")
+        original_price = float(row["price"])
+
+        cur.execute("""
+            INSERT INTO price_corrections (fuel_price_id, original_price, corrected_price, reason, corrected_by)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (fuel_price_id) DO UPDATE SET
+                corrected_price = EXCLUDED.corrected_price,
+                reason = EXCLUDED.reason,
+                corrected_by = EXCLUDED.corrected_by,
+                corrected_at = NOW()
+            RETURNING id
+        """, (body.fuel_price_id, original_price, body.corrected_price, body.reason, corrected_by))
+        correction_id = cur.fetchone()["id"]
+        db.commit()
+        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
+        db.commit()
+    return {"id": correction_id, "fuel_price_id": body.fuel_price_id, "original_price": original_price, "corrected_price": body.corrected_price}
+
+
+@app.delete("/api/corrections/{fuel_price_id}")
+def delete_correction(
+    fuel_price_id: int,
+    db=Depends(get_db),
+    _auth=Depends(require_admin),
+):
+    """Revert a price correction (restore original price)."""
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM price_corrections WHERE fuel_price_id = %s RETURNING id", (fuel_price_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No correction found for this price record")
+        db.commit()
+        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
+        db.commit()
+    return {"deleted": True, "fuel_price_id": fuel_price_id}
 
 
 # ---------------------------------------------------------------------------
