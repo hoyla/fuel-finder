@@ -15,7 +15,7 @@ from psycopg2.extras import RealDictCursor
 from psycopg2.pool import SimpleConnectionPool
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -341,6 +341,7 @@ def price_history(
     rural_urban: Optional[str] = Query(None),
     node_ids: Optional[str] = Query(None),
     # Search-style filters — used for "view trend for all results"
+    station: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     postcode: Optional[str] = Query(None),
@@ -434,6 +435,9 @@ def price_history(
     # Build a subquery from search-style filters if any are provided
     search_conditions = []
     search_params_list = []
+    if station:
+        search_conditions.append("UPPER(trading_name) LIKE %s")
+        search_params_list.append("%" + station.upper() + "%")
     if brand:
         search_conditions.append("UPPER(brand_name) LIKE %s")
         search_params_list.append("%" + brand.upper() + "%")
@@ -555,6 +559,193 @@ def price_history(
         return {"granularity": effective_granularity, "data": cur.fetchall()}
 
 
+@app.get("/api/prices/history/export")
+def price_history_export(
+    fuel_type: str = Query("E10"),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    days: Optional[int] = Query(None, ge=1, le=3650),
+    region: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
+    rural_urban: Optional[str] = Query(None),
+    format: str = Query("csv"),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Export raw individual price records matching the trend filters.
+
+    Returns every fuel_prices row (not averages) with station and
+    postcode enrichment data.  Streamed to handle large result sets.
+    """
+    import csv
+    import io
+
+    # Time filter
+    time_filter = ""
+    time_params: list = []
+    if start_date and end_date:
+        time_filter = "AND fp.observed_at >= %s::date AND fp.observed_at < %s::date + interval '1 day'"
+        time_params = [start_date, end_date]
+    elif start_date:
+        time_filter = "AND fp.observed_at >= %s::date"
+        time_params = [start_date]
+    elif end_date:
+        time_filter = "AND fp.observed_at < %s::date + interval '1 day'"
+        time_params = [end_date]
+    else:
+        effective_days = days if days is not None else 30
+        time_filter = "AND fp.observed_at >= NOW() - make_interval(days => %s)"
+        time_params = [effective_days]
+
+    # Location filters
+    location_filters = ""
+    location_params: list = []
+    if region:
+        vals = [v.strip() for v in region.split(",") if v.strip()]
+        if len(vals) == 1:
+            location_filters += " AND COALESCE(pl.ons_region, pr.region) = %s"
+            location_params.append(vals[0])
+        elif vals:
+            ph = ", ".join(["%s"] * len(vals))
+            location_filters += f" AND COALESCE(pl.ons_region, pr.region) IN ({ph})"
+            location_params.extend(vals)
+    if country:
+        vals = [v.strip() for v in country.split(",") if v.strip()]
+        known = {'ENGLAND', 'SCOTLAND', 'WALES', 'NORTHERN IRELAND', 'N. IRELAND'}
+        named = [v for v in vals if v != "Other/Unknown"]
+        has_other = "Other/Unknown" in vals
+        parts = []
+        if named:
+            ph = ", ".join(["UPPER(%s)"] * len(named))
+            parts.append(f"UPPER(COALESCE(pl.country, s.country)) IN ({ph})")
+            location_params.extend(named)
+        if has_other:
+            known_ph = ", ".join(["'" + k + "'" for k in known])
+            parts.append(f"(COALESCE(pl.country, s.country) IS NULL OR UPPER(COALESCE(pl.country, s.country)) NOT IN ({known_ph}))")
+        if parts:
+            location_filters += " AND (" + " OR ".join(parts) + ")"
+    if rural_urban:
+        vals = [v.strip() for v in rural_urban.split(",") if v.strip()]
+        if len(vals) == 1:
+            location_filters += " AND pl.rural_urban = %s"
+            location_params.append(vals[0])
+        elif vals:
+            ph = ", ".join(["%s"] * len(vals))
+            location_filters += f" AND pl.rural_urban IN ({ph})"
+            location_params.extend(vals)
+
+    query = f"""
+        SELECT fp.node_id,
+               s.trading_name,
+               s.brand_name AS raw_brand,
+               COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name) AS brand,
+               fp.fuel_type,
+               COALESCE(ftl.fuel_name, fp.fuel_type) AS fuel_name,
+               fp.price,
+               fp.observed_at,
+               fp.anomaly_flags,
+               s.postcode,
+               s.city,
+               s.county,
+               COALESCE(pl.country, s.country) AS country,
+               COALESCE(pl.ons_region, pr.region) AS region,
+               pl.admin_district,
+               pl.parliamentary_constituency,
+               pl.rural_urban,
+               bc.forecourt_type,
+               s.latitude,
+               s.longitude,
+               s.is_motorway_service_station,
+               s.is_supermarket_service_station
+        FROM fuel_prices fp
+        JOIN stations s ON s.node_id = fp.node_id
+        LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
+        LEFT JOIN postcode_regions pr ON pr.postcode_area = (
+            CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{{2}}$'
+                 THEN LEFT(s.postcode, 2) ELSE LEFT(s.postcode, 1) END
+        )
+        LEFT JOIN brand_aliases ba ON ba.raw_brand_name = s.brand_name
+        LEFT JOIN station_brand_overrides so ON so.node_id = s.node_id
+        LEFT JOIN brand_categories bc
+            ON bc.canonical_brand = COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name)
+        LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
+        WHERE fp.fuel_type = %s
+          {time_filter}
+          {location_filters}
+        ORDER BY fp.observed_at, s.trading_name
+    """
+    params = (fuel_type, *time_params, *location_params)
+
+    columns = [
+        "node_id", "trading_name", "raw_brand", "brand", "fuel_type",
+        "fuel_name", "price", "observed_at", "anomaly_flags",
+        "postcode", "city", "county", "country", "region",
+        "admin_district", "parliamentary_constituency", "rural_urban",
+        "forecourt_type", "latitude", "longitude",
+        "is_motorway_service_station", "is_supermarket_service_station",
+    ]
+
+    if format == "json":
+        def json_stream():
+            conn = _pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(query, params)
+                    yield "[\n"
+                    first = True
+                    while True:
+                        rows = cur.fetchmany(1000)
+                        if not rows:
+                            break
+                        for row in rows:
+                            if not first:
+                                yield ",\n"
+                            first = False
+                            # Convert anomaly_flags list and datetimes
+                            d = dict(row)
+                            if d.get("observed_at"):
+                                d["observed_at"] = d["observed_at"].isoformat()
+                            yield json.dumps(d, default=str)
+                    yield "\n]\n"
+            finally:
+                _pool.putconn(conn)
+
+        return StreamingResponse(
+            json_stream(),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="fuel-prices-raw.json"'},
+        )
+    else:
+        def csv_stream():
+            conn = _pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(query, params)
+                    buf = io.StringIO()
+                    writer = csv.writer(buf)
+                    writer.writerow(columns)
+                    yield buf.getvalue()
+                    buf.seek(0)
+                    buf.truncate(0)
+                    while True:
+                        rows = cur.fetchmany(1000)
+                        if not rows:
+                            break
+                        for row in rows:
+                            writer.writerow([row.get(c) for c in columns])
+                        yield buf.getvalue()
+                        buf.seek(0)
+                        buf.truncate(0)
+            finally:
+                _pool.putconn(conn)
+
+        return StreamingResponse(
+            csv_stream(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="fuel-prices-raw.csv"'},
+        )
+
+
 @app.get("/api/prices/map")
 def price_map(
     fuel_type: str = Query("E10"),
@@ -619,6 +810,7 @@ def price_map(
 def price_search(
     fuel_type: str = Query("E10"),
     postcode: Optional[str] = Query(None),
+    station: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
     min_price: Optional[float] = Query(None),
@@ -645,6 +837,9 @@ def price_search(
     if postcode:
         conditions.append("UPPER(postcode) LIKE %s")
         params.append(postcode.upper().replace(" ", "") + "%")
+    if station:
+        conditions.append("UPPER(trading_name) LIKE %s")
+        params.append("%" + station.upper() + "%")
     if brand:
         conditions.append("UPPER(brand_name) LIKE %s")
         params.append("%" + brand.upper() + "%")

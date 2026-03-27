@@ -438,7 +438,8 @@
                 </select>
             </div>
             <button class="primary" onclick="loadTrends()">Update</button>
-            <div class="download-btns" id="trend-download-btns">
+            <div class="download-btns" id="trend-download-btns" style="align-items:center;">
+                <span style="font-size:0.8rem;color:var(--muted);">Download raw data for the selected filters:</span>
                 <button onclick="downloadTrendData('csv')" disabled id="trend-dl-csv">⬇ CSV</button>
                 <button onclick="downloadTrendData('json')" disabled id="trend-dl-json">⬇ JSON</button>
             </div>
@@ -474,6 +475,10 @@
             </div>
             <!-- Station -->
             <div class="filter-group">
+                <div class="control">
+                    <label>Station</label>
+                    <input id="search-station" placeholder="e.g. Asda Coventry" />
+                </div>
                 <div class="control">
                     <label>Brand</label>
                     <input id="search-brand" placeholder="e.g. Tesco" />
@@ -1268,6 +1273,7 @@ document.addEventListener('DOMContentLoaded', initSortableTables);
 function navigateToSearch(filters) {
     // Reset all search fields
     document.getElementById('search-postcode').value = '';
+    document.getElementById('search-station').value = '';
     document.getElementById('search-brand').value = '';
     document.getElementById('search-city').value = '';
     document.getElementById('search-min').value = '';
@@ -1284,6 +1290,7 @@ function navigateToSearch(filters) {
         document.getElementById('search-fuel').value = filters.fuel_type;
     }
     // Set filters by matching select options or input values
+    if (filters.station) document.getElementById('search-station').value = filters.station;
     if (filters.brand) document.getElementById('search-brand').value = filters.brand;
     if (filters.category) setMultiSelectValues('search-category-ms', filters.category);
     if (filters.rural_urban) setMultiSelectValues('search-rural-urban-ms', filters.rural_urban);
@@ -1601,7 +1608,44 @@ let lastMapData = [];
 let lastTrendData = [];
 
 function downloadMapData(fmt) { downloadFile(lastMapData, 'fuel-map-data', fmt); }
-function downloadTrendData(fmt) { downloadFile(lastTrendData, 'fuel-trend-data', fmt); }
+function downloadTrendData(fmt) {
+    const fuel = document.getElementById('trend-fuel').value;
+    const region = getMultiSelectValues('trend-region-ms');
+    const country = getMultiSelectValues('trend-country-ms');
+    const ruralUrban = getMultiSelectValues('trend-rural-urban-ms');
+    const startDate = document.getElementById('trend-start').value;
+    const endDate = document.getElementById('trend-end').value;
+    let url = `/api/prices/history/export?fuel_type=${encodeURIComponent(fuel)}&format=${fmt}`;
+    if (startDate) url += `&start_date=${startDate}`;
+    if (endDate) url += `&end_date=${endDate}`;
+    if (!startDate && !endDate) url += '&days=30';
+    if (region) url += `&region=${encodeURIComponent(region)}`;
+    if (country) url += `&country=${encodeURIComponent(country)}`;
+    if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
+    // Add auth header via a fetch-and-download approach
+    const btn = document.getElementById(fmt === 'csv' ? 'trend-dl-csv' : 'trend-dl-json');
+    btn.disabled = true;
+    btn.textContent = '⏳ Exporting…';
+    fetch(url, { headers: authHeaders() })
+        .then(resp => {
+            if (!resp.ok) throw new Error('Export failed');
+            return resp.blob();
+        })
+        .then(blob => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `fuel-prices-raw.${fmt}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        })
+        .catch(err => alert('Export failed: ' + err.message))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = `⬇ ${fmt.toUpperCase()}`;
+        });
+}
 
 function initMap() {
     map = L.map('map').setView([53.5, -1.5], 6);
@@ -1893,6 +1937,7 @@ async function doSearch(offset = 0) {
 function buildSearchUrl(limit, offset) {
     const fuel = document.getElementById('search-fuel').value;
     const postcode = document.getElementById('search-postcode').value;
+    const station = document.getElementById('search-station').value;
     const brand = document.getElementById('search-brand').value;
     const city = document.getElementById('search-city').value;
     const minP = document.getElementById('search-min').value;
@@ -1909,6 +1954,7 @@ function buildSearchUrl(limit, offset) {
 
     let url = `/prices/search?fuel_type=${fuel}&limit=${limit}&offset=${offset}`;
     if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
+    if (station) url += `&station=${encodeURIComponent(station)}`;
     if (brand) url += `&brand=${encodeURIComponent(brand)}`;
     if (city) url += `&city=${encodeURIComponent(city)}`;
     if (minP) url += `&min_price=${minP}`;
@@ -2033,6 +2079,7 @@ function viewSelectedTrend() {
 async function viewAllResultsTrend() {
     // Capture search filters to pass directly to the history endpoint
     const searchFilters = {};
+    const station = document.getElementById('search-station').value;
     const brand = document.getElementById('search-brand').value;
     const city = document.getElementById('search-city').value;
     const postcode = document.getElementById('search-postcode').value;
@@ -2046,6 +2093,7 @@ async function viewAllResultsTrend() {
     const motorway = document.getElementById('search-motorway').checked;
     const excludeOutliers = document.getElementById('search-exclude-outliers').checked;
 
+    if (station) searchFilters.station = station;
     if (brand) searchFilters.brand = brand;
     if (city) searchFilters.city = city;
     if (postcode) searchFilters.postcode = postcode;
