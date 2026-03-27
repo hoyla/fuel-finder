@@ -587,8 +587,12 @@
                 <button class="primary" id="search-view-trend-btn" onclick="viewSelectedTrend()" disabled style="background:#00703c;">📈 View trend for selected</button>
                 <button class="primary" id="search-view-all-trend-btn" onclick="viewAllResultsTrend()" disabled style="background:#00703c;">📈 View trend for all results</button>
                 <div class="download-btns" id="search-download-btns">
+                    <span style="font-size:0.8rem;color:var(--muted);">Current:</span>
                     <button onclick="downloadSearchData('csv')" disabled id="search-dl-csv">⬇ CSV</button>
                     <button onclick="downloadSearchData('json')" disabled id="search-dl-json">⬇ JSON</button>
+                    <span style="font-size:0.8rem;color:var(--muted);margin-left:0.5rem;">All historical:</span>
+                    <button onclick="downloadSearchHistoryData('csv')" disabled id="search-hist-dl-csv">⬇ CSV</button>
+                    <button onclick="downloadSearchHistoryData('json')" disabled id="search-hist-dl-json">⬇ JSON</button>
                 </div>
             </div>
         </div>
@@ -2036,6 +2040,8 @@ async function doSearch(offset = 0) {
 
     document.getElementById('search-dl-csv').disabled = !data.total;
     document.getElementById('search-dl-json').disabled = !data.total;
+    document.getElementById('search-hist-dl-csv').disabled = !data.total;
+    document.getElementById('search-hist-dl-json').disabled = !data.total;
 }
 
 function buildSearchUrl(limit, offset) {
@@ -2082,6 +2088,34 @@ async function downloadSearchData(fmt) {
     try {
         const data = await apiFetch(buildSearchUrl(10000, 0));
         downloadFile(data.results, 'fuel-search-results', fmt);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⬇ ' + fmt.toUpperCase();
+    }
+}
+
+async function downloadSearchHistoryData(fmt) {
+    const btn = document.getElementById('search-hist-dl-' + fmt);
+    btn.disabled = true;
+    btn.textContent = '⏳ ' + fmt.toUpperCase();
+    try {
+        let url = buildSearchUrl(10000, 0)
+            .replace('/prices/search?', '/prices/search/export?')
+            .replace(/&limit=\d+/, '').replace(/&offset=\d+/, '');
+        url += '&format=' + fmt;
+        const resp = await fetch(API + url, { headers: authHeaders() });
+        if (resp.status === 401) { showLogin(); throw new Error('Session expired'); }
+        if (!resp.ok) throw new Error('Export failed: ' + resp.status);
+        const blob = await resp.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'fuel-search-all-history.' + fmt;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+    } catch (err) {
+        alert('Export failed: ' + err.message);
     } finally {
         btn.disabled = false;
         btn.textContent = '⬇ ' + fmt.toUpperCase();

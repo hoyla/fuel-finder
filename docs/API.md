@@ -226,6 +226,21 @@ Flexible search/filter endpoint with pagination.
 }
 ```
 
+### `GET /api/prices/search/export`
+
+Export all historical price records matching the search filters as a streaming download.
+Accepts the same filter parameters as `/api/prices/search` (except `sort`, `limit`, `offset`).
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| (same filters as `/api/prices/search`) | | | See above |
+| `format` | string | `csv` | `csv` or `json` |
+
+Returns every `fuel_prices` row (not just current) for matching stations, with full station and postcode enrichment.
+Streamed to handle large result sets.
+
+**Response:** CSV or JSON file download with columns: `node_id`, `trading_name`, `raw_brand`, `brand`, `fuel_type`, `fuel_name`, `price`, `observed_at`, `anomaly_flags`, `postcode`, `city`, `county`, `country`, `region`, `admin_district`, `parliamentary_constituency`, `rural_urban`, `forecourt_type`, `latitude`, `longitude`, `is_motorway_service_station`, `is_supermarket_service_station`.
+
 ### `GET /api/anomalies`
 
 Recent price records flagged by anomaly detection, with previous price context.

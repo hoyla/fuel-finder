@@ -310,6 +310,19 @@
     </div>
 
     <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/search/export</div>
+        <div class="desc">Export all historical price records matching search filters as a streaming CSV or JSON download. Accepts the same filter parameters as <code>/api/prices/search</code> (except <code>sort</code>, <code>limit</code>, <code>offset</code>).</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td colspan="4"><em>Same filters as <code>/api/prices/search</code> above</em></td></tr>
+                <tr><td><code>format</code></td><td>string</td><td>csv</td><td><code>csv</code> or <code>json</code></td></tr>
+            </tbody>
+        </table>
+        <p>Returns: Streaming file download with full station &amp; postcode enrichment for every historical observation.</p>
+    </div>
+
+    <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/anomalies</div>
         <div class="desc">Price records flagged by anomaly detection, with previous price context.</div>
         <table>
