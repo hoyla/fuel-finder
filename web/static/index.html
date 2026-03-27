@@ -1632,9 +1632,23 @@ function downloadTrendData(fmt) {
             return resp.blob();
         })
         .then(blob => {
+            const parts = ['fuel-prices'];
+            if (fuel) parts.push(fuel.replace(/\s+/g, '-'));
+            if (region) region.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
+            if (country) country.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
+            if (ruralUrban) ruralUrban.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
+            if (startDate) parts.push('from-' + startDate);
+            if (endDate) parts.push('to-' + endDate);
+            const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+            parts.push(ts);
+            const ext = '.' + fmt;
+            const maxLen = 251 - ext.length;          // APFS/HFS+ 255-byte limit
+            let stem = parts.join('_');
+            if (stem.length > maxLen) stem = stem.slice(0, maxLen - 1) + '\u2026';
+            const filename = stem + ext;
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `fuel-prices-raw.${fmt}`;
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
