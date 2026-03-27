@@ -287,7 +287,7 @@
     <div class="tab" data-panel="search">Search</div>
     <div class="tab" data-panel="anomalies">Anomalies</div>
     <div class="tab" data-panel="data">Data Cleanup</div>
-    <div class="tab" data-panel="scrapes">Scrapes</div>
+    <div class="tab" data-panel="logs">Logs</div>
     <div class="tab" data-panel="users">Users</div>
 </div>
 
@@ -765,7 +765,7 @@
         </div>
         <p style="font-size:0.8rem;color:var(--muted);margin-bottom:0.75rem;">
             Click a suggested correction to pre-fill, or type a corrected price and click ✓ to save.
-            Corrections are stored separately — original data is never modified.
+            Overrides are stored separately — original data is never modified.
         </p>
         <div class="table-wrap">
             <table class="sortable">
@@ -782,20 +782,52 @@
         <div id="price-editor-status" class="status-msg" style="margin-top:1rem;"></div>
     </div>
 
-    <!-- ============ SCRAPE HISTORY ============ -->
-    <div class="panel" id="panel-scrapes">
-        <div class="table-wrap">
-            <table class="sortable">
-                <thead>
-                    <tr>
-                        <th>ID</th><th>Started</th><th>Finished</th>
-                        <th>Duration</th><th>Type</th><th>Status</th>
-                        <th>Batches</th><th>Stations</th><th>Price Records</th>
-                        <th>Error</th>
-                    </tr>
-                </thead>
-                <tbody id="scrapes-body"></tbody>
-            </table>
+    <!-- ============ LOGS ============ -->
+    <div class="panel" id="panel-logs">
+        <div class="controls" style="margin-bottom:1rem;">
+            <div class="control">
+                <label>Log type</label>
+                <select id="log-section" onchange="switchLogSection()">
+                    <option value="scrapes">Scrape runs</option>
+                    <option value="corrections">Price overrides</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Sub-section: Scrape runs -->
+        <div id="log-scrapes">
+            <div class="table-wrap">
+                <table class="sortable">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>Started</th><th>Finished</th>
+                            <th>Duration</th><th>Type</th><th>Status</th>
+                            <th>Batches</th><th title="Number of stations returned in this scrape. Incremental scrapes only fetch stations whose prices have changed, so this will be lower than a full scrape.">Stations &#9432;</th><th title="Total individual fuel price records inserted. Each station may report multiple fuel types, so this is typically higher than the station count.">Price Records &#9432;</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scrapes-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sub-section: Price overrides -->
+        <div id="log-corrections" style="display:none;">
+            <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem;">
+                History of price overrides applied to anomalous or misreported values.
+            </p>
+            <div class="table-wrap">
+                <table class="sortable">
+                    <thead>
+                        <tr>
+                            <th>Override date</th><th>Price date</th><th>Station</th><th>City</th>
+                            <th>Fuel</th><th>Original</th><th>Corrected</th>
+                            <th>Reason</th><th>Override by</th>
+                        </tr>
+                    </thead>
+                    <tbody id="corrections-body"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -1195,7 +1227,7 @@ tabs.forEach(t => t.addEventListener('click', () => {
         if (id === 'map') initMap();
         if (id === 'trends') loadTrends();
         if (id === 'anomalies') loadAnomalies();
-        if (id === 'scrapes') loadScrapeHistory();
+        if (id === 'logs') { loadScrapeHistory(); loadCorrectionsLog(); }
         if (id === 'data') loadReport();
         if (id === 'users') loadUsers();
     }
@@ -2432,12 +2464,11 @@ async function saveCorrection(fuelPriceId) {
         alert('Price must be greater than zero');
         return;
     }
-    const reason = 'Manual correction via price editor';
     try {
         const resp = await fetch(API + '/corrections', {
             method: 'POST',
             headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fuel_price_id: fuelPriceId, corrected_price: correctedPrice, reason }),
+            body: JSON.stringify({ fuel_price_id: fuelPriceId, corrected_price: correctedPrice }),
         });
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
@@ -2623,6 +2654,39 @@ async function apiDelete(path) {
         throw new Error(err.detail || r.statusText);
     }
     return r.json();
+}
+
+// --- Log section switcher ---
+function switchLogSection() {
+    const active = document.getElementById('log-section').value;
+    document.getElementById('log-scrapes').style.display = active === 'scrapes' ? '' : 'none';
+    document.getElementById('log-corrections').style.display = active === 'corrections' ? '' : 'none';
+}
+
+// --- Corrections Log ---
+async function loadCorrectionsLog() {
+    const data = await apiFetch('/admin/corrections?limit=200');
+    const body = document.getElementById('corrections-body');
+    if (!data.length) {
+        body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">No overrides recorded</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(r => {
+        const date = r.corrected_at ? new Date(r.corrected_at).toLocaleString() : '—';
+        const priceDate = r.observed_at ? new Date(r.observed_at).toLocaleDateString() : '—';
+        return `<tr>
+            <td>${date}</td>
+            <td>${priceDate}</td>
+            <td>${escHtml(r.trading_name || '—')}</td>
+            <td>${escHtml(r.city || '—')}</td>
+            <td>${escHtml(r.fuel_type || '—')}</td>
+            <td>${ppl(r.original_price)}</td>
+            <td>${ppl(r.corrected_price)}</td>
+            <td>${escHtml(r.reason || '—')}</td>
+            <td>${escHtml(r.corrected_by || '—')}</td>
+        </tr>`;
+    }).join('');
+    initSortableTables();
 }
 
 // --- Scrape History ---

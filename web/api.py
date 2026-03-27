@@ -1548,23 +1548,24 @@ def create_correction(
     """Create or update a price correction. Original data is preserved."""
     corrected_by = getattr(request.state, "user_email", None) or "admin"
     with db.cursor() as cur:
-        # Verify the fuel_price_id exists and get original price
-        cur.execute("SELECT price FROM fuel_prices WHERE id = %s", (body.fuel_price_id,))
+        # Verify the fuel_price_id exists and get original price + flags
+        cur.execute("SELECT price, anomaly_flags FROM fuel_prices WHERE id = %s", (body.fuel_price_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Fuel price record not found")
         original_price = float(row["price"])
+        flags = row["anomaly_flags"]
+        reason = ", ".join(flags) if flags else "Manual override"
 
         cur.execute("""
             INSERT INTO price_corrections (fuel_price_id, original_price, corrected_price, reason, corrected_by)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (fuel_price_id) DO UPDATE SET
+            VALUES (%s, %s, %s, %s, %s)            ON CONFLICT (fuel_price_id) DO UPDATE SET
                 corrected_price = EXCLUDED.corrected_price,
                 reason = EXCLUDED.reason,
                 corrected_by = EXCLUDED.corrected_by,
                 corrected_at = NOW()
             RETURNING id
-        """, (body.fuel_price_id, original_price, body.corrected_price, body.reason, corrected_by))
+        """, (body.fuel_price_id, original_price, body.corrected_price, reason, corrected_by))
         correction_id = cur.fetchone()["id"]
         db.commit()
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
@@ -1623,6 +1624,30 @@ def list_scrape_runs(
                    EXTRACT(EPOCH FROM (finished_at - started_at))::int AS duration_secs
             FROM scrape_runs
             ORDER BY started_at DESC
+            LIMIT %s
+        """, (limit,))
+        return cur.fetchall()
+
+
+@app.get("/api/admin/corrections")
+def list_corrections(
+    limit: int = Query(200, ge=1, le=1000),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """History of price corrections with station and fuel context."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT pc.corrected_at, pc.original_price, pc.corrected_price,
+                   pc.reason, pc.corrected_by,
+                   s.trading_name, s.city,
+                   fp.fuel_type, fp.observed_at,
+                   COALESCE(ftl.fuel_name, fp.fuel_type) AS fuel_name
+            FROM price_corrections pc
+            JOIN fuel_prices fp ON fp.id = pc.fuel_price_id
+            JOIN stations s ON s.node_id = fp.node_id
+            LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
+            ORDER BY pc.corrected_at DESC
             LIMIT %s
         """, (limit,))
         return cur.fetchall()
