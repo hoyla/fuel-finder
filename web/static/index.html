@@ -52,6 +52,11 @@
         .card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
         .card .value { font-size: 1.8rem; font-weight: 700; margin-top: 0.25rem; }
         .card .sub { font-size: 0.85rem; color: var(--muted); }
+        .change-value { display: flex; align-items: center; gap: 0.4rem; }
+        .change-value.up { color: var(--red); }
+        .change-value.down { color: var(--green); }
+        .change-value.flat { color: var(--muted); }
+        .change-arrow { font-size: 1.4rem; line-height: 1; }
 
         /* Charts */
         .chart-container {
@@ -1530,6 +1535,17 @@ async function loadDashboard() {
         `;
     });
 
+    const summaryNowByFuel = Object.fromEntries(
+        (data.by_fuel_type || []).map(ft => [ft.fuel_type, Number(ft.avg_price)])
+    );
+
+    const [e10Past, b7Past] = await Promise.all([
+        fetchThirtyDaysAgoBaseline('E10'),
+        fetchThirtyDaysAgoBaseline('B7_STANDARD'),
+    ]);
+    cards.innerHTML += renderThirtyDayChangeCard('E10', 'E10 30-day change', summaryNowByFuel.E10, e10Past);
+    cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel 30-day change', summaryNowByFuel.B7_STANDARD, b7Past);
+
     // Wire up outlier links to jump to the anomalies → outliers sub-section
     document.querySelectorAll('.outlier-link').forEach(link => {
         link.addEventListener('click', e => {
@@ -1560,6 +1576,72 @@ async function loadDashboard() {
     });
 
     await loadDashboardCharts();
+}
+
+function renderThirtyDayChangeCard(fuelCode, title, priceNow, price30DaysAgo) {
+    if (priceNow == null || price30DaysAgo == null || !isFinite(priceNow) || !isFinite(price30DaysAgo) || price30DaysAgo <= 0) {
+        return `
+            <div class="card">
+                <div class="label">${title}</div>
+                <div class="value">—</div>
+                <div class="sub">30 days ago: —</div>
+                <div class="sub">Now: —</div>
+            </div>
+        `;
+    }
+
+    const pctChange = ((priceNow - price30DaysAgo) / price30DaysAgo) * 100;
+
+    let trendClass = 'flat';
+    let arrow = '→';
+    if (pctChange > 0) {
+        trendClass = 'up';
+        arrow = '↑';
+    } else if (pctChange < 0) {
+        trendClass = 'down';
+        arrow = '↓';
+    }
+
+    const pct = Math.abs(pctChange).toFixed(1) + '%';
+    return `
+        <div class="card" data-fuel-change="${fuelCode}">
+            <div class="label">${title}</div>
+            <div class="value change-value ${trendClass}"><span class="change-arrow">${arrow}</span><span>${pct}</span></div>
+            <div class="sub">30 days ago: ${ppl(price30DaysAgo)}</div>
+            <div class="sub">Now: ${ppl(priceNow)}</div>
+        </div>
+    `;
+}
+
+async function fetchThirtyDaysAgoBaseline(fuelCode) {
+    try {
+        const target = new Date();
+        target.setDate(target.getDate() - 30);
+
+        const rangeStart = new Date(target);
+        rangeStart.setDate(rangeStart.getDate() - 3);
+        const rangeEnd = new Date(target);
+        rangeEnd.setDate(rangeEnd.getDate() + 3);
+
+        const fmt = d => d.toISOString().slice(0, 10);
+        const resp = await apiFetch(
+            `/prices/history?fuel_type=${encodeURIComponent(fuelCode)}&start_date=${fmt(rangeStart)}&end_date=${fmt(rangeEnd)}&granularity=daily`
+        );
+
+        const points = (resp.data || []).filter(d => d.avg_price != null);
+        if (!points.length) return null;
+
+        points.sort((a, b) => {
+            const da = Math.abs(new Date(a.bucket).getTime() - target.getTime());
+            const db = Math.abs(new Date(b.bucket).getTime() - target.getTime());
+            return da - db;
+        });
+
+        const baseline = Number(points[0].avg_price);
+        return isFinite(baseline) ? baseline : null;
+    } catch {
+        return null;
+    }
 }
 
 async function loadDashboardCharts() {
