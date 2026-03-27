@@ -278,33 +278,39 @@
         <p style="font-size:0.8rem;color:var(--muted);margin:0.25rem 0 1rem;">
             Averages exclude statistical outliers (<a href="/docs/about#outlier-methodology" style="color:var(--accent);">IQR method</a>) and anomaly-flagged prices.
         </p>
+        <div class="controls" style="margin-bottom:1rem;">
+            <div class="control">
+                <label>Fuel type</label>
+                <select id="dashboard-fuel" onchange="loadDashboardCharts()"></select>
+            </div>
+        </div>
         <div class="chart-row">
             <div class="chart-container">
-                <h3>Average price by region – Unleaded (E10)</h3>
+                <h3 id="heading-region">Average price by region</h3>
                 <canvas id="chart-region"></canvas>
             </div>
             <div class="chart-container">
-                <h3>Average price by forecourt type – Unleaded (E10)</h3>
+                <h3 id="heading-category">Average price by forecourt type</h3>
                 <canvas id="chart-category"></canvas>
             </div>
         </div>
         <div class="chart-row">
             <div class="chart-container">
-                <h3>Average price by rural/urban classification – Unleaded (E10)</h3>
+                <h3 id="heading-rural-urban">Average price by rural/urban classification</h3>
                 <canvas id="chart-rural-urban"></canvas>
             </div>
             <div class="chart-container">
-                <h3>Cheapest brands – Unleaded (E10)</h3>
+                <h3 id="heading-brand">Cheapest brands</h3>
                 <canvas id="chart-brand"></canvas>
             </div>
         </div>
         <div class="chart-row">
             <div class="chart-container">
-                <h3>Most expensive local authorities – Unleaded (E10)</h3>
+                <h3 id="heading-district-expensive">Most expensive local authorities</h3>
                 <canvas id="chart-district-expensive"></canvas>
             </div>
             <div class="chart-container">
-                <h3>Cheapest local authorities – Unleaded (E10)</h3>
+                <h3 id="heading-district-cheap">Cheapest local authorities</h3>
                 <canvas id="chart-district-cheap"></canvas>
             </div>
         </div>
@@ -1329,7 +1335,7 @@ let fuelTypes = [];
 
 async function loadFuelTypes() {
     fuelTypes = await apiFetch('/fuel-types');
-    for (const sel of document.querySelectorAll('#map-fuel, #trend-fuel, #search-fuel')) {
+    for (const sel of document.querySelectorAll('#dashboard-fuel, #map-fuel, #trend-fuel, #search-fuel')) {
         sel.innerHTML = '';
         fuelTypes.forEach(ft => {
             const o = document.createElement('option');
@@ -1447,17 +1453,34 @@ async function loadDashboard() {
     document.querySelectorAll('.country-link').forEach(link => {
         link.addEventListener('click', e => {
             e.preventDefault();
-            navigateToSearch({ fuel_type: 'E10', country: link.dataset.country });
+            const ft = document.getElementById('dashboard-fuel').value || 'E10';
+            navigateToSearch({ fuel_type: ft, country: link.dataset.country });
         });
     });
 
+    await loadDashboardCharts();
+}
+
+async function loadDashboardCharts() {
+    const fuelCode = document.getElementById('dashboard-fuel').value || 'E10';
+    const fuelSel = document.getElementById('dashboard-fuel');
+    const fuelName = fuelSel.options[fuelSel.selectedIndex]?.textContent || fuelCode;
+
+    // Update chart headings
+    document.getElementById('heading-region').textContent = `Average price by region \u2013 ${fuelName}`;
+    document.getElementById('heading-category').textContent = `Average price by forecourt type \u2013 ${fuelName}`;
+    document.getElementById('heading-rural-urban').textContent = `Average price by rural/urban classification \u2013 ${fuelName}`;
+    document.getElementById('heading-brand').textContent = `Cheapest brands \u2013 ${fuelName}`;
+    document.getElementById('heading-district-expensive').textContent = `Most expensive local authorities \u2013 ${fuelName}`;
+    document.getElementById('heading-district-cheap').textContent = `Cheapest local authorities \u2013 ${fuelName}`;
+
     // Region chart
-    const regionData = await apiFetch('/prices/by-region?fuel_type=E10');
+    const regionData = await apiFetch(`/prices/by-region?fuel_type=${encodeURIComponent(fuelCode)}`);
     renderBarChart('chart-region', regionData.map(r => r.region), regionData.map(r => r.avg_price),
         'Avg pence/litre', '#1d70b8');
 
     // Category chart
-    const catData = await apiFetch('/prices/by-category?fuel_type=E10');
+    const catData = await apiFetch(`/prices/by-category?fuel_type=${encodeURIComponent(fuelCode)}`);
     const catColours = catData.map(c => {
         const m = { 'Supermarket':'#00703c', 'Major Oil':'#1d70b8', 'Motorway':'#d4351c',
                     'Motorway Operator':'#f47738', 'Fuel Group':'#505a5f',
@@ -1486,12 +1509,12 @@ async function loadDashboard() {
     });
 
     // Brand chart
-    const brandData = await apiFetch('/prices/by-brand?fuel_type=E10&limit=15');
+    const brandData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15`);
     renderBarChart('chart-brand', brandData.map(b => b.brand_name), brandData.map(b => b.avg_price),
         'Avg pence/litre', '#00703c');
 
     // Rural/Urban chart
-    const ruData = await apiFetch('/prices/by-rural-urban?fuel_type=E10');
+    const ruData = await apiFetch(`/prices/by-rural-urban?fuel_type=${encodeURIComponent(fuelCode)}`);
     const ruColours = ruData.map(r => {
         if (!r.unified_label) return '#999';
         const lc = r.unified_label.toLowerCase();
@@ -1521,11 +1544,11 @@ async function loadDashboard() {
     });
 
     // District charts (most/least expensive)
-    const distExpensive = await apiFetch('/prices/by-district?fuel_type=E10&limit=15');
+    const distExpensive = await apiFetch(`/prices/by-district?fuel_type=${encodeURIComponent(fuelCode)}&limit=15`);
     renderBarChart('chart-district-expensive',
         distExpensive.map(d => `${d.admin_district} (${d.station_count})`),
         distExpensive.map(d => d.avg_price), 'Avg pence/litre', '#d4351c');
-    const distCheap = await apiFetch('/prices/by-district?fuel_type=E10&limit=500');
+    const distCheap = await apiFetch(`/prices/by-district?fuel_type=${encodeURIComponent(fuelCode)}&limit=500`);
     const cheapest15 = distCheap.slice(-15).reverse();
     renderBarChart('chart-district-cheap',
         cheapest15.map(d => `${d.admin_district} (${d.station_count})`),
@@ -1533,22 +1556,22 @@ async function loadDashboard() {
 
     // Wire up chart click-throughs to Search
     addChartClickHandler('chart-region', regionData,
-        r => ({ fuel_type: 'E10', region: r.region, exclude_outliers: true }));
+        r => ({ fuel_type: fuelCode, region: r.region, exclude_outliers: true }));
 
     addChartClickHandler('chart-category', catData,
-        c => ({ fuel_type: 'E10', category: c.forecourt_type, exclude_outliers: true }));
+        c => ({ fuel_type: fuelCode, category: c.forecourt_type, exclude_outliers: true }));
 
     addChartClickHandler('chart-brand', brandData,
-        b => ({ fuel_type: 'E10', brand: b.brand_name, exclude_outliers: true }));
+        b => ({ fuel_type: fuelCode, brand: b.brand_name, exclude_outliers: true }));
 
     addChartClickHandler('chart-rural-urban', ruData,
-        r => ({ fuel_type: 'E10', rural_urban: r.rural_urban_values[0], exclude_outliers: true }));
+        r => ({ fuel_type: fuelCode, rural_urban: r.rural_urban_values[0], exclude_outliers: true }));
 
     addChartClickHandler('chart-district-expensive', distExpensive,
-        d => ({ fuel_type: 'E10', district: d.admin_district, exclude_outliers: true }));
+        d => ({ fuel_type: fuelCode, district: d.admin_district, exclude_outliers: true }));
 
     addChartClickHandler('chart-district-cheap', cheapest15,
-        d => ({ fuel_type: 'E10', district: d.admin_district, exclude_outliers: true }));
+        d => ({ fuel_type: fuelCode, district: d.admin_district, exclude_outliers: true }));
 }
 
 let charts = {};
