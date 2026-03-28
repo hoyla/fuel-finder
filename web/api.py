@@ -1769,23 +1769,36 @@ def outliers(
         """)
         bounds = {r["fuel_type"]: r for r in cur.fetchall()}
 
-        conditions = ["price_is_outlier", "NOT temporary_closure"]
+        conditions = ["cp.price_is_outlier", "NOT cp.temporary_closure"]
         params: list = []
         if fuel_type:
-            conditions.append("fuel_type = %s")
+            conditions.append("cp.fuel_type = %s")
             params.append(fuel_type)
 
         where = " AND ".join(conditions)
         cur.execute(f"""
-            SELECT node_id, trading_name, city, postcode, fuel_type, fuel_name,
-                   price, brand_name, forecourt_type, anomaly_flags, observed_at,
+            SELECT cp.node_id, cp.trading_name, cp.city, cp.postcode,
+                   cp.fuel_type, cp.fuel_name,
+                   cp.price, cp.brand_name, cp.forecourt_type,
+                   cp.anomaly_flags, cp.observed_at,
                    CASE
-                       WHEN anomaly_flags IS NOT NULL THEN 'anomaly_flagged'
+                       WHEN cp.anomaly_flags IS NOT NULL THEN 'anomaly_flagged'
                        ELSE 'iqr_outlier'
-                   END AS exclusion_reason
-            FROM current_prices
+                   END AS exclusion_reason,
+                   fp_latest.price AS original_price,
+                   pc.corrected_price
+            FROM current_prices cp
+            LEFT JOIN LATERAL (
+                SELECT fp.id, fp.price
+                FROM fuel_prices fp
+                WHERE fp.node_id = cp.node_id
+                  AND fp.fuel_type = cp.fuel_type
+                ORDER BY fp.observed_at DESC
+                LIMIT 1
+            ) fp_latest ON true
+            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp_latest.id
             WHERE {where}
-            ORDER BY fuel_type, price
+            ORDER BY cp.fuel_type, cp.price
             LIMIT %s
         """, params + [limit])
         rows = cur.fetchall()
@@ -1828,15 +1841,49 @@ def station_price_records(
                    fp.observed_at,
                    pc.reason AS correction_reason,
                    pc.corrected_by,
-                   pc.corrected_at
+                   pc.corrected_at,
+                   prev_eff.price AS prev_effective_price
             FROM fuel_prices fp
             LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
             LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(pc2.corrected_price, p2.price) AS price
+                FROM fuel_prices p2
+                LEFT JOIN price_corrections pc2 ON pc2.fuel_price_id = p2.id
+                WHERE p2.node_id = fp.node_id
+                  AND p2.fuel_type = fp.fuel_type
+                  AND p2.observed_at < fp.observed_at
+                ORDER BY p2.observed_at DESC
+                LIMIT 1
+            ) prev_eff ON true
             WHERE {where}
             ORDER BY fp.observed_at DESC
             LIMIT %s
         """, params + [limit])
         records = cur.fetchall()
+
+        # Compute effective_flags: the current anomaly state of the effective
+        # price (corrected or original).  For uncorrected records this is just
+        # the anomaly_flags set at scrape time (kept accurate by the cascade
+        # logic).  For corrected records we re-evaluate from scratch so the
+        # Status column reflects whether the correction actually resolved the
+        # anomaly.
+        for r in records:
+            if r["corrected_price"] is not None:
+                eff = float(r["corrected_price"])
+                flags = []
+                if eff < 80.0:
+                    flags.append(f"price_below_floor:{eff}<80.0")
+                elif eff > 300.0:
+                    flags.append(f"price_above_ceiling:{eff}>300.0")
+                prev = r["prev_effective_price"]
+                if prev and float(prev) > 0:
+                    pct = abs(eff - float(prev)) / float(prev) * 100
+                    if pct > 30.0:
+                        flags.append(f"large_change:{pct:.1f}%_from_{prev}")
+                r["effective_flags"] = flags or None
+            else:
+                r["effective_flags"] = r["anomaly_flags"]
 
         cur.execute("""
             SELECT s.trading_name, s.brand_name, s.city, s.postcode

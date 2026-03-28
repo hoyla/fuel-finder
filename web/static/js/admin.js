@@ -91,7 +91,7 @@ async function loadOutliers() {
     // Show outlier table
     const body = document.getElementById('outlier-body');
     if (!data.outliers.length) {
-        body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">No outliers for this fuel type</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">No outliers for this fuel type</td></tr>';
         return;
     }
     const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
@@ -99,6 +99,9 @@ async function loadOutliers() {
         const reasonLabel = r.exclusion_reason === 'anomaly_flagged'
             ? (r.anomaly_flags || []).map(f => `<span class="tag">${escHtml(f)}</span>`).join(' ')
             : '<span class="tag" style="background:#fff3cd;color:#856404;">outside IQR fence</span>';
+        const overrideHtml = r.corrected_price != null
+            ? `<span style="font-size:0.78rem;color:var(--muted);">${ppl(r.original_price)} → ${ppl(r.corrected_price)}</span>`
+            : '—';
         return `<tr>
             <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
             <td>${escHtml(r.city || '—')}</td>
@@ -107,6 +110,7 @@ async function loadOutliers() {
             <td>${escHtml(r.fuel_name || r.fuel_type)}</td>
             <td><strong>${ppl(r.price)}</strong></td>
             <td>${reasonLabel}</td>
+            <td>${overrideHtml}</td>
             <td>${fmtDate(r.observed_at)}</td>
         </tr>`;
     }).join('');
