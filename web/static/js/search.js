@@ -2,6 +2,10 @@
 // Search
 // ---------------------------------------------------------------------------
 let searchState = { offset: 0 };
+let searchSort = { col: 'price', dir: 'asc' };
+
+// Column index → API sort key (index 0 is checkbox, no sort)
+const SEARCH_SORT_KEYS = [null,'station','brand',null,'city','postcode','district','rural_urban','price',null,'observed_at'];
 
 async function doSearch(offset = 0) {
     const data = await apiFetch(buildSearchUrl(50, offset));
@@ -46,6 +50,7 @@ async function doSearch(offset = 0) {
     document.getElementById('search-dl-json').disabled = !data.total;
     document.getElementById('search-hist-dl-csv').disabled = !data.total;
     document.getElementById('search-hist-dl-json').disabled = !data.total;
+    _syncSortIndicators('search-body', searchSort, SEARCH_SORT_KEYS);
 }
 
 function buildSearchUrl(limit, offset) {
@@ -67,6 +72,7 @@ function buildSearchUrl(limit, offset) {
     const country = getMultiSelectValues('search-country-ms');
 
     let url = `/prices/search?fuel_type=${fuel}&limit=${limit}&offset=${offset}`;
+    if (searchSort.col) url += `&sort=${searchSort.col}&order=${searchSort.dir}`;
     if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
     if (station) url += `&station=${encodeURIComponent(station)}`;
     if (brand) url += `&brand=${encodeURIComponent(brand)}`;
