@@ -271,6 +271,14 @@ function escHtml(s) {
     return d.innerHTML;
 }
 
+// Global delegation handler for station links (works in tables, Leaflet popups, etc.)
+document.addEventListener('click', e => {
+    const link = e.target.closest('.station-link');
+    if (!link) return;
+    e.preventDefault();
+    openStationTrend(link.dataset.node, link.dataset.name, link.dataset.brand, link.dataset.city, link.dataset.postcode);
+});
+
 function categoryTag(type) {
     const cls = (type || 'independent').toLowerCase().replace(/ /g, '-');
     return `<span class="category-tag ${cls}">${escHtml(type) || 'Independent'}</span>`;

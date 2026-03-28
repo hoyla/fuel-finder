@@ -19,7 +19,7 @@ async function loadAnomalies() {
             changeTxt = `${sign}${pct}%`;
         }
         return `<tr>
-            <td>${escHtml(r.trading_name)}</td>
+            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
             <td>${r.city || '—'}</td>
             <td>${r.fuel_type}</td>
             <td>${r.prev_price != null ? ppl(r.prev_price) : '—'}</td>
@@ -100,7 +100,7 @@ async function loadOutliers() {
             ? (r.anomaly_flags || []).map(f => `<span class="tag">${escHtml(f)}</span>`).join(' ')
             : '<span class="tag" style="background:#fff3cd;color:#856404;">outside IQR fence</span>';
         return `<tr>
-            <td>${escHtml(r.trading_name)}</td>
+            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
             <td>${escHtml(r.city || '—')}</td>
             <td>${escHtml(r.postcode || '—')}</td>
             <td>${escHtml(r.brand_name || '—')}</td>

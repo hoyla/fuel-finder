@@ -73,7 +73,7 @@ async function loadMapPrices() {
             radius: 5, fillColor: priceColour(d.price), color: '#333',
             weight: 0.5, fillOpacity: 0.85,
         }).bindPopup(`
-            <strong>${escHtml(d.trading_name)}</strong><br>
+            <strong><a href="#" class="station-link" data-node="${escHtml(d.node_id)}" data-name="${escHtml(d.trading_name)}" data-brand="${escHtml(d.brand_name || '')}" data-city="${escHtml(d.city || '')}" data-postcode="${escHtml(d.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(d.trading_name)}</a></strong><br>
             ${escHtml(d.brand_name) || ''} · ${escHtml(d.forecourt_type) || 'Independent'}<br>
             ${escHtml(d.city)} ${escHtml(d.postcode)}<br>
             ${d.admin_district ? escHtml(d.admin_district) + '<br>' : ''}

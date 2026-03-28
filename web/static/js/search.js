@@ -33,14 +33,6 @@ async function doSearch(offset = 0) {
         ? `📈 View trend for all ${data.total.toLocaleString()} results`
         : '📈 View trend for all results';
 
-    // Attach click handlers for station links via delegation
-    body.querySelectorAll('.station-link').forEach(a => {
-        a.addEventListener('click', e => {
-            e.preventDefault();
-            openStationTrend(a.dataset.node, a.dataset.name, a.dataset.brand, a.dataset.city, a.dataset.postcode);
-        });
-    });
-
     const pag = document.getElementById('search-pagination');
     const page = Math.floor(offset / 50) + 1;
     const pages = Math.ceil(data.total / 50);

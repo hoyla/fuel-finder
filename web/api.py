@@ -1261,6 +1261,7 @@ def anomalies(
     with db.cursor() as cur:
         cur.execute("""
             SELECT fp.id, fp.node_id, s.trading_name, s.city,
+                   s.brand_name, s.postcode,
                    fp.fuel_type, fp.price, fp.anomaly_flags,
                    fp.observed_at,
                    prev.price AS prev_price,
