@@ -588,7 +588,7 @@ def price_history_export(
     rural_urban: Optional[str] = Query(None),
     format: str = Query("csv"),
     db=Depends(get_db),
-    _auth=Depends(require_auth),
+    _auth=Depends(require_editor),
 ):
     """Export raw individual price records matching the trend filters.
 
@@ -978,7 +978,7 @@ def price_search_export(
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
     format: str = Query("csv"),
-    _auth=Depends(require_auth),
+    _auth=Depends(require_editor),
 ):
     """Export all historical price records matching the search filters.
 
