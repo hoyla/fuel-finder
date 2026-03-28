@@ -66,7 +66,7 @@ async function loadDashboard() {
             : '';
         cards.innerHTML += `
             <div class="card">
-                <div class="label">${ft.fuel_name || ft.fuel_type}</div>
+                <div class="label">${ft.fuel_name || ft.fuel_type} average price</div>
                 <div class="value">${ppl(ft.avg_price)}</div>
                 <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)}</div>
                 <div class="sub">${ft.station_count} stations</div>
@@ -83,8 +83,8 @@ async function loadDashboard() {
         fetchThirtyDaysAgoBaseline('E10'),
         fetchThirtyDaysAgoBaseline('B7_STANDARD'),
     ]);
-    cards.innerHTML += renderThirtyDayChangeCard('E10', 'E10 30-day change', summaryNowByFuel.E10, e10Past);
-    cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel 30-day change', summaryNowByFuel.B7_STANDARD, b7Past);
+    cards.innerHTML += renderThirtyDayChangeCard('E10', 'Unleaded (E10)<br>30-day change', summaryNowByFuel.E10, e10Past);
+    cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel (B7)<br>30-day change', summaryNowByFuel.B7_STANDARD, b7Past);
 
     // Wire up outlier links to jump to the anomalies → outliers sub-section
     document.querySelectorAll('.outlier-link').forEach(link => {
