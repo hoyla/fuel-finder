@@ -462,9 +462,11 @@
         <!-- Sub-section: Anomaly-flagged -->
         <div id="anomaly-flagged">
             <p style="color:var(--muted);margin-bottom:1rem;">
-                Price records flagged as potentially anomalous by rule-based checks on insert.
-                A larger gap between the previous and current dates makes a bigger price change more plausible.
-                Click <strong>Edit prices</strong> to correct misreported values for a station.
+                These prices are automatically excluded from all averaging calculations.
+                They were flagged as potentially anomalous by rule-based checks (price outside plausible range,
+                or an unusually large change from the previous value).
+                A station may still have other fuel types included in averages if only some prices are flagged.
+                Click <strong>Edit prices</strong> to correct misreported values.
             </p>
             <div class="table-wrap">
                 <table class="sortable">
@@ -483,6 +485,11 @@
 
         <!-- Sub-section: Statistical outliers -->
         <div id="anomaly-outliers" style="display:none;">
+            <p style="color:var(--muted);margin-bottom:1rem;">
+                These prices are automatically excluded from all averaging calculations.
+                They fall outside the statistical plausible range (IQR fences) or were flagged by anomaly rules.
+                A station may still have other fuel types included in averages if only some prices are affected.
+            </p>
             <div class="card" style="margin-bottom:1.25rem;background:#f0f4f8;">
                 <h3 style="margin-bottom:0.5rem;font-size:1rem;">How outlier exclusion works</h3>
                 <p style="font-size:0.9rem;margin-bottom:0.5rem;">
@@ -519,7 +526,7 @@
                         <tr>
                             <th>Station</th><th>City</th><th>Postcode</th>
                             <th>Brand</th><th>Fuel</th><th>Price</th>
-                            <th>Reason</th><th>Last Updated</th>
+                            <th>Reason</th><th>Overrides</th><th>Last Updated</th>
                         </tr>
                     </thead>
                     <tbody id="outlier-body"></tbody>
@@ -557,7 +564,7 @@
                     <tr>
                         <th>Fuel</th><th>Original Price</th><th>Corrected Price</th>
                         <th>Effective Price</th><th>Observed</th>
-                        <th>Flags</th><th>Suggestion</th><th>Actions</th>
+                        <th>Status</th><th>Overrides</th><th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="price-editor-body"></tbody>
