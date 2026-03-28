@@ -1,3 +1,15 @@
+        /* Environment banner */
+        .env-banner {
+            text-align: center; font-weight: 600; font-size: 0.8rem;
+            letter-spacing: 0.05em; text-transform: uppercase; padding: 0.3rem;
+        }
+        .env-banner.local {
+            background: #6f42c1; color: #fff;
+        }
+        .env-banner.staging {
+            background: #f47738; color: #fff;
+        }
+
         :root {
             --bg:       #f5f6f7;
             --card-bg:  #ffffff;

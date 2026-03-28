@@ -315,13 +315,15 @@ async def resolve_role(
 
 def get_auth_config() -> dict:
     """Return auth configuration for the frontend."""
+    env = os.environ.get("ENVIRONMENT", "local")
     if _USE_COGNITO:
         return {
             "mode": "cognito",
             "region": COGNITO_REGION,
             "userPoolId": COGNITO_USER_POOL_ID,
             "clientId": COGNITO_CLIENT_ID,
+            "environment": env,
         }
     if API_KEY:
-        return {"mode": "api_key"}
-    return {"mode": "none"}
+        return {"mode": "api_key", "environment": env}
+    return {"mode": "none", "environment": env}

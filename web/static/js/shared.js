@@ -12,11 +12,21 @@ let _cognitoClientId = null;
 let _cognitoSession = null;  // for NEW_PASSWORD_REQUIRED challenge
 let _challengeUsername = null;
 
+function showEnvBanner(env) {
+    if (env && env !== 'production') {
+        const banner = document.getElementById('env-banner');
+        banner.textContent = env === 'local' ? '⚙ Local Development' : '⚠ Staging Environment';
+        banner.className = 'env-banner ' + env;
+        banner.style.display = '';
+    }
+}
+
 async function initAuth() {
     try {
         const r = await fetch('/auth/config');
         const cfg = await r.json();
         _authMode = cfg.mode;
+        showEnvBanner(cfg.environment);
         if (_authMode === 'cognito') {
             _cognitoRegion = cfg.region;
             _cognitoClientId = cfg.clientId;
