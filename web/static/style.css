@@ -160,6 +160,8 @@
             background: #fff; color: var(--red); cursor: pointer; font-size: 0.8rem;
         }
         .btn-delete:hover { background: var(--red); color: #fff; }
+        .btn-delete:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--muted); color: var(--muted); }
+        .btn-delete:disabled:hover { background: #fff; color: var(--muted); }
         .category-tag {
             display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
             font-size: 0.8rem; font-weight: 500;
