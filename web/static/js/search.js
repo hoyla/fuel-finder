@@ -470,12 +470,32 @@ async function loadPriceEditorRecords() {
     const fmtDate = ts => ts ? new Date(ts).toLocaleString() : '—';
     body.innerHTML = records.map(r => {
         const hasCorrection = r.corrected_price != null;
-        const isAnomaly = r.anomaly_flags && r.anomaly_flags.length > 0;
-        const rowClass = hasCorrection ? 'corrected' : (isAnomaly ? 'anomaly-row' : '');
-        const suggestion = suggestCorrection(r.original_price);
-        const suggestHtml = suggestion && !hasCorrection
-            ? (canEdit() ? `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}';markPending(${r.fuel_price_id})">${suggestion}p</a>` : `${suggestion}p?`)
-            : (hasCorrection ? `<span style="font-size:0.78rem;color:var(--muted);">${escHtml(r.correction_reason || '')}</span>` : '—');
+        const effFlags = r.effective_flags || [];
+        const hasEffFlags = effFlags.length > 0;
+        const rowClass = hasCorrection
+            ? (hasEffFlags ? 'anomaly-row' : 'corrected')
+            : (hasEffFlags ? 'anomaly-row' : '');
+
+        // Status: current effective anomaly state
+        const statusHtml = hasEffFlags
+            ? effFlags.map(f => '<span class="tag">' + escHtml(f) + '</span>').join(' ')
+            : (hasCorrection ? '<span class="tag" style="background:#d4edda;color:#155724;">OK</span>' : '—');
+
+        // Overrides: suggestion for unfixed anomalies, or correction details
+        let overrideHtml = '—';
+        if (hasCorrection) {
+            const parts = [`${ppl(r.original_price)} → ${ppl(r.corrected_price)}`];
+            if (r.corrected_by) parts.push(`by ${escHtml(r.corrected_by)}`);
+            overrideHtml = `<span style="font-size:0.78rem;color:var(--muted);">${parts.join(' ')}</span>`;
+        } else if (hasEffFlags) {
+            const suggestion = suggestCorrection(r.original_price);
+            if (suggestion && canEdit()) {
+                overrideHtml = `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}';markPending(${r.fuel_price_id})">${suggestion}p <span style="font-size:0.75rem;color:var(--muted);">(suggested)</span></a>`;
+            } else if (suggestion) {
+                overrideHtml = `<span style="font-size:0.78rem;color:var(--muted);">${suggestion}p (suggested)</span>`;
+            }
+        }
+
         const actions = canEdit()
             ? (hasCorrection
                 ? `<button class="btn-revert" onclick="revertCorrection(${r.fuel_price_id})">↩ Revert</button>`
@@ -487,8 +507,8 @@ async function loadPriceEditorRecords() {
             <td>${hasCorrection ? ppl(r.corrected_price) : '—'}</td>
             <td><strong>${ppl(r.effective_price)}</strong></td>
             <td>${fmtDate(r.observed_at)}</td>
-            <td>${isAnomaly ? (r.anomaly_flags || []).map(f => '<span class="tag">' + escHtml(f) + '</span>').join(' ') : '—'}</td>
-            <td>${suggestHtml}</td>
+            <td>${statusHtml}</td>
+            <td>${overrideHtml}</td>
             <td style="white-space:nowrap;">${actions}</td>
         </tr>`;
     }).join('');

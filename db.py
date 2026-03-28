@@ -178,15 +178,20 @@ def insert_fuel_prices(conn, price_records, scrape_run_id):
         return 0
 
     # Build lookup of latest known prices: (node_id, fuel_type) -> price
+    # Uses corrected price when available so that anomaly detection and
+    # change-detection compare against the *intended* value, not a
+    # mis-entered original (e.g. 1.8p that was corrected to 180.0p).
     all_node_ids = list({s["node_id"] for s in price_records})
     latest = {}
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT DISTINCT ON (node_id, fuel_type)
-                      node_id, fuel_type, price
-                 FROM fuel_prices
-                WHERE node_id = ANY(%s)
-             ORDER BY node_id, fuel_type, observed_at DESC""",
+            """SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
+                      fp.node_id, fp.fuel_type,
+                      COALESCE(pc.corrected_price, fp.price) AS price
+                 FROM fuel_prices fp
+                 LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+                WHERE fp.node_id = ANY(%s)
+             ORDER BY fp.node_id, fp.fuel_type, fp.observed_at DESC""",
             (all_node_ids,),
         )
         for row in cur.fetchall():
