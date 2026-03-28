@@ -206,7 +206,18 @@ fuel-finder-scraper/
 │   ├── api.py                # API endpoints (three-tier auth: readonly / editor / admin)
 │   ├── auth.py               # Authentication & authorisation (Cognito JWT, API key, roles)
 │   └── static/
-│       ├── index.html        # Main dashboard SPA
+│       ├── index.html        # HTML shell + tab structure for the SPA
+│       ├── style.css         # Main app CSS
+│       ├── docs.css          # Shared CSS for documentation pages
+│       ├── js/               # Modular JavaScript
+│       │   ├── shared.js     # Auth, utilities, delegation handlers
+│       │   ├── router.js     # Hash-based tab routing
+│       │   ├── dashboard.js  # Dashboard charts and cards
+│       │   ├── map.js        # Leaflet map tab
+│       │   ├── trends.js     # Price trend charts
+│       │   ├── search.js     # Search, station trend, price editor
+│       │   ├── admin.js      # Anomalies, data management, logs, users
+│       │   └── app.js        # Initialisation
 │       ├── api.html          # API documentation page
 │       └── about.html        # How the scraper works
 ├── tests/                    # pytest test suite (151 tests)
