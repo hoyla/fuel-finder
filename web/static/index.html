@@ -1007,9 +1007,12 @@
                 <input id="new-user-email" type="email" placeholder="user@example.com" style="min-width:20rem" />
             </div>
             <div class="control" style="display:flex;align-items:end;gap:0.5rem;">
-                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
-                    <input type="checkbox" id="new-user-admin"> Admin
-                </label>
+                <label>Role</label>
+                <select id="new-user-role">
+                    <option value="readonly">Read-only</option>
+                    <option value="editor" selected>Editor</option>
+                    <option value="admin">Admin</option>
+                </select>
             </div>
             <button class="primary" onclick="createUser()">Create User</button>
         </div>
@@ -1037,6 +1040,7 @@
 let _authMode = 'none';
 let _idToken = null;
 let _refreshToken = null;
+let _userRole = 'admin'; // 'admin' | 'editor' | 'readonly'
 let _cognitoRegion = null;
 let _cognitoClientId = null;
 let _cognitoSession = null;  // for NEW_PASSWORD_REQUIRED challenge
@@ -1199,6 +1203,36 @@ function showApp(email) {
         document.getElementById('user-email').textContent = email;
         document.getElementById('logout-btn').style.display = '';
     }
+}
+
+async function fetchUserRole() {
+    try {
+        const r = await fetch('/auth/me', { headers: authHeaders() });
+        if (r.ok) {
+            const data = await r.json();
+            _userRole = data.role || 'readonly';
+        }
+    } catch { /* no-auth mode defaults to admin */ }
+    applyRolePermissions();
+}
+
+function canEdit() { return _userRole === 'admin' || _userRole === 'editor'; }
+
+function applyRolePermissions() {
+    // Hide Users tab for non-admin
+    const usersTab = document.querySelector('.tab[data-panel="users"]');
+    if (usersTab) usersTab.style.display = _userRole === 'admin' ? '' : 'none';
+
+    // Data Cleanup: hide mutation controls for readonly
+    document.querySelectorAll('#data-aliases .controls, #data-categories .controls, #data-overrides .controls').forEach(el => {
+        el.style.display = canEdit() ? '' : 'none';
+    });
+    const refreshBtn = document.getElementById('btn-refresh-view');
+    if (refreshBtn) refreshBtn.style.display = canEdit() ? '' : 'none';
+
+    // Station trend edit button
+    const stEditBtn = document.getElementById('st-edit-btn');
+    if (stEditBtn) stEditBtn.style.display = canEdit() ? '' : 'none';
 }
 
 function logout() {
@@ -2548,12 +2582,14 @@ async function loadPriceEditorRecords() {
         const rowClass = hasCorrection ? 'corrected' : (isAnomaly ? 'anomaly-row' : '');
         const suggestion = suggestCorrection(r.original_price);
         const suggestHtml = suggestion && !hasCorrection
-            ? `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}'">${suggestion}p</a>`
+            ? (canEdit() ? `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}'">${suggestion}p</a>` : `${suggestion}p?`)
             : (hasCorrection ? `<span style="font-size:0.78rem;color:var(--muted);">${r.correction_reason || ''}</span>` : '—');
-        const actions = hasCorrection
-            ? `<button class="btn-revert" onclick="revertCorrection(${r.fuel_price_id})">↩ Revert</button>`
-            : `<input id="corr-${r.fuel_price_id}" class="correction-input" type="text" inputmode="decimal" placeholder="pence">
-               <button class="btn-correct" onclick="saveCorrection(${r.fuel_price_id})">✓</button>`;
+        const actions = canEdit()
+            ? (hasCorrection
+                ? `<button class="btn-revert" onclick="revertCorrection(${r.fuel_price_id})">↩ Revert</button>`
+                : `<input id="corr-${r.fuel_price_id}" class="correction-input" type="text" inputmode="decimal" placeholder="pence">
+                   <button class="btn-correct" onclick="saveCorrection(${r.fuel_price_id})">✓</button>`)
+            : (hasCorrection ? '<span style="color:var(--muted);font-size:0.8rem;">Corrected</span>' : '');
         return `<tr class="price-editor-row ${rowClass}">
             <td>${r.fuel_name || r.fuel_type}</td>
             <td>${ppl(r.original_price)}</td>
@@ -2650,7 +2686,7 @@ async function loadAnomalies() {
             <td>${fmtDate(r.observed_at)}</td>
             <td style="${changeStyle}"><strong>${changeTxt}</strong></td>
             <td>${(r.anomaly_flags || []).map(f => `<span class="tag">${f}</span>`).join(' ')}</td>
-            <td><a href="#" onclick="openPriceEditor('${escHtml(r.node_id)}','${escHtml(r.trading_name)}','anomalies');return false;" style="color:var(--accent);font-size:0.8rem;white-space:nowrap;">Edit prices</a></td>
+            ${canEdit() ? `<td><a href="#" onclick="openPriceEditor('${escHtml(r.node_id)}','${escHtml(r.trading_name)}','anomalies');return false;" style="color:var(--accent);font-size:0.8rem;white-space:nowrap;">Edit prices</a></td>` : '<td></td>'}
         </tr>`;
     }).join('');
 }
@@ -2873,7 +2909,7 @@ async function loadAliases() {
             <td>${escHtml(r.raw_brand_name)}</td>
             <td><strong>${escHtml(r.canonical_brand)}</strong></td>
             <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
-            <td><button class="btn-delete" onclick="deleteAlias('${escHtml(r.raw_brand_name)}')">Delete</button></td>
+            ${canEdit() ? `<td><button class="btn-delete" onclick="deleteAlias('${escHtml(r.raw_brand_name)}')">Delete</button></td>` : ''}
         </tr>
     `).join('');
 }
@@ -2910,7 +2946,7 @@ async function loadCategories() {
         <tr>
             <td><strong>${escHtml(r.canonical_brand)}</strong></td>
             <td>${categoryTag(r.forecourt_type)}</td>
-            <td><button class="btn-delete" onclick="deleteCategory('${escHtml(r.canonical_brand)}')">Delete</button></td>
+            ${canEdit() ? `<td><button class="btn-delete" onclick="deleteCategory('${escHtml(r.canonical_brand)}')">Delete</button></td>` : ''}
         </tr>
     `).join('');
 }
@@ -2950,7 +2986,7 @@ async function loadOverrides() {
             <td><strong>${escHtml(r.canonical_brand)}</strong></td>
             <td>${escHtml(r.notes) || '<span style="color:var(--muted)">—</span>'}</td>
             <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
-            <td><button class="btn-delete" onclick="deleteOverride('${escHtml(r.node_id)}')">Delete</button></td>
+            ${canEdit() ? `<td><button class="btn-delete" onclick="deleteOverride('${escHtml(r.node_id)}')">Delete</button></td>` : ''}
         </tr>
     `).join('');
 }
@@ -3020,7 +3056,7 @@ async function loadPostcodeIssues() {
             <td>${gmapsLon(s.api_latitude, s.api_longitude)}</td>
             <td>${s.coords_outside_uk ? '⚠ Yes' : ''}</td>
             <td>${status}</td>
-            <td>${s.postcode ? `<button class="small" onclick="fixPostcodeCoords('${s.postcode}', ${s.api_latitude}, ${s.api_longitude})">Fix coords</button>` : ''}</td>
+            <td>${canEdit() && s.postcode ? `<button class="small" onclick="fixPostcodeCoords('${s.postcode}', ${s.api_latitude}, ${s.api_longitude})">Fix coords</button>` : ''}</td>
         </tr>`;
         }).join('') : '<tr><td colspan="9">No postcode issues found.</td></tr>';
     } catch (e) {
@@ -3060,15 +3096,20 @@ async function loadUsers() {
         const adminCount = users.filter(u => u.groups.includes('admin')).length;
         body.innerHTML = users.length ? users.map(u => {
             const isLastAdmin = u.groups.includes('admin') && adminCount === 1;
+            const role = u.groups.includes('admin') ? 'admin' : u.groups.includes('editor') ? 'editor' : 'readonly';
+            const roleBtns = role === 'admin'
+                ? `<button class="btn-delete" onclick="setUserRole('${escHtml(u.username)}','editor')"${isLastAdmin ? ' disabled title="Cannot demote the only admin"' : ''}>Demote to Editor</button>`
+                : role === 'editor'
+                ? `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="setUserRole('${escHtml(u.username)}','admin')">Make Admin</button>
+                   <button class="btn-delete" onclick="setUserRole('${escHtml(u.username)}','readonly')">Demote to Read-only</button>`
+                : `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="setUserRole('${escHtml(u.username)}','editor')">Make Editor</button>`;
             return `<tr>
             <td>${escHtml(u.email)}</td>
             <td>${escHtml(u.status)}${u.enabled ? '' : ' <span style="color:var(--red)">(disabled)</span>'}</td>
-            <td>${u.groups.map(g => `<span class="tag">${escHtml(g)}</span>`).join(' ') || '—'}</td>
+            <td><span class="tag">${role}</span></td>
             <td>${new Date(u.created).toLocaleDateString()}</td>
             <td style="white-space:nowrap">
-                ${u.groups.includes('admin')
-                    ? `<button class="btn-delete" onclick="toggleGroup('${escHtml(u.username)}','admin',false)"${isLastAdmin ? ' disabled title="Cannot demote the only admin"' : ''}>Remove admin</button>`
-                    : `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="toggleGroup('${escHtml(u.username)}','admin',true)">Make admin</button>`}
+                ${roleBtns}
                 ${u.enabled
                     ? `<button class="btn-delete" onclick="toggleUser('${escHtml(u.username)}',false)"${isLastAdmin ? ' disabled title="Cannot disable the only admin"' : ''}>Disable</button>`
                     : `<button class="primary" style="padding:0.25rem 0.6rem;font-size:0.8rem" onclick="toggleUser('${escHtml(u.username)}',true)">Enable</button>`}
@@ -3083,20 +3124,33 @@ async function loadUsers() {
 
 async function createUser() {
     const email = document.getElementById('new-user-email').value.trim();
-    const admin = document.getElementById('new-user-admin').checked;
+    const role = document.getElementById('new-user-role').value;
     const status = document.getElementById('user-status');
     if (!email) { alert('Email is required'); return; }
     try {
-        await apiPost('/admin/users', { email, admin });
+        await apiPost('/admin/users', { email, role });
         status.className = 'status-msg success';
-        status.textContent = `User ${email} created. They will receive an email with a temporary password.`;
+        status.textContent = `User ${email} created (${role}). They will receive an email with a temporary password.`;
         document.getElementById('new-user-email').value = '';
-        document.getElementById('new-user-admin').checked = false;
+        document.getElementById('new-user-role').value = 'editor';
         await loadUsers();
     } catch (e) {
         status.className = 'status-msg error';
         status.textContent = e.message;
     }
+}
+
+async function setUserRole(username, newRole) {
+    try {
+        // Remove from current groups, then add to new
+        for (const g of ['admin', 'editor']) {
+            try { await apiDelete(`/admin/users/${encodeURIComponent(username)}/groups/${encodeURIComponent(g)}`); } catch {}
+        }
+        if (newRole === 'admin' || newRole === 'editor') {
+            await apiPost(`/admin/users/${encodeURIComponent(username)}/groups/${encodeURIComponent(newRole)}`, {});
+        }
+        await loadUsers();
+    } catch (e) { alert(e.message); }
 }
 
 async function toggleGroup(username, group, add) {
@@ -3127,6 +3181,7 @@ async function deleteUser(username, email) {
 // Init
 // ---------------------------------------------------------------------------
 async function startApp() {
+    await fetchUserRole();
     await loadFuelTypes();
     await loadRegions();
     loadDistricts();

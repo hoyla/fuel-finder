@@ -50,7 +50,7 @@ def get_db():
 # Auth — Cognito JWT / API key / no-auth (see auth.py)
 # ---------------------------------------------------------------------------
 
-from auth import require_auth, require_admin, get_auth_config
+from auth import require_auth, require_admin, require_editor, get_auth_config, get_user_role
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +124,17 @@ def health():
 def auth_config():
     """Return auth mode so the frontend can adapt."""
     return get_auth_config()
+
+
+@app.get("/auth/me")
+def auth_me(request: Request, _auth=Depends(require_auth)):
+    """Return the current user's role for frontend permission gating."""
+    from auth import get_current_user
+    api_key = request.headers.get("x-api-key", "")
+    return {
+        "role": get_user_role(request, api_key),
+        "email": get_current_user(request),
+    }
 
 
 @app.get("/api/summary")
@@ -1379,7 +1390,7 @@ def list_brand_aliases(db=Depends(get_db), _auth=Depends(require_auth)):
 
 
 @app.post("/api/admin/brand-aliases")
-def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends(require_admin)):
+def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends(require_editor)):
     """Create or update a brand alias mapping."""
     raw = body.raw_brand_name.strip()
     canonical = body.canonical_brand.strip()
@@ -1397,7 +1408,7 @@ def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends
 
 
 @app.delete("/api/admin/brand-aliases/{raw_brand_name}")
-def delete_brand_alias(raw_brand_name: str, db=Depends(get_db), _auth=Depends(require_admin)):
+def delete_brand_alias(raw_brand_name: str, db=Depends(get_db), _auth=Depends(require_editor)):
     """Remove a brand alias."""
     with db.cursor() as cur:
         cur.execute("DELETE FROM brand_aliases WHERE raw_brand_name = %s RETURNING raw_brand_name", (raw_brand_name,))
@@ -1419,7 +1430,7 @@ def list_brand_categories(db=Depends(get_db), _auth=Depends(require_auth)):
 
 
 @app.post("/api/admin/brand-categories")
-def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=Depends(require_admin)):
+def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=Depends(require_editor)):
     """Create or update a brand category mapping."""
     brand = body.canonical_brand.strip()
     cat = body.forecourt_type.strip()
@@ -1440,7 +1451,7 @@ def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=D
 
 
 @app.delete("/api/admin/brand-categories/{canonical_brand}")
-def delete_brand_category(canonical_brand: str, db=Depends(get_db), _auth=Depends(require_admin)):
+def delete_brand_category(canonical_brand: str, db=Depends(get_db), _auth=Depends(require_editor)):
     """Remove a brand category mapping (brand will default to Independent)."""
     with db.cursor() as cur:
         cur.execute("DELETE FROM brand_categories WHERE canonical_brand = %s RETURNING canonical_brand", (canonical_brand,))
@@ -1465,7 +1476,7 @@ def list_station_overrides(db=Depends(get_db), _auth=Depends(require_auth)):
 
 
 @app.post("/api/admin/station-overrides")
-def upsert_station_override(body: "StationOverrideBody", db=Depends(get_db), _auth=Depends(require_admin)):
+def upsert_station_override(body: "StationOverrideBody", db=Depends(get_db), _auth=Depends(require_editor)):
     """Create or update a per-station brand override."""
     node_id = body.node_id.strip()
     canonical = body.canonical_brand.strip()
@@ -1489,7 +1500,7 @@ def upsert_station_override(body: "StationOverrideBody", db=Depends(get_db), _au
 
 
 @app.delete("/api/admin/station-overrides/{node_id}")
-def delete_station_override(node_id: str, db=Depends(get_db), _auth=Depends(require_admin)):
+def delete_station_override(node_id: str, db=Depends(get_db), _auth=Depends(require_editor)):
     """Remove a per-station brand override."""
     with db.cursor() as cur:
         cur.execute("DELETE FROM station_brand_overrides WHERE node_id = %s RETURNING node_id", (node_id,))
@@ -1611,7 +1622,7 @@ def update_postcode_coords(
     postcode: str,
     body: PostcodeCoordsBody,
     db=Depends(get_db),
-    _auth=Depends(require_admin),
+    _auth=Depends(require_editor),
 ):
     """Manually set coordinates for a postcode lookup.
 
@@ -1634,7 +1645,7 @@ def update_postcode_coords(
 
 
 @app.post("/api/admin/refresh-view")
-def refresh_view(db=Depends(get_db), _auth=Depends(require_admin)):
+def refresh_view(db=Depends(get_db), _auth=Depends(require_editor)):
     """Refresh the current_prices materialised view after lookup changes."""
     with db.cursor() as cur:
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
@@ -1760,7 +1771,7 @@ def create_correction(
     body: PriceCorrectionBody,
     request: Request,
     db=Depends(get_db),
-    _auth=Depends(require_admin),
+    _auth=Depends(require_editor),
 ):
     """Create or update a price correction. Original data is preserved."""
     corrected_by = getattr(request.state, "user_email", None) or "admin"
@@ -1794,7 +1805,7 @@ def create_correction(
 def delete_correction(
     fuel_price_id: int,
     db=Depends(get_db),
-    _auth=Depends(require_admin),
+    _auth=Depends(require_editor),
 ):
     """Revert a price correction (restore original price)."""
     with db.cursor() as cur:
@@ -1824,6 +1835,7 @@ def _pool_id():
 class CreateUserBody(BaseModel):
     email: str
     admin: bool = False
+    role: Optional[str] = None  # 'admin', 'editor', 'readonly'
 
 
 @app.get("/api/admin/scrape-runs")
@@ -1912,9 +1924,11 @@ def create_user(body: CreateUserBody, _auth=Depends(require_admin)):
         )
     except client.exceptions.UsernameExistsException:
         raise HTTPException(409, f"User {email} already exists")
-    if body.admin:
+    # Determine role: prefer 'role' field, fall back to legacy 'admin' bool
+    role = body.role or ("admin" if body.admin else "editor")
+    if role in ("admin", "editor"):
         client.admin_add_user_to_group(
-            UserPoolId=pool, Username=email, GroupName="admin"
+            UserPoolId=pool, Username=email, GroupName=role
         )
     return {"username": email, "status": resp["User"]["UserStatus"]}
 

@@ -16,8 +16,10 @@ Supports multiple authentication methods (checked in order):
 
 Public interface:
     - ``require_auth``       – authentication dependency (replaces the old stub)
-    - ``require_admin``      – admin-only dependency for mutation endpoints
+    - ``require_editor``     – editor-or-admin dependency for mutation endpoints
+    - ``require_admin``      – admin-only dependency (user management)
     - ``get_current_user``   – resolves the caller's identity
+    - ``get_user_role``      – returns 'admin', 'editor', or 'readonly'
 """
 
 from __future__ import annotations
@@ -199,6 +201,32 @@ async def require_auth(
 # ---------------------------------------------------------------------------
 
 
+async def require_editor(
+    request: Request,
+    x_api_key: str = Header(default=""),
+) -> None:
+    """Require editor-level access for data mutation endpoints.
+
+    - API key:       any valid key is treated as editor+.
+    - Cognito mode:  user must be in the ``admin`` or ``editor`` group.
+    - No-auth mode:  passes through.
+    """
+    if API_KEY and x_api_key == API_KEY:
+        return
+
+    if _USE_COGNITO:
+        claims = _extract_claims(request)
+        groups = set(claims.get("cognito:groups", []))
+        if not groups.intersection({"admin", "editor"}):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Requires editor or admin group membership",
+            )
+        return
+
+    await require_auth(request, x_api_key)
+
+
 async def require_admin(
     request: Request,
     x_api_key: str = Header(default=""),
@@ -238,6 +266,26 @@ def get_current_user(request: Request) -> str:
         claims = _extract_claims(request)
         return claims.get("email") or claims.get("cognito:username", "unknown")
     return "anonymous"
+
+
+def get_user_role(request: Request, x_api_key: str = "") -> str:
+    """Return the effective role: 'admin', 'editor', or 'readonly'.
+
+    - API key holders → admin.
+    - Cognito users → highest group ('admin' > 'editor' > 'readonly').
+    - No-auth mode → admin (local dev).
+    """
+    if API_KEY and x_api_key == API_KEY:
+        return "admin"
+    if _USE_COGNITO:
+        claims = _extract_claims(request)
+        groups = set(claims.get("cognito:groups", []))
+        if "admin" in groups:
+            return "admin"
+        if "editor" in groups:
+            return "editor"
+        return "readonly"
+    return "admin"
 
 
 # ---------------------------------------------------------------------------
