@@ -1,8 +1,19 @@
 // ---------------------------------------------------------------------------
 // Anomalies
 // ---------------------------------------------------------------------------
+
+// Server-side sort state
+let anomalySort = { col: null, dir: null };
+let outlierSort = { col: null, dir: null };
+
+// Column name mapping: th index → API sort key
+const ANOMALY_SORT_KEYS = ['trading_name','city','fuel_type','prev_price','prev_observed_at','price','observed_at'];
+const OUTLIER_SORT_KEYS = ['trading_name','city','postcode','brand_name','fuel_type','price',null,null,'observed_at'];
+
 async function loadAnomalies(offset = 0) {
-    const data = await apiFetch(`/anomalies?limit=50&offset=${offset}`);
+    let url = `/anomalies?limit=50&offset=${offset}`;
+    if (anomalySort.col) url += `&sort=${anomalySort.col}&order=${anomalySort.dir}`;
+    const data = await apiFetch(url);
     const body = document.getElementById('anomaly-body');
     if (!data.rows.length) {
         body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">No anomalies detected</td></tr>';
@@ -33,6 +44,7 @@ async function loadAnomalies(offset = 0) {
         </tr>`;
     }).join('');
     renderLogPagination('anomaly-pagination', data.total, offset, 50, loadAnomalies);
+    _syncSortIndicators('anomaly-body', anomalySort, ANOMALY_SORT_KEYS);
 }
 
 function switchAnomalySection(skipLoad) {
@@ -61,6 +73,7 @@ async function loadOutliers(offset = 0) {
     const fuel = document.getElementById('outlier-fuel').value;
     let url = `/outliers?limit=50&offset=${offset}`;
     if (fuel) url += `&fuel_type=${encodeURIComponent(fuel)}`;
+    if (outlierSort.col) url += `&sort=${outlierSort.col}&order=${outlierSort.dir}`;
     const data = await apiFetch(url);
 
     // Show IQR bounds summary
@@ -119,6 +132,46 @@ async function loadOutliers(offset = 0) {
         </tr>`;
     }).join('');
     renderLogPagination('outlier-pagination', data.total, offset, 50, loadOutliers);
+    _syncSortIndicators('outlier-body', outlierSort, OUTLIER_SORT_KEYS);
+}
+
+// ---------------------------------------------------------------------------
+// Server-side sort helpers for paginated tables
+// ---------------------------------------------------------------------------
+function _syncSortIndicators(tbodyId, sortState, keys) {
+    const table = document.getElementById(tbodyId)?.closest('table');
+    if (!table) return;
+    table.querySelectorAll('thead th').forEach((th, i) => {
+        th.classList.remove('asc', 'desc');
+        if (keys[i] && keys[i] === sortState.col) th.classList.add(sortState.dir);
+    });
+}
+
+function initServerSortedTables() {
+    _bindServerSort('anomaly-body', ANOMALY_SORT_KEYS, anomalySort, () => loadAnomalies(0));
+    _bindServerSort('outlier-body', OUTLIER_SORT_KEYS, outlierSort, () => loadOutliers(0));
+    _bindServerSort('search-body', SEARCH_SORT_KEYS, searchSort, () => doSearch(0));
+}
+
+function _bindServerSort(tbodyId, keys, sortState, reloadFn) {
+    const table = document.getElementById(tbodyId)?.closest('table');
+    if (!table) return;
+    // Remove the generic sortable class so initSortableTables skips it
+    table.classList.remove('sortable');
+    table.querySelectorAll('thead th').forEach((th, i) => {
+        const key = keys[i];
+        if (!key) return;
+        th.classList.add('sortable');
+        th.addEventListener('click', () => {
+            if (sortState.col === key) {
+                sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortState.col = key;
+                sortState.dir = 'asc';
+            }
+            reloadFn();
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------

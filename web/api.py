@@ -923,6 +923,7 @@ def price_search(
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
     sort: str = Query("price"),
+    order: Optional[str] = Query(None),
     limit: int = Query(50, ge=1),
     offset: int = Query(0, ge=0),
     db=Depends(get_db),
@@ -1009,8 +1010,9 @@ def price_search(
 
     where = " AND ".join(conditions)
 
-    allowed_sorts = {"price": "price", "brand": "brand_name", "city": "city", "postcode": "postcode", "district": "admin_district"}
-    order = allowed_sorts.get(sort, "price")
+    allowed_sorts = {"price": "price", "brand": "brand_name", "station": "trading_name", "city": "city", "postcode": "postcode", "district": "admin_district", "rural_urban": "rural_urban", "observed_at": "observed_at"}
+    sort_col = allowed_sorts.get(sort, "price")
+    sort_dir = "ASC" if order == "asc" else "DESC" if order == "desc" else "ASC"
 
     with db.cursor() as cur:
         cur.execute(f"""
@@ -1023,7 +1025,7 @@ def price_search(
                    observed_at
             FROM current_prices
             WHERE {where}
-            ORDER BY {order}
+            ORDER BY {sort_col} {sort_dir} NULLS LAST
             LIMIT %s OFFSET %s
         """, params + [limit, offset])
         rows = cur.fetchall()
@@ -1254,14 +1256,30 @@ def price_search_export(
         )
 
 
+_ANOMALY_SORT_COLS = {
+    "trading_name": "s.trading_name",
+    "city": "s.city",
+    "fuel_type": "fp.fuel_type",
+    "prev_price": "prev.price",
+    "prev_observed_at": "prev.observed_at",
+    "price": "fp.price",
+    "observed_at": "fp.observed_at",
+}
+
+
 @app.get("/api/anomalies")
 def anomalies(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort: Optional[str] = Query(None),
+    order: Optional[str] = Query(None),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
     """Recent anomaly-flagged price records with previous price context."""
+    sort_col = _ANOMALY_SORT_COLS.get(sort, "fp.observed_at")
+    sort_dir = "ASC" if order == "asc" else "DESC"
+
     with db.cursor() as cur:
         cur.execute("""
             SELECT COUNT(*) AS total
@@ -1271,7 +1289,7 @@ def anomalies(
               AND pc.id IS NULL
         """)
         total = cur.fetchone()["total"]
-        cur.execute("""
+        cur.execute(f"""
             SELECT fp.id, fp.node_id, s.trading_name, s.city,
                    s.brand_name, s.postcode,
                    fp.fuel_type, fp.price, fp.anomaly_flags,
@@ -1294,7 +1312,7 @@ def anomalies(
             ) prev ON true
             WHERE fp.anomaly_flags IS NOT NULL
               AND pc.id IS NULL
-            ORDER BY fp.observed_at DESC
+            ORDER BY {sort_col} {sort_dir} NULLS LAST
             LIMIT %s OFFSET %s
         """, (limit, offset))
         return {"rows": cur.fetchall(), "total": total, "limit": limit, "offset": offset}
@@ -1743,11 +1761,24 @@ def refresh_view(db=Depends(get_db), _auth=Depends(require_editor)):
     return {"status": "ok", "message": "current_prices view refreshed"}
 
 
+_OUTLIER_SORT_COLS = {
+    "trading_name": "cp.trading_name",
+    "city": "cp.city",
+    "postcode": "cp.postcode",
+    "brand_name": "cp.brand_name",
+    "fuel_type": "cp.fuel_type",
+    "price": "cp.price",
+    "observed_at": "cp.observed_at",
+}
+
+
 @app.get("/api/outliers")
 def outliers(
     fuel_type: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort: Optional[str] = Query(None),
+    order: Optional[str] = Query(None),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
@@ -1814,7 +1845,8 @@ def outliers(
             ) fp_latest ON true
             LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp_latest.id
             WHERE {where}
-            ORDER BY cp.fuel_type, cp.price
+            ORDER BY {_OUTLIER_SORT_COLS.get(sort, "cp.fuel_type")} {"ASC" if order == "asc" else "DESC"} NULLS LAST
+                     {", cp.price ASC" if not sort or sort == "fuel_type" else ""}
             LIMIT %s OFFSET %s
         """, params + [limit, offset])
         rows = cur.fetchall()

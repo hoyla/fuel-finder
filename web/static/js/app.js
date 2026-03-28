@@ -16,7 +16,10 @@ async function startApp() {
     if (authed) await startApp();
 })();
 
-document.addEventListener('DOMContentLoaded', initSortableTables);
+document.addEventListener('DOMContentLoaded', () => {
+    initServerSortedTables();
+    initSortableTables();
+});
 
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.multi-select').forEach(ms => {
