@@ -490,9 +490,9 @@ async function loadPriceEditorRecords() {
         } else if (hasEffFlags) {
             const suggestion = suggestCorrection(r.original_price);
             if (suggestion && canEdit()) {
-                overrideHtml = `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}';markPending(${r.fuel_price_id})">${suggestion}p</a>`;
+                overrideHtml = `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}';markPending(${r.fuel_price_id})">${suggestion}p <span style="font-size:0.75rem;color:var(--muted);">(suggested)</span></a>`;
             } else if (suggestion) {
-                overrideHtml = `${suggestion}p?`;
+                overrideHtml = `<span style="font-size:0.78rem;color:var(--muted);">${suggestion}p (suggested)</span>`;
             }
         }
 
