@@ -1961,11 +1961,14 @@ class CreateUserBody(BaseModel):
 @app.get("/api/admin/scrape-runs")
 def list_scrape_runs(
     limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
     """Recent scrape runs with timing and record counts."""
     with db.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS total FROM scrape_runs")
+        total = cur.fetchone()["total"]
         cur.execute("""
             SELECT id, started_at, finished_at, run_type, status,
                    batches_fetched, stations_count, price_records_count,
@@ -1973,19 +1976,22 @@ def list_scrape_runs(
                    EXTRACT(EPOCH FROM (finished_at - started_at))::int AS duration_secs
             FROM scrape_runs
             ORDER BY started_at DESC
-            LIMIT %s
-        """, (limit,))
-        return cur.fetchall()
+            LIMIT %s OFFSET %s
+        """, (limit, offset))
+        return {"rows": cur.fetchall(), "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/admin/corrections")
 def list_corrections(
-    limit: int = Query(200, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
     """History of price corrections with station and fuel context."""
     with db.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS total FROM price_corrections")
+        total = cur.fetchone()["total"]
         cur.execute("""
             SELECT pc.corrected_at, pc.original_price, pc.corrected_price,
                    pc.reason, pc.corrected_by,
@@ -1997,9 +2003,9 @@ def list_corrections(
             JOIN stations s ON s.node_id = fp.node_id
             LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
             ORDER BY pc.corrected_at DESC
-            LIMIT %s
-        """, (limit,))
-        return cur.fetchall()
+            LIMIT %s OFFSET %s
+        """, (limit, offset))
+        return {"rows": cur.fetchall(), "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/admin/users")
