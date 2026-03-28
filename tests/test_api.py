@@ -206,7 +206,10 @@ class TestAnomalies:
 
     def test_respects_limit(self, client):
         data = client.get("/api/anomalies?limit=5").json()
-        assert len(data) <= 5
+        assert len(data["rows"]) <= 5
+        assert "total" in data
+        assert "limit" in data
+        assert "offset" in data
 
 
 class TestOutliers:

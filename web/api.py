@@ -1257,11 +1257,20 @@ def price_search_export(
 @app.get("/api/anomalies")
 def anomalies(
     limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
     """Recent anomaly-flagged price records with previous price context."""
     with db.cursor() as cur:
+        cur.execute("""
+            SELECT COUNT(*) AS total
+            FROM fuel_prices fp
+            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+            WHERE fp.anomaly_flags IS NOT NULL
+              AND pc.id IS NULL
+        """)
+        total = cur.fetchone()["total"]
         cur.execute("""
             SELECT fp.id, fp.node_id, s.trading_name, s.city,
                    s.brand_name, s.postcode,
@@ -1286,9 +1295,9 @@ def anomalies(
             WHERE fp.anomaly_flags IS NOT NULL
               AND pc.id IS NULL
             ORDER BY fp.observed_at DESC
-            LIMIT %s
-        """, (limit,))
-        return cur.fetchall()
+            LIMIT %s OFFSET %s
+        """, (limit, offset))
+        return {"rows": cur.fetchall(), "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/fuel-types")
@@ -1737,7 +1746,8 @@ def refresh_view(db=Depends(get_db), _auth=Depends(require_editor)):
 @app.get("/api/outliers")
 def outliers(
     fuel_type: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
@@ -1777,6 +1787,12 @@ def outliers(
 
         where = " AND ".join(conditions)
         cur.execute(f"""
+            SELECT COUNT(*) AS total
+            FROM current_prices cp
+            WHERE {where}
+        """, params)
+        total = cur.fetchone()["total"]
+        cur.execute(f"""
             SELECT cp.node_id, cp.trading_name, cp.city, cp.postcode,
                    cp.fuel_type, cp.fuel_name,
                    cp.price, cp.brand_name, cp.forecourt_type,
@@ -1799,14 +1815,16 @@ def outliers(
             LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp_latest.id
             WHERE {where}
             ORDER BY cp.fuel_type, cp.price
-            LIMIT %s
-        """, params + [limit])
+            LIMIT %s OFFSET %s
+        """, params + [limit, offset])
         rows = cur.fetchall()
 
     return {
         "bounds": bounds,
         "outliers": rows,
-        "total": len(rows),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
     }
 
 
