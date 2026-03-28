@@ -23,6 +23,14 @@ Read-only endpoints are accessible to all authenticated users.
 
 ---
 
+## Health check
+
+### `GET /health`
+
+Basic health check. Returns `{ "status": "ok" }`. No authentication required.
+
+---
+
 ## Auth endpoints
 
 ### `GET /auth/config`
@@ -295,13 +303,15 @@ Streamed to handle large result sets.
 
 ### `GET /api/anomalies`
 
-Recent price records flagged by anomaly detection, with previous price context.
+Recent price records flagged by anomaly detection, with previous price context. Records that have already been corrected are excluded.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `limit` | int | `50` | Max records (1–500) |
 
 **Response:** Array of `{ id, node_id, trading_name, city, brand_name, postcode, fuel_type, price, prev_price, anomaly_flags, observed_at, prev_observed_at }`
+
+`prev_price` reflects any correction applied to the previous record (i.e. uses the corrected price if one exists).
 
 **Anomaly flags:** `price_below_floor`, `price_above_ceiling`, `likely_decimal_error`, `large_price_jump`
 
@@ -321,13 +331,51 @@ Prices excluded as statistical outliers, with IQR bounds for transparency.
     "E10": { "fuel_type": "E10", "q1": 146.9, "q3": 153.9, "iqr": 7.0, "lower_fence": 136.4, "upper_fence": 164.4, "total_stations": 7277 }
   },
   "outliers": [
-    { "node_id": "...", "trading_name": "...", "city": "...", "postcode": "...", "fuel_type": "E10", "fuel_name": "Unleaded (E10)", "price": 1.5, "brand_name": "Shell", "forecourt_type": "Major Oil", "anomaly_flags": null, "observed_at": "2026-03-25T14:00:00Z", "exclusion_reason": "iqr_outlier" }
+    { "node_id": "...", "trading_name": "...", "city": "...", "postcode": "...", "fuel_type": "E10", "fuel_name": "Unleaded (E10)", "price": 1.5, "brand_name": "Shell", "forecourt_type": "Major Oil", "anomaly_flags": null, "observed_at": "2026-03-25T14:00:00Z", "exclusion_reason": "iqr_outlier", "original_price": 1.5, "corrected_price": null }
   ],
   "total": 1
 }
 ```
 
 `exclusion_reason`: `"anomaly_flagged"` (rule-based detection on insert) or `"iqr_outlier"` (Tukey IQR fence method).
+
+`original_price` and `corrected_price` are included when a correction exists, allowing the UI to show what was changed.
+
+### `GET /api/prices/station/{node_id}/records`
+
+Raw individual price records for a station, with any corrections and computed effective flags. Used by the price editor.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fuel_type` | string | — | Optional fuel type filter |
+| `limit` | int | `500` | Max records (1–5000) |
+
+**Response:**
+```json
+{
+  "station": { "trading_name": "...", "brand_name": "...", "city": "...", "postcode": "..." },
+  "records": [
+    {
+      "fuel_price_id": 12345,
+      "fuel_type": "E10",
+      "fuel_name": "Unleaded (E10)",
+      "original_price": 1.5,
+      "corrected_price": 150.0,
+      "effective_price": 150.0,
+      "anomaly_flags": ["likely_decimal_error:..."],
+      "effective_flags": null,
+      "observed_at": "2026-03-25T14:00:00Z",
+      "correction_reason": "Decimal error",
+      "corrected_by": "user@example.com",
+      "corrected_at": "2026-03-25T15:00:00Z",
+      "prev_effective_price": 149.9
+    }
+  ]
+}
+```
+
+`effective_price`: `COALESCE(corrected_price, original_price)`.
+`effective_flags`: re-evaluated anomaly flags based on the effective price. For uncorrected records this equals `anomaly_flags`; for corrected records the flags are recalculated to reflect whether the correction resolved the anomaly.
 
 ---
 
@@ -470,6 +518,7 @@ Manually set coordinates for a postcode that postcodes.io didn't recognise.
 | `/api/admin/users/{username}/groups/{group}` | DELETE | Remove user from group |
 | `/api/admin/users/{username}/disable` | POST | Disable user account |
 | `/api/admin/users/{username}/enable` | POST | Re-enable user account |
+| `/api/admin/users/{username}` | DELETE | Permanently delete user account |
 
 **POST /api/admin/users body:** `{ "email": "user@example.com", "role": "editor" }`
 

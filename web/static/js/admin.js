@@ -35,16 +35,16 @@ async function loadAnomalies(offset = 0) {
     renderLogPagination('anomaly-pagination', data.total, offset, 50, loadAnomalies);
 }
 
-function switchAnomalySection() {
+function switchAnomalySection(skipLoad) {
     const active = document.getElementById('anomaly-section').value;
     document.getElementById('anomaly-flagged').style.display = active === 'flagged' ? '' : 'none';
     document.getElementById('anomaly-outliers').style.display = active === 'outliers' ? '' : 'none';
     if (active === 'outliers' && !document.getElementById('outlier-fuel').options.length) {
-        initOutlierFuelSelect();
+        return initOutlierFuelSelect(skipLoad);
     }
 }
 
-async function initOutlierFuelSelect() {
+async function initOutlierFuelSelect(skipLoad) {
     const fuelTypes = await apiFetch('/fuel-types');
     const sel = document.getElementById('outlier-fuel');
     sel.innerHTML = '<option value="">All fuel types</option>';
@@ -54,7 +54,7 @@ async function initOutlierFuelSelect() {
         o.textContent = ft.fuel_name;
         sel.appendChild(o);
     });
-    loadOutliers();
+    if (!skipLoad) loadOutliers();
 }
 
 async function loadOutliers(offset = 0) {

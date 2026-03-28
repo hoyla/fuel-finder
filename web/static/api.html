@@ -12,7 +12,7 @@
 <body>
 
 <header>
-    <h1>&#9981; UK fuel price tracker</h1>
+    <h1><a href="/#dashboard" style="color:inherit;text-decoration:none;">&#9981; UK fuel price tracker</a></h1>
     <nav>
         <a href="/">Dashboard</a>
         <a href="/docs/api">API</a>
@@ -38,6 +38,12 @@
 
     <!-- ===== PRICE DATA ===== -->
     <h2 id="prices">Price data</h2>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /health</div>
+        <div class="desc">Basic health check. No authentication required.</div>
+        <p>Returns: <code>{ "status": "ok" }</code></p>
+    </div>
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/summary</div>
@@ -252,7 +258,7 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/anomalies</div>
-        <div class="desc">Price records flagged by anomaly detection, with previous price context.</div>
+        <div class="desc">Price records flagged by anomaly detection, with previous price context. Records that have already been corrected are excluded.</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
@@ -260,6 +266,7 @@
             </tbody>
         </table>
         <p>Returns: <code>[ { id, node_id, trading_name, city, brand_name, postcode, fuel_type, price, prev_price, anomaly_flags, observed_at, prev_observed_at } ]</code></p>
+        <p><code>prev_price</code> reflects any correction applied to the previous record.</p>
         <p>Flags: <code>price_below_floor</code>, <code>price_above_ceiling</code>, <code>likely_decimal_error</code>, <code>large_price_jump</code></p>
     </div>
 
@@ -274,7 +281,22 @@
             </tbody>
         </table>
         <p>Returns: <code>{ bounds: { fuel_type: { q1, q3, iqr, lower_fence, upper_fence, total_stations } }, outliers: [...], total }</code></p>
-        <p>Each outlier has <code>exclusion_reason</code>: <code>"anomaly_flagged"</code> or <code>"iqr_outlier"</code>.</p>
+        <p>Each outlier has <code>exclusion_reason</code>: <code>"anomaly_flagged"</code> or <code>"iqr_outlier"</code>, plus <code>original_price</code> and <code>corrected_price</code> when a correction exists.</p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/station/{node_id}/records</div>
+        <div class="desc">Raw individual price records for a station, with any corrections and computed effective flags. Used by the price editor.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Optional fuel type filter</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>500</td><td>Max records (1&ndash;5000)</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>{ station: { trading_name, brand_name, city, postcode }, records: [...] }</code></p>
+        <p>Each record: <code>{ fuel_price_id, fuel_type, fuel_name, original_price, corrected_price, effective_price, anomaly_flags, effective_flags, observed_at, correction_reason, corrected_by, corrected_at, prev_effective_price }</code></p>
+        <p><code>effective_flags</code>: re-evaluated anomaly flags based on the effective (corrected or original) price.</p>
     </div>
 
     <div class="note warning">All price aggregation endpoints (summary, by-region, by-brand, by-category, by-district, by-constituency, by-rural-urban, history) exclude statistical outliers and anomaly-flagged prices. See <a href="/docs/about#outlier-methodology">outlier methodology</a> for details.</div>
@@ -439,6 +461,10 @@
     <div class="endpoint">
         <div class="method-path"><span class="method post">POST</span> /api/admin/users/{username}/enable</div>
         <div class="desc">Re-enable a disabled user account.</div>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method delete">DEL</span> /api/admin/users/{username}</div>
+        <div class="desc">Permanently delete a user account.</div>
     </div>
 
     <h3>Refresh view</h3>

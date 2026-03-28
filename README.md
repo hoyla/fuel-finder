@@ -1,8 +1,8 @@
 # Fuel Finder historical tracking
 
-Scrapes the [GOV.UK Fuel Finder API](https://www.developer.fuel-finder.service.gov.uk/) for UK fuel prices and station data, stores them in PostgreSQL, and optionally backs up raw JSON to S3.
+Pulls snapshots from the [GOV.UK Fuel Finder API](https://www.developer.fuel-finder.service.gov.uk/) for UK fuel prices and station data, stores them in PostgreSQL, and optionally backs up raw JSON to S3.
 
-Designed to build a **historical price database** from an API that only provides live snapshots. Every row in `fuel_prices` represents a genuine price change, enabling time-series analysis across ~7,400 UK fuel stations.
+Designed to build a **historical price database** from an API that only provides live snapshots. Every row in `fuel_prices` represents a genuine price change, enabling time-series analysis across ~7,500 UK fuel stations.
 
 ## Quick start (local)
 
