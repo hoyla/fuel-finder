@@ -240,3 +240,24 @@ fuel-finder-scraper/
 - [Database schema reference](docs/SCHEMA.md)
 - [API endpoint reference](docs/API.md)
 - [AWS deployment guide](docs/AWS_DEPLOYMENT.md)
+
+## Acknowledgments
+
+### GOV.UK Fuel Finder API
+
+This project sources all UK fuel price data from the [GOV.UK Fuel Finder API](https://www.developer.fuel-finder.service.gov.uk/). The API provides live snapshot pricing at ~7,500 fuel stations across the UK. We are grateful for this public data source and our use follows the [GOV.UK Fuel Finder developer guidelines](https://www.developer.fuel-finder.service.gov.uk/dev-guideline), including rate limiting, efficient polling, and safeguards on data redistribution. For full details, see the [Scraper](web/static/about.html#the-scraper) and [API usage guidelines](web/static/about.html#api-usage-guidelines) sections on the About page.
+
+### Postcodes.io
+
+Postcode enrichment is provided via [postcodes.io](https://postcodes.io), a free and open API for UK postcode data. This enrichment adds accurate coordinates (fixing ~85 stations with incorrect data), administrative geography, parliamentary constituency, rural/urban classification, and statistical areas to our database.
+
+The postcodes.io service and source code are provided under the [MIT Licence](https://opensource.org/licenses/MIT). The underlying postcode data is used under the following licences:
+
+- **Great Britain postcode data**: [OS OpenData licence](https://www.ordnancesurvey.co.uk/documents/licensing/os-opendata-licence.pdf) (contains Ordnance Survey data © Crown copyright and database right 2026; Royal Mail data © Crown copyright and database right 2026)
+- **Northern Ireland postcode data (BT prefix)**: [ONSPD licence](https://www.ons.gov.uk/methodology/geography/licences) (contains National Statistics data © Crown copyright and database right 2026; NRS data © Crown copyright and database right 2026)
+
+For full details, see the [Postcodes.io enrichment](web/static/about.html#postcodesioenrichment) and [Licensing](web/static/about.html#licensing) sections on the About page.
+
+### Methodology and compliance
+
+The methodologies used in this project — anomaly detection rules, statistical outlier exclusion (Tukey IQR fences), brand normalisation, forecourt categorisation, and regional mapping — are fully documented in the [About page](web/static/about.html) of the web application. All averages and statistics shown in the dashboard exclude anomalous and outlier prices, with full transparency: these excluded prices remain in the database and are visible for inspection on the Anomalies page.
