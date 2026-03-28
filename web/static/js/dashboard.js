@@ -46,7 +46,7 @@ async function loadDashboard() {
     if (data.last_scrape) {
         const d = new Date(data.last_scrape);
         document.getElementById('last-scrape').textContent =
-            'Last scrape: ' + d.toLocaleString();
+            'Last fetch: ' + d.toLocaleString();
     }
 
     const cards = document.getElementById('summary-cards');
