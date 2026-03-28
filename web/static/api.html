@@ -4,98 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Reference &mdash; UK fuel price tracker</title>
+    <link rel="stylesheet" href="/static/docs.css">
     <style>
-        :root {
-            --bg:       #f5f6f7;
-            --card-bg:  #ffffff;
-            --text:     #1a1a1a;
-            --muted:    #6b7280;
-            --accent:   #1d70b8;
-            --border:   #d2d6db;
-            --green:    #00703c;
-            --red:      #d4351c;
-            --orange:   #e67e22;
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: var(--bg); color: var(--text); line-height: 1.6;
-        }
-        header {
-            background: var(--text); color: #fff; padding: 1rem 2rem;
-            display: flex; align-items: center; gap: 1rem;
-        }
-        header h1 { font-size: 1.4rem; font-weight: 600; }
-        header a { color: #aaa; text-decoration: none; font-size: 0.9rem; }
-        header a:hover { color: #fff; }
-        header nav { margin-left: auto; display: flex; gap: 1.5rem; }
-        main {
-            max-width: 900px; margin: 0 auto; padding: 2rem;
-        }
-        h2 {
-            font-size: 1.5rem; margin: 2rem 0 0.75rem; padding-bottom: 0.5rem;
-            border-bottom: 2px solid var(--border);
-        }
-        h2:first-child { margin-top: 0; }
-        h3 {
-            font-size: 1.1rem; margin: 1.5rem 0 0.5rem;
-            color: var(--accent);
-        }
-        p { margin: 0.5rem 0; }
-        .endpoint {
-            background: var(--card-bg); border: 1px solid var(--border);
-            border-radius: 8px; padding: 1.25rem; margin: 1rem 0;
-        }
-        .endpoint .method-path {
-            font-family: "SF Mono", Monaco, Menlo, monospace;
-            font-size: 0.95rem; font-weight: 600;
-        }
-        .method {
-            display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
-            font-size: 0.8rem; font-weight: 700; margin-right: 0.5rem;
-            text-transform: uppercase; color: #fff;
-        }
-        .method.get { background: var(--green); }
-        .method.post { background: var(--accent); }
-        .method.patch { background: var(--orange); }
-        .method.delete { background: var(--red); }
-        .endpoint .desc { color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0; }
-        table {
-            width: 100%; border-collapse: collapse; font-size: 0.9rem;
-            margin: 0.75rem 0;
-        }
-        th {
-            background: var(--bg); text-align: left; padding: 0.5rem 0.75rem;
-            font-weight: 600; border-bottom: 2px solid var(--border);
-        }
-        td {
-            padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border);
-        }
-        code {
-            background: #e8ecf0; padding: 0.15rem 0.4rem; border-radius: 3px;
-            font-family: "SF Mono", Monaco, Menlo, monospace; font-size: 0.85rem;
-        }
-        pre {
-            background: #1a1a1a; color: #e0e0e0; padding: 1rem; border-radius: 6px;
-            overflow-x: auto; font-size: 0.85rem; margin: 0.75rem 0; line-height: 1.4;
-        }
-        .note {
-            background: #fff3cd; border: 1px solid #f0d78e; border-radius: 6px;
-            padding: 0.75rem 1rem; font-size: 0.9rem; margin: 0.75rem 0;
-        }
-        .section-nav {
-            background: var(--card-bg); border: 1px solid var(--border);
-            border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;
-        }
-        .section-nav h4 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; margin-bottom: 0.5rem; }
-        .section-nav a {
-            display: inline-block; margin: 0.2rem 0.75rem 0.2rem 0;
-            color: var(--accent); text-decoration: none; font-size: 0.9rem;
-        }
-        .section-nav a:hover { text-decoration: underline; }
-        @media (max-width: 768px) {
-            main { padding: 1rem; }
-        }
+        main { max-width: 900px; margin: 0 auto; padding: 2rem; }
     </style>
 </head>
 <body>
@@ -115,8 +26,7 @@
     <p>All endpoints return JSON. Base URL: <code>/api/</code></p>
     <p><strong>Authentication</strong> (checked in order): <strong>1.</strong> API key (<code>X-Api-Key</code> header) &mdash; grants admin access. <strong>2.</strong> Cognito JWT (<code>Authorization: Bearer &lt;id_token&gt;</code>) &mdash; role determined by group membership. <strong>3.</strong> No auth when neither is configured (local dev default).</p>
 
-    <div class="note">
-        <strong>User roles:</strong> <strong>Admin</strong> (<code>admin</code> group) &mdash; everything including user management. <strong>Editor</strong> (<code>editor</code> group) &mdash; data mutations, exports, view refresh. <strong>Read-only</strong> (no group) &mdash; read access with caps: search limited to 200 results, history limited to 90 days, no exports.
+    <div class="note warning"> <strong>Admin</strong> (<code>admin</code> group) &mdash; everything including user management. <strong>Editor</strong> (<code>editor</code> group) &mdash; data mutations, exports, view refresh. <strong>Read-only</strong> (no group) &mdash; read access with caps: search limited to 200 results, history limited to 90 days, no exports.
     </div>
 
     <div class="section-nav">
@@ -349,7 +259,7 @@
                 <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Max records (1&ndash;500)</td></tr>
             </tbody>
         </table>
-        <p>Returns: <code>[ { id, node_id, trading_name, city, fuel_type, price, prev_price, anomaly_flags, observed_at, prev_observed_at } ]</code></p>
+        <p>Returns: <code>[ { id, node_id, trading_name, city, brand_name, postcode, fuel_type, price, prev_price, anomaly_flags, observed_at, prev_observed_at } ]</code></p>
         <p>Flags: <code>price_below_floor</code>, <code>price_above_ceiling</code>, <code>likely_decimal_error</code>, <code>large_price_jump</code></p>
     </div>
 
@@ -367,7 +277,7 @@
         <p>Each outlier has <code>exclusion_reason</code>: <code>"anomaly_flagged"</code> or <code>"iqr_outlier"</code>.</p>
     </div>
 
-    <div class="note">All price aggregation endpoints (summary, by-region, by-brand, by-category, by-district, by-constituency, by-rural-urban, history) exclude statistical outliers and anomaly-flagged prices. See <a href="/docs/about#outlier-methodology">outlier methodology</a> for details.</div>
+    <div class="note warning">All price aggregation endpoints (summary, by-region, by-brand, by-category, by-district, by-constituency, by-rural-urban, history) exclude statistical outliers and anomaly-flagged prices. See <a href="/docs/about#outlier-methodology">outlier methodology</a> for details.</div>
 
     <!-- ===== REFERENCE ===== -->
     <h2 id="reference">Reference</h2>
@@ -401,7 +311,7 @@
 
     <p><strong>Editor</strong> endpoints (mutations, exports, view refresh) require <code>admin</code> or <code>editor</code> group membership. <strong>Admin</strong> endpoints (user management) require <code>admin</code> group only.</p>
 
-    <div class="note">Changes to lookup tables are not reflected in the dashboard until you call <code>POST /api/admin/refresh-view</code> to rebuild the materialised view.</div>
+    <div class="note warning">Changes to lookup tables are not reflected in the dashboard until you call <code>POST /api/admin/refresh-view</code> to rebuild the materialised view.</div>
 
     <h3>Scrape history</h3>
 
@@ -412,9 +322,11 @@
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
                 <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Max runs (1&ndash;500)</td></tr>
+                <tr><td><code>offset</code></td><td>int</td><td>0</td><td>Pagination offset</td></tr>
             </tbody>
         </table>
-        <p>Returns: <code>[ { id, started_at, finished_at, run_type, status, batches_fetched, stations_count, price_records_count, s3_key, error_message, duration_secs } ]</code></p>
+        <p>Returns: <code>{ rows: [...], total, limit, offset }</code></p>
+        <p>Each row: <code>{ id, started_at, finished_at, run_type, status, batches_fetched, stations_count, price_records_count, s3_key, error_message, duration_secs }</code></p>
     </div>
 
     <h3>Brand aliases</h3>
@@ -546,15 +458,23 @@
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-                <tr><td><code>limit</code></td><td>int</td><td>200</td><td>Max records (1&ndash;1000)</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Max records (1&ndash;1000)</td></tr>
+                <tr><td><code>offset</code></td><td>int</td><td>0</td><td>Pagination offset</td></tr>
             </tbody>
         </table>
-        <p>Returns: <code>[ { corrected_at, original_price, corrected_price, reason, corrected_by, trading_name, city, fuel_type, fuel_name, observed_at } ]</code></p>
+        <p>Returns: <code>{ rows: [...], total, limit, offset }</code></p>
+        <p>Each row: <code>{ corrected_at, original_price, corrected_price, reason, corrected_by, trading_name, city, fuel_type, fuel_name, observed_at }</code></p>
     </div>
     <div class="endpoint">
         <div class="method-path"><span class="method post">POST</span> /api/corrections</div>
         <div class="desc">Create or update a price correction. Automatically refreshes the materialised view.</div>
         <pre>{ "fuel_price_id": 12345, "corrected_price": 139.9 }</pre>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/corrections/batch</div>
+        <div class="desc">Create or update multiple price corrections in one request. Automatically refreshes the materialised view. <strong>Max 200 per batch.</strong></div>
+        <pre>{ "corrections": [ { "fuel_price_id": 12345, "corrected_price": 139.9 }, ... ] }</pre>
+        <p>Returns: <code>{ saved: 3, corrections: [ { id, fuel_price_id, corrected_price } ] }</code></p>
     </div>
     <div class="endpoint">
         <div class="method-path"><span class="method delete">DEL</span> /api/corrections/{fuel_price_id}</div>

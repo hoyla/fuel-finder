@@ -301,7 +301,7 @@ Recent price records flagged by anomaly detection, with previous price context.
 |---|---|---|---|
 | `limit` | int | `50` | Max records (1–500) |
 
-**Response:** Array of `{ id, node_id, trading_name, city, fuel_type, price, prev_price, anomaly_flags, observed_at, prev_observed_at }`
+**Response:** Array of `{ id, node_id, trading_name, city, brand_name, postcode, fuel_type, price, prev_price, anomaly_flags, observed_at, prev_observed_at }`
 
 **Anomaly flags:** `price_below_floor`, `price_above_ceiling`, `likely_decimal_error`, `large_price_jump`
 
@@ -378,8 +378,11 @@ Recent scrape runs with timing and record counts.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `limit` | int | `50` | Max runs (1–500) |
+| `offset` | int | `0` | Pagination offset |
 
-**Response:** Array of `{ id, started_at, finished_at, run_type, status, batches_fetched, stations_count, price_records_count, s3_key, error_message, duration_secs }`
+**Response:** `{ rows: [...], total, limit, offset }`
+
+Each row: `{ id, started_at, finished_at, run_type, status, batches_fetched, stations_count, price_records_count, s3_key, error_message, duration_secs }`
 
 `status`: `running`, `completed`, or `failed`. `run_type`: `full` or `incremental`.
 
@@ -490,10 +493,22 @@ Manual overrides for misreported prices. Original data in `fuel_prices` is never
 |---|---|---|
 | `GET /api/admin/corrections` | GET | List correction history with station context |
 | `POST /api/corrections` | POST | Create or update a price correction |
+| `POST /api/corrections/batch` | POST | Create or update multiple price corrections |
 | `DELETE /api/corrections/{fuel_price_id}` | DELETE | Revert a correction (restore original price) |
 
-**POST body:** `{ "fuel_price_id": 12345, "corrected_price": 139.9 }`
+**POST /api/corrections body:** `{ "fuel_price_id": 12345, "corrected_price": 139.9 }`
 
-**GET response:** Array of `{ corrected_at, original_price, corrected_price, reason, corrected_by, trading_name, city, fuel_type, fuel_name, observed_at }`
+**POST /api/corrections/batch body:** `{ "corrections": [ { "fuel_price_id": 12345, "corrected_price": 139.9 }, ... ] }` (max 200 per batch)
+
+**GET /api/admin/corrections parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | int | `50` | Max records (1–1000) |
+| `offset` | int | `0` | Pagination offset |
+
+**GET response:** `{ rows: [...], total, limit, offset }`
+
+Each row: `{ corrected_at, original_price, corrected_price, reason, corrected_by, trading_name, city, fuel_type, fuel_name, observed_at }`
 
 Creating or deleting a correction automatically refreshes the materialised view.
