@@ -136,15 +136,30 @@ function switchLogSection() {
     document.getElementById('log-corrections').style.display = active === 'corrections' ? '' : 'none';
 }
 
+function renderLogPagination(containerId, total, offset, limit, loadFn) {
+    const pag = document.getElementById(containerId);
+    if (total <= limit) { pag.innerHTML = ''; return; }
+    const page = Math.floor(offset / limit) + 1;
+    const pages = Math.ceil(total / limit);
+    pag.innerHTML = `
+        <button ${offset === 0 ? 'disabled' : ''} id="${containerId}-prev">← Prev</button>
+        <span class="info">Page ${page} of ${pages} (${total.toLocaleString()} records)</span>
+        <button ${offset + limit >= total ? 'disabled' : ''} id="${containerId}-next">Next →</button>
+    `;
+    pag.querySelector(`#${containerId}-prev`)?.addEventListener('click', () => loadFn(offset - limit));
+    pag.querySelector(`#${containerId}-next`)?.addEventListener('click', () => loadFn(offset + limit));
+}
+
 // --- Corrections Log ---
-async function loadCorrectionsLog() {
-    const data = await apiFetch('/admin/corrections?limit=200');
+async function loadCorrectionsLog(offset = 0) {
+    const data = await apiFetch(`/admin/corrections?limit=50&offset=${offset}`);
     const body = document.getElementById('corrections-body');
-    if (!data.length) {
+    if (!data.rows.length) {
         body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">No overrides recorded</td></tr>';
+        document.getElementById('corrections-pagination').innerHTML = '';
         return;
     }
-    body.innerHTML = data.map(r => {
+    body.innerHTML = data.rows.map(r => {
         const date = r.corrected_at ? new Date(r.corrected_at).toLocaleString() : '—';
         const priceDate = r.observed_at ? new Date(r.observed_at).toLocaleDateString() : '—';
         return `<tr>
@@ -160,13 +175,14 @@ async function loadCorrectionsLog() {
         </tr>`;
     }).join('');
     initSortableTables();
+    renderLogPagination('corrections-pagination', data.total, offset, 50, loadCorrectionsLog);
 }
 
 // --- Scrape History ---
-async function loadScrapeHistory() {
-    const data = await apiFetch('/admin/scrape-runs?limit=100');
+async function loadScrapeHistory(offset = 0) {
+    const data = await apiFetch(`/admin/scrape-runs?limit=50&offset=${offset}`);
     const body = document.getElementById('scrapes-body');
-    body.innerHTML = data.map(r => {
+    body.innerHTML = data.rows.map(r => {
         const started = r.started_at ? new Date(r.started_at).toLocaleString() : '—';
         const finished = r.finished_at ? new Date(r.finished_at).toLocaleString() : '—';
         const dur = r.duration_secs != null
@@ -188,6 +204,7 @@ async function loadScrapeHistory() {
         </tr>`;
     }).join('');
     initSortableTables();
+    renderLogPagination('scrapes-pagination', data.total, offset, 50, loadScrapeHistory);
 }
 
 // --- Normalisation Report ---

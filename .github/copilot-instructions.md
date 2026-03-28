@@ -8,7 +8,9 @@ UK fuel price tracker. Scrapes the GOV.UK Fuel Finder API, stores price changes 
 
 - **web/api.py** — all FastAPI endpoints (~40+), psycopg2 connection pool
 - **web/auth.py** — authentication & authorisation (Cognito JWT, API key, no-auth fallback)
-- **web/static/index.html** — entire frontend SPA (Chart.js, Leaflet maps, tabbed UI)
+- **web/static/index.html** — HTML shell + tab structure for the SPA
+- **web/static/style.css** — all CSS
+- **web/static/js/** — modular JS: shared.js (auth, utilities, delegation handlers), router.js (hash routing), dashboard.js, map.js, trends.js, search.js, admin.js, app.js (init)
 - **web/static/api.html** — on-site API reference
 - **web/static/about.html** — methodology page
 - **scrape.py** — scraper orchestrator (runs on Lambda)
@@ -51,10 +53,11 @@ docker compose up -d postgres
 
 ## Code conventions
 
-- Single-file frontend — all JS/CSS/HTML in index.html
-- No build step, no bundler, no framework
+- Frontend split into modular JS files under web/static/js/ — no build step, no bundler, no framework
+- Use event delegation with data-attributes for dynamic links (not inline onclick) to avoid escaping issues
 - API endpoints use psycopg2 RealDictCursor (returns dicts, not tuples)
 - Parameterised queries only — never f-string SQL
+- Paginated API endpoints return `{rows, total, limit, offset}`
 
 ## Git workflow
 
