@@ -106,32 +106,12 @@ async function downloadSearchData(fmt) {
     }
 }
 
-async function downloadSearchHistoryData(fmt) {
-    const btn = document.getElementById('search-hist-dl-' + fmt);
-    btn.disabled = true;
-    btn.textContent = '⏳ ' + fmt.toUpperCase();
-    try {
-        let url = buildSearchUrl(10000, 0)
-            .replace('/prices/search?', '/prices/search/export?')
-            .replace(/&limit=\d+/, '').replace(/&offset=\d+/, '');
-        url += '&format=' + fmt;
-        const resp = await fetch(API + url, { headers: authHeaders() });
-        if (resp.status === 401) { showLogin(); throw new Error('Session expired'); }
-        if (!resp.ok) throw new Error('Export failed: ' + resp.status);
-        const blob = await resp.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'fuel-search-all-history.' + fmt;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
-    } catch (err) {
-        alert('Export failed: ' + err.message);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = '⬇ ' + fmt.toUpperCase();
-    }
+function downloadSearchHistoryData(fmt) {
+    let url = buildSearchUrl(10000, 0)
+        .replace('/prices/search?', '/prices/search/export?')
+        .replace(/&limit=\d+/, '').replace(/&offset=\d+/, '');
+    url += '&format=' + fmt;
+    fetchExport(API + url, ['fuel-search-all-history'], fmt, document.getElementById('search-hist-dl-' + fmt));
 }
 
 // ---------------------------------------------------------------------------
@@ -395,10 +375,43 @@ async function loadStationTrend() {
 }
 
 function downloadStationTrendData(fmt) {
-    const name = stationTrendState.mode === 'single'
-        ? 'station-trend-' + stationTrendState.title.replace(/\s+/g, '-').toLowerCase()
-        : 'multi-station-trend';
-    downloadFile(lastStationTrendData, name, fmt);
+    const fuel = document.getElementById('st-fuel').value;
+    const startDate = document.getElementById('st-start').value;
+    const endDate = document.getElementById('st-end').value;
+
+    let url = `/api/prices/history/export?fuel_type=${encodeURIComponent(fuel)}&format=${fmt}`;
+    if (startDate) url += `&start_date=${startDate}`;
+    if (endDate) url += `&end_date=${endDate}`;
+    if (!startDate && !endDate) url += '&days=30';
+
+    if (stationTrendState.mode === 'single') {
+        url += `&node_ids=${encodeURIComponent(stationTrendState.nodeId)}`;
+    } else if (stationTrendState.mode === 'search') {
+        const sf = stationTrendState.searchFilters;
+        if (sf.brand) url += `&brand=${encodeURIComponent(sf.brand)}`;
+        if (sf.city) url += `&city=${encodeURIComponent(sf.city)}`;
+        if (sf.postcode) url += `&postcode=${encodeURIComponent(sf.postcode)}`;
+        if (sf.category) url += `&category=${encodeURIComponent(sf.category)}`;
+        if (sf.district) url += `&district=${encodeURIComponent(sf.district)}`;
+        if (sf.constituency) url += `&constituency=${encodeURIComponent(sf.constituency)}`;
+        if (sf.rural_urban) url += `&rural_urban=${encodeURIComponent(sf.rural_urban)}`;
+        if (sf.region) url += `&region=${encodeURIComponent(sf.region)}`;
+        if (sf.country) url += `&country=${encodeURIComponent(sf.country)}`;
+        if (sf.supermarket_only) url += '&supermarket_only=true';
+        if (sf.motorway_only) url += '&motorway_only=true';
+        if (sf.exclude_outliers) url += '&exclude_outliers=true';
+    } else {
+        url += `&node_ids=${encodeURIComponent(stationTrendState.nodeIds.join(','))}`;
+    }
+
+    const parts = [stationTrendState.mode === 'single'
+        ? 'station-' + stationTrendState.title.replace(/\s+/g, '-').toLowerCase()
+        : 'station-trend'];
+    if (fuel) parts.push(fuel.replace(/\s+/g, '-'));
+    if (startDate) parts.push('from-' + startDate);
+    if (endDate) parts.push('to-' + endDate);
+
+    fetchExport(url, parts, fmt, document.getElementById('st-dl-' + fmt));
 }
 
 // ---------------------------------------------------------------------------

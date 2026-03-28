@@ -17,43 +17,16 @@ function downloadTrendData(fmt) {
     if (region) url += `&region=${encodeURIComponent(region)}`;
     if (country) url += `&country=${encodeURIComponent(country)}`;
     if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
-    // Add auth header via a fetch-and-download approach
-    const btn = document.getElementById(fmt === 'csv' ? 'trend-dl-csv' : 'trend-dl-json');
-    btn.disabled = true;
-    btn.textContent = '⏳ Exporting…';
-    fetch(url, { headers: authHeaders() })
-        .then(resp => {
-            if (!resp.ok) throw new Error('Export failed');
-            return resp.blob();
-        })
-        .then(blob => {
-            const parts = ['fuel-prices'];
-            if (fuel) parts.push(fuel.replace(/\s+/g, '-'));
-            if (region) region.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
-            if (country) country.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
-            if (ruralUrban) ruralUrban.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
-            if (startDate) parts.push('from-' + startDate);
-            if (endDate) parts.push('to-' + endDate);
-            const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
-            parts.push(ts);
-            const ext = '.' + fmt;
-            const maxLen = 251 - ext.length;          // APFS/HFS+ 255-byte limit
-            let stem = parts.join('_');
-            if (stem.length > maxLen) stem = stem.slice(0, maxLen - 1) + '\u2026';
-            const filename = stem + ext;
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(a.href);
-        })
-        .catch(err => alert('Export failed: ' + err.message))
-        .finally(() => {
-            btn.disabled = false;
-            btn.textContent = `⬇ ${fmt.toUpperCase()}`;
-        });
+
+    const parts = ['fuel-prices'];
+    if (fuel) parts.push(fuel.replace(/\s+/g, '-'));
+    if (region) region.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
+    if (country) country.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
+    if (ruralUrban) ruralUrban.split(',').forEach(v => parts.push(v.trim().replace(/\s+/g, '-')));
+    if (startDate) parts.push('from-' + startDate);
+    if (endDate) parts.push('to-' + endDate);
+
+    fetchExport(url, parts, fmt, document.getElementById(fmt === 'csv' ? 'trend-dl-csv' : 'trend-dl-json'));
 }
 
 function setTrendRange(value) {

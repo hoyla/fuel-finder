@@ -312,6 +312,44 @@ function downloadFile(rows, baseName, format) {
     }
 }
 
+/**
+ * Fetch a server-side export endpoint and trigger a file download.
+ * @param {string} url      - API path (without API prefix), e.g. '/api/prices/history/export?...'
+ * @param {string[]} nameParts - segments for the filename (joined with '_')
+ * @param {string} fmt       - 'csv' or 'json'
+ * @param {HTMLButtonElement} btn - button to show loading state on
+ */
+function fetchExport(url, nameParts, fmt, btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Exporting…';
+    fetch(url, { headers: authHeaders() })
+        .then(resp => {
+            if (resp.status === 401) { showLogin(); throw new Error('Session expired'); }
+            if (!resp.ok) throw new Error('Export failed: ' + resp.status);
+            return resp.blob();
+        })
+        .then(blob => {
+            const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+            nameParts.push(ts);
+            const ext = '.' + fmt;
+            const maxLen = 251 - ext.length;
+            let stem = nameParts.join('_');
+            if (stem.length > maxLen) stem = stem.slice(0, maxLen - 1) + '\u2026';
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = stem + ext;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        })
+        .catch(err => alert('Export failed: ' + err.message))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = `⬇ ${fmt.toUpperCase()}`;
+        });
+}
+
 const COLOURS = [
     '#1d70b8','#d4351c','#00703c','#f47738','#5694ca',
     '#912b88','#28a197','#b58840','#505a5f','#4c2c92',
