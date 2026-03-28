@@ -88,14 +88,14 @@ async function loadDashboard() {
 
     // Wire up outlier links to jump to the anomalies → outliers sub-section
     document.querySelectorAll('.outlier-link').forEach(link => {
-        link.addEventListener('click', e => {
+        link.addEventListener('click', async e => {
             e.preventDefault();
             const fuel = link.dataset.fuel;
             // Switch to anomalies tab
             switchTab('anomalies');
             // Switch to outliers sub-section
             document.getElementById('anomaly-section').value = 'outliers';
-            switchAnomalySection();
+            await switchAnomalySection(true);
             // Set fuel type and load
             const sel = document.getElementById('outlier-fuel');
             if (sel.querySelector(`option[value="${fuel}"]`)) sel.value = fuel;
