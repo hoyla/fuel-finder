@@ -262,6 +262,57 @@ Fuel Finder API (GOV.UK)
     <p>Raw JSON responses from each scrape are optionally backed up to S3 for audit and replay purposes.</p>
 
     <hr style="margin: 2rem 0;">
+    <h2>Glossary</h2>
+
+    <p>Terms used throughout the dashboard that may not be immediately obvious.</p>
+
+    <h3>Stations and brands</h3>
+
+    <dl>
+        <dt><strong>Station</strong></dt>
+        <dd>A physical forecourt at a specific address. Each station has a unique <strong>node ID</strong> assigned by the Fuel Finder API (see below). A station's <em>trading name</em> is what it displays to the public — usually the brand name, but sometimes a locally branded variant (e.g. "Welcome Break Corley").</dd>
+
+        <dt><strong>Brand</strong></dt>
+        <dd>The operator or brand a station trades under — Shell, Tesco, BP, and so on. The API reports a raw brand string per station; normalisation maps these to canonical names (see <em>Brand normalisation</em> above). Multiple stations can share a brand; one brand maps to exactly one forecourt category.</dd>
+
+        <dt><strong>Station node ID</strong></dt>
+        <dd>The unique identifier for a specific station in the Fuel Finder API — a short alphanumeric string (e.g. <code>A1B2C3</code>). It is stable across scrapes and is used as the primary key throughout the database. You need a node ID to add a station-level brand override, or to look up a single station's price history via the API.</dd>
+    </dl>
+
+    <h3>Forecourt categories and the "Supermarket / Motorway" filters</h3>
+
+    <p>There are <strong>two separate ways</strong> to filter by supermarket or motorway, and they mean different things:</p>
+
+    <dl>
+        <dt><strong>Category filter</strong> (the "Supermarket" and "Motorway Operator" / "Motorway" options in the Category multi-select)</dt>
+        <dd>These use the <em>derived category</em> — the forecourt type we assign based on the station's canonical brand name (see the category table above). "Supermarket" means Tesco, Asda, Sainsbury's, Morrisons, Waitrose; "Motorway" means any station whose brand is in the Motorway Operator category <em>or</em> has the motorway flag set.</dd>
+
+        <dt><strong>"Supermarket only" and "Motorway only" checkboxes</strong></dt>
+        <dd>These use the raw flags reported directly by the Fuel Finder API — <code>is_supermarket_service_station</code> and <code>is_motorway_service_station</code>. The API flags are set by the station operators themselves and are <strong>unreliable</strong>: some major oil company sites are flagged as supermarkets, and some genuine motorway sites are not flagged at all. Use the Category filter for the more accurate, curated classification; use these checkboxes when you specifically want to query what the source data reports.</dd>
+    </dl>
+
+    <h3>Brand normalisation report</h3>
+
+    <p>The normalisation report (Data tab → Report) shows how each raw brand string in the database has been resolved to a canonical name. The <strong>Method</strong> column and the filter dropdown use three terms:</p>
+
+    <dl>
+        <dt><strong>Aliased</strong></dt>
+        <dd>The raw brand string from the API matched a <em>brand alias</em> rule, so it was mapped to a canonical name (e.g. <code>TESCO PFS</code> → <code>Tesco</code>). The station has no per-station override.</dd>
+
+        <dt><strong>Overridden</strong></dt>
+        <dd>This specific station has a <em>station override</em> that sets its canonical brand directly, regardless of the alias table. Overrides are used for one-off corrections — a station whose API brand is wrong, or where the network-wide alias isn't granular enough. Overrides always take priority over aliases.</dd>
+
+        <dt><strong>Unmapped</strong></dt>
+        <dd>The raw brand string has no alias and no override, <em>and</em> the brand has no entry in the category table. Consequently, it falls back to showing the raw string as its brand name and is classified as "Independent". Unmapped brands are worth reviewing — they may be new entrants to the API, typo variants, or obscure regional operators that need an alias adding.</dd>
+    </dl>
+
+    <h3>Country filter: "Other / Unknown"</h3>
+
+    <p>The country field for each station comes from two sources: the Fuel Finder API itself (a free-text country string) and the postcodes.io enrichment lookup. Both are normalised to England, Scotland, Wales, or Northern Ireland.</p>
+
+    <p>"Other / Unknown" covers stations where the country cannot be determined — typically because the postcode wasn't recognised by postcodes.io and the API's own country string was blank, misspelled, or didn't match a known value. There are usually only a handful of these at any time; they often correspond to stations with postcode data quality issues.</p>
+
+    <hr style="margin: 2rem 0;">
     <h2>Contact</h2>
     <p>To report problems, request API keys or ask questions, contact Luke Hoyland at <a href="mailto:luke@hoy.la">luke@hoy.la</a>.</p>
     <p>Source code is available on <a href="https://github.com/hoyla/fuel-finder" target="_blank" rel="noopener">GitHub</a>.</p>
