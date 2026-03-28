@@ -133,13 +133,29 @@ Tracks which numbered SQL migrations have been applied. Managed automatically by
 | `filename` | `TEXT` | Full migration filename |
 | `applied_at` | `TIMESTAMPTZ` | When migration was applied |
 
+### `price_corrections`
+
+Manual overrides for misreported prices. Original data in `fuel_prices` is never modified — corrections are stored separately and applied in the materialised view via `COALESCE(correction, original)`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `BIGSERIAL PK` | |
+| `fuel_price_id` | `BIGINT FK → fuel_prices UNIQUE` | The price record being corrected |
+| `original_price` | `NUMERIC(6,1)` | Original price at time of correction |
+| `corrected_price` | `NUMERIC(6,1)` | The corrected price |
+| `reason` | `TEXT` | Why the correction was made (anomaly flags or manual) |
+| `corrected_by` | `TEXT` | Email of the user who made the correction |
+| `corrected_at` | `TIMESTAMPTZ` | When the correction was applied |
+
+**Indexes:** `(fuel_price_id)` unique, `(corrected_at DESC)` for audit trail
+
 ## Materialised View
 
 ### `current_prices`
 
 The **current price snapshot** — one row per (station, fuel_type), always the most recently observed price regardless of age. Refreshed after each scrape run.
 
-Joins station info, resolves canonical brand names via `station_override > brand_alias > raw_brand_name`, classifies forecourt type via `brand_categories`, and includes region via postcode area lookup.
+Joins station info, resolves canonical brand names via `station_override > brand_alias > raw_brand_name`, classifies forecourt type via `brand_categories`, includes region via postcode area lookup, and applies price corrections via `COALESCE(correction, original)`.
 
 | Column | Source | Notes |
 |---|---|---|
@@ -147,7 +163,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `fuel_type` | `fuel_prices` | |
 | `fuel_name` | `fuel_type_labels` | Human name, e.g. "Diesel". Falls back to fuel_type code if unmapped |
 | `fuel_category` | `fuel_type_labels` | `'Petrol'` or `'Diesel'`. Falls back to `'Unknown'` if unmapped |
-| `price` | `fuel_prices` | Current price in pence |
+| `price` | `fuel_prices` / `price_corrections` | `COALESCE(corrected_price, original_price)` — corrections applied transparently |
 | `price_last_updated` | `fuel_prices` | Station-reported timestamp |
 | `price_change_effective_timestamp` | `fuel_prices` | |
 | `observed_at` | `fuel_prices` | When we last saw this price |

@@ -101,7 +101,8 @@ docker compose run --rm scraper python scrape.py incremental
 │    Web UI (FastAPI) │  http://localhost:8080
 │  Dashboard, Map,    │
 │  Trends, Search,    │
-│  Anomalies, Data    │
+│  Anomalies, Data,   │
+│  Logs, Users        │
 └─────────────────────┘
 ```
 
@@ -143,11 +144,23 @@ The project includes a web dashboard at http://localhost:8080 (started via Docke
 
 **Tabs:**
 - **Dashboard** — headline prices, regional chart, forecourt category chart, cheapest brands, rural/urban price comparison, most/least expensive local authorities
-- **Map** — every station on a Leaflet map, colour-coded by price, with admin district and rural/urban classification in popups; CSV/JSON download
-- **Trends** — average price line chart with hourly granularity for ≤30 days and daily for longer ranges, filterable by region, country, and rural/urban classification; CSV/JSON download
-- **Search** — query builder with postcode, brand, city, price range, category, local authority, constituency, country, and rural/urban filters; CSV/JSON download; click station names to view individual price trends; "View trend for selected/all results" for aggregate trend charting
-- **Anomalies** — anomaly-flagged price records and statistical outliers excluded from averages (with IQR bounds for transparency)
-- **Data** — normalisation report, brand aliases, brand categories, station overrides, postcode issues (stations with unrecognised postcodes + coordinate fix tool), and materialised view refresh
+- **Map** — every station on a Leaflet map, colour-coded by price, with admin district and rural/urban classification in popups; CSV/JSON download (editor+)
+- **Trends** — average price line chart with hourly granularity for ≤30 days and daily for longer ranges, filterable by region, country, and rural/urban classification; CSV/JSON download (editor+)
+- **Search** — query builder with postcode, brand, city, price range, category, local authority, constituency, country, and rural/urban filters; CSV/JSON download (editor+); click station names to view individual price trends; "View trend for selected/all results" for aggregate trend charting
+- **Anomalies** — anomaly-flagged price records and statistical outliers excluded from averages (with IQR bounds for transparency); price correction tool (editor+)
+- **Data** — normalisation report, brand aliases, brand categories, station overrides, postcode issues (stations with unrecognised postcodes + coordinate fix tool), and materialised view refresh (editor+)
+- **Logs** — scrape run history and price correction audit trail
+- **Users** — Cognito user management (admin only)
+
+**User roles:**
+
+Three-tier role system via Cognito groups:
+
+| Role | Access |
+|---|---|
+| **Admin** | Everything — user management, data mutations, exports, tier preview switcher |
+| **Editor** | Data mutations (aliases, categories, overrides, corrections), exports, view refresh |
+| **Read-only** | View dashboards, map, trends, search (capped at 200 results, 90-day history) — no exports or data changes |
 
 **API documentation:** see the [API docs page](http://localhost:8080/docs/api) (served from the web UI) or [docs/API.md](docs/API.md).
 
@@ -178,7 +191,9 @@ fuel-finder-scraper/
 │   ├── 009_current_prices_postcode_enrichment.sql
 │   ├── 010_update_fuel_names.sql
 │   ├── 011_outlier_exclusion.sql
-│   └── 012_performance_indexes.sql
+│   ├── 012_performance_indexes.sql
+│   ├── 013_price_corrections.sql
+│   └── 014_current_prices_corrections.sql
 ├── seed_brand_aliases.sql    # Legacy seed file (superseded by migrations)
 ├── seed_postcode_regions.sql # Legacy seed file (superseded by migrations)
 ├── seed_fuel_types.sql       # Legacy seed file (superseded by migrations)
@@ -188,16 +203,18 @@ fuel-finder-scraper/
 │   └── anomaly_detection.sql
 ├── web/                      # FastAPI web UI
 │   ├── Dockerfile
-│   ├── api.py                # API endpoints (read-only + admin CRUD)
+│   ├── api.py                # API endpoints (three-tier auth: readonly / editor / admin)
+│   ├── auth.py               # Authentication & authorisation (Cognito JWT, API key, roles)
 │   └── static/
 │       ├── index.html        # Main dashboard SPA
 │       ├── api.html          # API documentation page
 │       └── about.html        # How the scraper works
-├── tests/                    # pytest test suite (112 tests)
+├── tests/                    # pytest test suite (151 tests)
 │   ├── conftest.py
 │   ├── test_anomaly_detection.py
-│   ├── test_migrate.py
-│   └── test_api.py
+│   ├── test_api.py
+│   ├── test_auth_tiers.py    # Three-tier auth tests (role gating, caps, overrides)
+│   └── test_migrate.py
 ├── docs/
 │   ├── SCHEMA.md             # Database schema reference
 │   ├── API.md                # API endpoint reference

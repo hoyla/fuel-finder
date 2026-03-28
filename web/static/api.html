@@ -113,7 +113,11 @@
     <h2>API Reference</h2>
 
     <p>All endpoints return JSON. Base URL: <code>/api/</code></p>
-    <p><strong>Authentication</strong> (checked in order): <strong>1.</strong> API key (<code>X-Api-Key</code> header) &mdash; grants admin access. <strong>2.</strong> Cognito JWT (<code>Authorization: Bearer &lt;id_token&gt;</code>) &mdash; admin requires <code>admin</code> group. <strong>3.</strong> No auth when <code>AUTH_ENABLED=false</code> (local dev default).</p>
+    <p><strong>Authentication</strong> (checked in order): <strong>1.</strong> API key (<code>X-Api-Key</code> header) &mdash; grants admin access. <strong>2.</strong> Cognito JWT (<code>Authorization: Bearer &lt;id_token&gt;</code>) &mdash; role determined by group membership. <strong>3.</strong> No auth when neither is configured (local dev default).</p>
+
+    <div class="note">
+        <strong>User roles:</strong> <strong>Admin</strong> (<code>admin</code> group) &mdash; everything including user management. <strong>Editor</strong> (<code>editor</code> group) &mdash; data mutations, exports, view refresh. <strong>Read-only</strong> (no group) &mdash; read access with caps: search limited to 200 results, history limited to 90 days, no exports.
+    </div>
 
     <div class="section-nav">
         <h4>Sections</h4>
@@ -226,7 +230,7 @@
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
                 <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
-                <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365)</td></tr>
+                <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365; readonly capped at 90)</td></tr>
                 <tr><td><code>start_date</code></td><td>string</td><td>&mdash;</td><td>Start date (YYYY-MM-DD)</td></tr>
                 <tr><td><code>end_date</code></td><td>string</td><td>&mdash;</td><td>End date (YYYY-MM-DD)</td></tr>
                 <tr><td><code>granularity</code></td><td>string</td><td>auto</td><td><code>hourly</code> or <code>daily</code> (auto: hourly &le;30d)</td></tr>
@@ -242,7 +246,7 @@
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
                 <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
-                <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365)</td></tr>
+                <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365; readonly capped at 90)</td></tr>
                 <tr><td><code>start_date</code></td><td>string</td><td>&mdash;</td><td>Start date (YYYY-MM-DD)</td></tr>
                 <tr><td><code>end_date</code></td><td>string</td><td>&mdash;</td><td>End date (YYYY-MM-DD)</td></tr>
                 <tr><td><code>granularity</code></td><td>string</td><td>auto</td><td><code>hourly</code> or <code>daily</code> (auto: hourly &le;30d)</td></tr>
@@ -262,6 +266,19 @@
             </tbody>
         </table>
         <p>Returns: <code>{ granularity: "hourly"|"daily", data: [ { bucket, avg_price, stations } ] }</code></p>
+    </div>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/prices/history/export</div>
+        <div class="desc">Export raw individual price records matching the trend filters as a streaming download. <strong>Requires editor or admin role.</strong> Accepts the same filter parameters as <code>/api/prices/history</code>.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td colspan="4"><em>Same filters as <code>/api/prices/history</code> above</em></td></tr>
+                <tr><td><code>format</code></td><td>string</td><td>csv</td><td><code>csv</code> or <code>json</code></td></tr>
+            </tbody>
+        </table>
+        <p>Returns: Streaming file download with full station &amp; postcode enrichment for every historical observation.</p>
     </div>
 
     <div class="endpoint">
@@ -288,6 +305,7 @@
             <tbody>
                 <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
                 <tr><td><code>postcode</code></td><td>string</td><td>&mdash;</td><td>Postcode prefix (e.g. SW1)</td></tr>
+                <tr><td><code>station</code></td><td>string</td><td>&mdash;</td><td>Trading name substring</td></tr>
                 <tr><td><code>brand</code></td><td>string</td><td>&mdash;</td><td>Brand substring</td></tr>
                 <tr><td><code>city</code></td><td>string</td><td>&mdash;</td><td>City substring</td></tr>
                 <tr><td><code>min_price</code></td><td>float</td><td>&mdash;</td><td>Min price (pence)</td></tr>
@@ -302,7 +320,7 @@
                 <tr><td><code>motorway_only</code></td><td>bool</td><td>false</td><td>Only motorway stations</td></tr>
                 <tr><td><code>exclude_outliers</code></td><td>bool</td><td>false</td><td>Exclude statistical outliers</td></tr>
                 <tr><td><code>sort</code></td><td>string</td><td>price</td><td>price, brand, city, postcode, district</td></tr>
-                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Results per page (min 1)</td></tr>
+                <tr><td><code>limit</code></td><td>int</td><td>50</td><td>Results per page (min 1; readonly capped at 200)</td></tr>
                 <tr><td><code>offset</code></td><td>int</td><td>0</td><td>Pagination offset</td></tr>
             </tbody>
         </table>
@@ -311,7 +329,7 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/prices/search/export</div>
-        <div class="desc">Export all historical price records matching search filters as a streaming CSV or JSON download. Accepts the same filter parameters as <code>/api/prices/search</code> (except <code>sort</code>, <code>limit</code>, <code>offset</code>).</div>
+        <div class="desc">Export all historical price records matching search filters as a streaming CSV or JSON download. <strong>Requires editor or admin role.</strong> Accepts the same filter parameters as <code>/api/prices/search</code> (except <code>sort</code>, <code>limit</code>, <code>offset</code>).</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
@@ -381,7 +399,7 @@
     <!-- ===== ADMIN ===== -->
     <h2 id="admin">Admin / lookup tables</h2>
 
-    <p>Admin endpoints require a valid API key or Cognito <code>admin</code> group membership.</p>
+    <p><strong>Editor</strong> endpoints (mutations, exports, view refresh) require <code>admin</code> or <code>editor</code> group membership. <strong>Admin</strong> endpoints (user management) require <code>admin</code> group only.</p>
 
     <div class="note">Changes to lookup tables are not reflected in the dashboard until you call <code>POST /api/admin/refresh-view</code> to rebuild the materialised view.</div>
 
@@ -491,7 +509,8 @@
     <div class="endpoint">
         <div class="method-path"><span class="method post">POST</span> /api/admin/users</div>
         <div class="desc">Create/invite a new user (sends invitation email).</div>
-        <pre>{ "email": "user@example.com", "admin": false }</pre>
+        <pre>{ "email": "user@example.com", "role": "editor" }</pre>
+        <p><code>role</code> accepts <code>"admin"</code>, <code>"editor"</code>, or <code>"readonly"</code> (default: no group = readonly).</p>
     </div>
     <div class="endpoint">
         <div class="method-path"><span class="method post">POST</span> /api/admin/users/{username}/groups/{group}</div>
@@ -516,6 +535,30 @@
         <div class="method-path"><span class="method post">POST</span> /api/admin/refresh-view</div>
         <div class="desc">Rebuilds the <code>current_prices</code> materialised view. Call after changing any lookup table.</div>
         <pre>{ "status": "ok", "message": "current_prices view refreshed" }</pre>
+    </div>
+
+    <h3>Price corrections</h3>
+    <p>Manual overrides for misreported prices. Original data is never modified &mdash; corrections are stored separately and applied in the materialised view. <strong>Requires editor or admin role.</strong></p>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/corrections</div>
+        <div class="desc">List correction history with station and fuel context.</div>
+        <table>
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>limit</code></td><td>int</td><td>200</td><td>Max records (1&ndash;1000)</td></tr>
+            </tbody>
+        </table>
+        <p>Returns: <code>[ { corrected_at, original_price, corrected_price, reason, corrected_by, trading_name, city, fuel_type, fuel_name, observed_at } ]</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/corrections</div>
+        <div class="desc">Create or update a price correction. Automatically refreshes the materialised view.</div>
+        <pre>{ "fuel_price_id": 12345, "corrected_price": 139.9 }</pre>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method delete">DEL</span> /api/corrections/{fuel_price_id}</div>
+        <div class="desc">Revert a correction (restore original price). Automatically refreshes the materialised view.</div>
     </div>
 
 </main>

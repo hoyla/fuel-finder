@@ -4,10 +4,47 @@ The Fuel Finder web UI exposes a JSON API at `/api/`. All endpoints return JSON.
 
 **Authentication** (checked in order):
 1. **API key** — `X-Api-Key` header. API key holders get admin access.
-2. **Cognito JWT** — `Authorization: Bearer <id_token>` header. Admin requires `admin` group membership.
-3. **No auth** — when `AUTH_ENABLED=false` (local dev default).
+2. **Cognito JWT** — `Authorization: Bearer <id_token>` header. Role determined by Cognito group membership.
+3. **No auth** — when neither is configured (local dev default). All users get admin access.
 
-Admin endpoints require either a valid API key or Cognito `admin` group membership.
+**User roles:**
+
+| Role | Cognito group | Access |
+|---|---|---|
+| Admin | `admin` | Everything — user management, data mutations, exports |
+| Editor | `editor` | Data mutations (aliases, categories, overrides, corrections), exports, view refresh |
+| Read-only | (no group) | Read-only access with query caps: search limited to 200 results, history limited to 90 days |
+
+Admin endpoints (user management) require `admin` group membership or a valid API key.
+Editor endpoints (mutations, exports, view refresh) require `admin` or `editor` group membership.
+Read-only endpoints are accessible to all authenticated users.
+
+**Admin tier preview:** Admins can send `X-Role-Override: editor` or `X-Role-Override: readonly` to preview a lower tier's experience (including backend query caps). The header is ignored for non-admin users.
+
+---
+
+## Auth endpoints
+
+### `GET /auth/config`
+
+Returns auth configuration for frontend discovery.
+
+**Response:** `{ "mode": "cognito", "region": "eu-north-1", "clientId": "..." }` or `{ "mode": "none" }`
+
+### `GET /auth/me`
+
+Returns the current user's role. Requires authentication.
+
+**Response:**
+```json
+{
+  "role": "editor",
+  "real_role": "admin",
+  "email": "user@example.com"
+}
+```
+
+`role` reflects any `X-Role-Override` in effect. `real_role` is always the user's actual role.
 
 ---
 
@@ -110,7 +147,7 @@ Price history for a single station.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `fuel_type` | string | `E10` | Fuel type code |
-| `days` | int | `30` | Days back (1–365) |
+| `days` | int | `30` | Days back (1–365; readonly capped at 90) |
 | `start_date` | string | — | Start date (YYYY-MM-DD) |
 | `end_date` | string | — | End date (YYYY-MM-DD) |
 | `granularity` | string | auto | `hourly` or `daily` (auto: hourly ≤30d) |
@@ -133,7 +170,7 @@ Average price over time. Uses **hourly** granularity for ranges of 30 days or fe
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `fuel_type` | string | `E10` | Fuel type code |
-| `days` | int | `30` | Days back (1–365) |
+| `days` | int | `30` | Days back (1–365; readonly capped at 90) |
 | `start_date` | string | — | Start date (YYYY-MM-DD) |
 | `end_date` | string | — | End date (YYYY-MM-DD) |
 | `granularity` | string | auto | `hourly` or `daily` (auto: hourly ≤30d) |
@@ -166,6 +203,19 @@ When search-style filters (brand, category, postcode, etc.) are provided, the en
 - `granularity`: `"hourly"` (≤30 days) or `"daily"` (>30 days)
 - `bucket`: ISO timestamp (hourly) or date string (daily)
 
+### `GET /api/prices/history/export`
+
+Export raw individual price records matching the trend filters as a streaming download.
+Accepts the same filter parameters as `/api/prices/history`.
+**Requires editor or admin role.**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| (same filters as `/api/prices/history`) | | | See above |
+| `format` | string | `csv` | `csv` or `json` |
+
+Returns every `fuel_prices` row (not averages) for matching stations, with full station and postcode enrichment.
+
 ### `GET /api/prices/map`
 
 Current prices with coordinates for map display.
@@ -188,6 +238,7 @@ Flexible search/filter endpoint with pagination.
 |---|---|---|---|
 | `fuel_type` | string | `E10` | Fuel type code |
 | `postcode` | string | — | Postcode prefix filter (e.g. `SW1`, `M`) |
+| `station` | string | — | Trading name substring filter |
 | `brand` | string | — | Brand name substring filter |
 | `city` | string | — | City substring filter |
 | `min_price` | float | — | Minimum price in pence |
@@ -202,7 +253,7 @@ Flexible search/filter endpoint with pagination.
 | `motorway_only` | bool | `false` | Only motorway service stations |
 | `exclude_outliers` | bool | `false` | Exclude statistical outliers |
 | `sort` | string | `price` | Sort field: `price`, `brand`, `city`, `postcode`, `district` |
-| `limit` | int | `50` | Results per page (minimum 1) |
+| `limit` | int | `50` | Results per page (minimum 1; readonly capped at 200) |
 | `offset` | int | `0` | Pagination offset |
 
 **Response:**
@@ -230,6 +281,7 @@ Flexible search/filter endpoint with pagination.
 
 Export all historical price records matching the search filters as a streaming download.
 Accepts the same filter parameters as `/api/prices/search` (except `sort`, `limit`, `offset`).
+**Requires editor or admin role.**
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -313,7 +365,9 @@ List all parliamentary constituencies.
 
 ## Admin endpoints
 
-Admin endpoints require a valid API key or Cognito `admin` group membership. Changes to lookup tables take effect after calling `POST /api/admin/refresh-view`.
+Endpoints below require elevated access. **Editor** endpoints (mutations, exports, view refresh) require `admin` or `editor` group membership. **Admin** endpoints (user management) require `admin` group only.
+
+Changes to lookup tables take effect after calling `POST /api/admin/refresh-view`.
 
 ### Scrape history
 
@@ -403,6 +457,8 @@ Manually set coordinates for a postcode that postcodes.io didn't recognise.
 
 ### User management (Cognito)
 
+**Admin only** — these endpoints require `admin` group membership.
+
 | Endpoint | Method | Description |
 |---|---|---|
 | `/api/admin/users` | GET | List all Cognito users with group memberships |
@@ -412,7 +468,9 @@ Manually set coordinates for a postcode that postcodes.io didn't recognise.
 | `/api/admin/users/{username}/disable` | POST | Disable user account |
 | `/api/admin/users/{username}/enable` | POST | Re-enable user account |
 
-**POST /api/admin/users body:** `{ "email": "user@example.com", "admin": false }`
+**POST /api/admin/users body:** `{ "email": "user@example.com", "role": "editor" }`
+
+`role` accepts `"admin"`, `"editor"`, or `"readonly"` (default: no group = readonly).
 
 **GET /api/admin/users response:** Array of `{ username, email, status, enabled, groups, created }`
 
@@ -423,3 +481,19 @@ Manually set coordinates for a postcode that postcodes.io didn't recognise.
 Rebuilds the `current_prices` materialised view. Call after changing any lookup table.
 
 **Response:** `{ "status": "ok", "message": "current_prices view refreshed" }`
+
+### Price corrections
+
+Manual overrides for misreported prices. Original data in `fuel_prices` is never modified — corrections are stored separately and applied in the materialised view. **Requires editor or admin role.**
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `GET /api/admin/corrections` | GET | List correction history with station context |
+| `POST /api/corrections` | POST | Create or update a price correction |
+| `DELETE /api/corrections/{fuel_price_id}` | DELETE | Revert a correction (restore original price) |
+
+**POST body:** `{ "fuel_price_id": 12345, "corrected_price": 139.9 }`
+
+**GET response:** Array of `{ corrected_at, original_price, corrected_price, reason, corrected_by, trading_name, city, fuel_type, fuel_name, observed_at }`
+
+Creating or deleting a correction automatically refreshes the materialised view.

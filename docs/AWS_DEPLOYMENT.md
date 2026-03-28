@@ -40,14 +40,13 @@ DB name:      fuelfinder
 Master user:  fuelfinder
 ```
 
-After creation, connect and run the schema:
+After creation, connect and apply migrations:
 
 ```bash
-psql -h <rds-endpoint> -U fuelfinder -d fuelfinder -f schema.sql
-psql -h <rds-endpoint> -U fuelfinder -d fuelfinder -f seed_brand_aliases.sql
-psql -h <rds-endpoint> -U fuelfinder -d fuelfinder -f seed_postcode_regions.sql
-psql -h <rds-endpoint> -U fuelfinder -d fuelfinder -f seed_fuel_types.sql
+DATABASE_URL=postgresql://fuelfinder:password@<rds-endpoint>:5432/fuelfinder python migrate.py
 ```
+
+This applies all numbered migrations in order (schema, seed data, views, indexes).
 
 ### 2. S3 Bucket
 
@@ -248,3 +247,64 @@ aws cloudwatch put-metric-alarm \
 | **Total** | **~$19/month** |
 
 Use RDS Reserved Instances for ~40% savings on long-term production.
+
+## Cognito (authentication)
+
+The web UI uses Amazon Cognito for authentication with a three-tier role model.
+
+### User Pool setup
+
+1. Create a Cognito User Pool (standard settings, email as username)
+2. Create an App Client (no client secret, for SPA use)
+3. Create two groups:
+
+```bash
+aws cognito-idp create-group --user-pool-id <pool-id> --group-name admin --region eu-north-1
+aws cognito-idp create-group --user-pool-id <pool-id> --group-name editor --region eu-north-1
+```
+
+### Role model
+
+| Cognito group | Role | Access |
+|---|---|---|
+| `admin` | Admin | Everything — user management, data mutations, exports |
+| `editor` | Editor | Data mutations (aliases, categories, overrides, corrections), exports, view refresh |
+| (no group) | Read-only | View dashboards, map, search (capped at 200 results, 90-day history) — no exports or data changes |
+
+Roles are determined from the `cognito:groups` claim in the ID token. Users not in any group default to read-only.
+
+### Assigning users to groups
+
+```bash
+# Make a user an editor
+aws cognito-idp admin-add-user-to-group \
+  --user-pool-id <pool-id> --username <username> --group-name editor --region eu-north-1
+
+# Make a user an admin
+aws cognito-idp admin-add-user-to-group \
+  --user-pool-id <pool-id> --username <username> --group-name admin --region eu-north-1
+```
+
+Users can also be managed from the web UI's Users tab (admin only).
+
+### Environment variables for the web app
+
+```
+COGNITO_USER_POOL_ID=eu-north-1_xxxxx
+COGNITO_CLIENT_ID=<app-client-id>
+COGNITO_REGION=eu-north-1
+```
+
+## Web app deployment
+
+The web UI runs as a FastAPI application, typically deployed on **ECS Fargate** behind an Application Load Balancer.
+
+The web container is built from `web/Dockerfile` and needs the following environment variables:
+
+```
+DATABASE_URL=postgresql://fuelfinder:password@<rds-endpoint>:5432/fuelfinder
+COGNITO_USER_POOL_ID=eu-north-1_xxxxx
+COGNITO_CLIENT_ID=<app-client-id>
+COGNITO_REGION=eu-north-1
+API_KEY=<optional-api-key-for-programmatic-access>
+```
