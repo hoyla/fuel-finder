@@ -543,9 +543,13 @@
             </div>
         </div>
         <p style="font-size:0.8rem;color:var(--muted);margin-bottom:0.75rem;">
-            Click a suggested correction to pre-fill, or type a corrected price and click ✓ to save.
-            Overrides are stored separately — original data is never modified.
+            Enter corrected prices then click <strong>Save</strong> to apply all changes at once.
+            Click a suggested correction to pre-fill. Overrides are stored separately — original data is never modified.
         </p>
+        <div id="pe-save-bar" class="pe-save-bar" style="display:none;">
+            <span id="pe-save-count" style="font-size:0.85rem;color:var(--fg);"></span>
+            <button id="pe-save-all" class="btn-save-all" onclick="saveAllCorrections()">Save corrections</button>
+        </div>
         <div class="table-wrap">
             <table class="sortable">
                 <thead>

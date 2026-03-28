@@ -105,6 +105,9 @@ class PriceCorrectionBody(BaseModel):
     corrected_price: float
     reason: Optional[str] = None
 
+class BatchCorrectionsBody(BaseModel):
+    corrections: list[PriceCorrectionBody]
+
 class PostcodeCoordsBody(BaseModel):
     latitude: float
     longitude: float
@@ -1875,6 +1878,47 @@ def create_correction(
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
         db.commit()
     return {"id": correction_id, "fuel_price_id": body.fuel_price_id, "original_price": original_price, "corrected_price": body.corrected_price}
+
+
+@app.post("/api/corrections/batch")
+def create_corrections_batch(
+    body: BatchCorrectionsBody,
+    request: Request,
+    db=Depends(get_db),
+    _auth=Depends(require_editor),
+):
+    """Create or update multiple price corrections in one transaction."""
+    if not body.corrections:
+        raise HTTPException(status_code=400, detail="No corrections provided")
+    if len(body.corrections) > 200:
+        raise HTTPException(status_code=400, detail="Maximum 200 corrections per batch")
+    corrected_by = getattr(request.state, "user_email", None) or "admin"
+    results = []
+    with db.cursor() as cur:
+        for item in body.corrections:
+            cur.execute("SELECT price, anomaly_flags FROM fuel_prices WHERE id = %s", (item.fuel_price_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Fuel price record {item.fuel_price_id} not found")
+            original_price = float(row["price"])
+            flags = row["anomaly_flags"]
+            reason = ", ".join(flags) if flags else "Manual override"
+            cur.execute("""
+                INSERT INTO price_corrections (fuel_price_id, original_price, corrected_price, reason, corrected_by)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (fuel_price_id) DO UPDATE SET
+                    corrected_price = EXCLUDED.corrected_price,
+                    reason = EXCLUDED.reason,
+                    corrected_by = EXCLUDED.corrected_by,
+                    corrected_at = NOW()
+                RETURNING id
+            """, (item.fuel_price_id, original_price, item.corrected_price, reason, corrected_by))
+            correction_id = cur.fetchone()["id"]
+            results.append({"id": correction_id, "fuel_price_id": item.fuel_price_id, "corrected_price": item.corrected_price})
+        db.commit()
+        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
+        db.commit()
+    return {"saved": len(results), "corrections": results}
 
 
 @app.delete("/api/corrections/{fuel_price_id}")
