@@ -287,6 +287,14 @@ document.addEventListener('click', e => {
     openStationTrend(link.dataset.node, link.dataset.name, link.dataset.brand, link.dataset.city, link.dataset.postcode);
 });
 
+// Global delegation handler for edit-prices links (avoids inline onclick apostrophe issues)
+document.addEventListener('click', e => {
+    const link = e.target.closest('.edit-prices-link');
+    if (!link) return;
+    e.preventDefault();
+    openPriceEditor(link.dataset.node, link.dataset.name, 'anomalies');
+});
+
 function categoryTag(type) {
     const cls = (type || 'independent').toLowerCase().replace(/ /g, '-');
     return `<span class="category-tag ${cls}">${escHtml(type) || 'Independent'}</span>`;
