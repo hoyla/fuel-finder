@@ -97,14 +97,14 @@ async function loadOutliers() {
     const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
     body.innerHTML = data.outliers.map(r => {
         const reasonLabel = r.exclusion_reason === 'anomaly_flagged'
-            ? (r.anomaly_flags || []).map(f => `<span class="tag">${f}</span>`).join(' ')
+            ? (r.anomaly_flags || []).map(f => `<span class="tag">${escHtml(f)}</span>`).join(' ')
             : '<span class="tag" style="background:#fff3cd;color:#856404;">outside IQR fence</span>';
         return `<tr>
-            <td>${r.trading_name}</td>
-            <td>${r.city || '—'}</td>
-            <td>${r.postcode || '—'}</td>
-            <td>${r.brand_name || '—'}</td>
-            <td>${r.fuel_name || r.fuel_type}</td>
+            <td>${escHtml(r.trading_name)}</td>
+            <td>${escHtml(r.city || '—')}</td>
+            <td>${escHtml(r.postcode || '—')}</td>
+            <td>${escHtml(r.brand_name || '—')}</td>
+            <td>${escHtml(r.fuel_name || r.fuel_type)}</td>
             <td><strong>${ppl(r.price)}</strong></td>
             <td>${reasonLabel}</td>
             <td>${fmtDate(r.observed_at)}</td>
@@ -368,10 +368,10 @@ async function loadPostcodeIssues() {
                     + `<br><small><a href="https://www.google.com/maps?q=${s.fixed_latitude},${s.fixed_longitude}" target="_blank" rel="noopener">${s.fixed_latitude}, ${s.fixed_longitude}</a></small>`;
             }
             return `<tr${s.coords_outside_uk ? ' style="background:var(--bg-warn,#fff3cd)"' : ''}>
-            <td><code>${s.postcode || '(empty)'}</code></td>
-            <td>${s.trading_name || ''}</td>
-            <td>${s.brand_name || ''}</td>
-            <td>${s.city || ''}</td>
+            <td><code>${escHtml(s.postcode || '(empty)')}</code></td>
+            <td>${escHtml(s.trading_name || '')}</td>
+            <td>${escHtml(s.brand_name || '')}</td>
+            <td>${escHtml(s.city || '')}</td>
             <td>${gmaps(s.api_latitude, s.api_longitude)}</td>
             <td>${gmapsLon(s.api_latitude, s.api_longitude)}</td>
             <td>${s.coords_outside_uk ? '⚠ Yes' : ''}</td>
