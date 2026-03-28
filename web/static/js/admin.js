@@ -270,6 +270,23 @@ async function loadScrapeHistory(offset = 0) {
 }
 
 // --- Normalisation Report ---
+const REPORT_HINTS = {
+    aliased: 'Aliased — the raw brand string matched a brand alias rule and was mapped to a canonical name. No per-station override applies.',
+    overridden: 'Overridden — these stations have a per-station brand override that sets their canonical brand directly, taking priority over any alias.',
+    unmapped: 'Unmapped — no alias and no override, and the brand has no category entry. These default to showing the raw brand name and are classified as Independent. Worth reviewing for missing aliases.',
+};
+
+function updateReportHint() {
+    const filter = document.getElementById('report-filter').value;
+    const hint = document.getElementById('report-hint');
+    if (filter && REPORT_HINTS[filter]) {
+        hint.textContent = REPORT_HINTS[filter];
+        hint.style.display = '';
+    } else {
+        hint.style.display = 'none';
+    }
+}
+
 async function loadReport() {
     const filter = document.getElementById('report-filter').value;
     const brand = document.getElementById('report-brand').value;

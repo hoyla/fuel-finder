@@ -649,7 +649,7 @@
             <div class="controls">
                 <div class="control">
                     <label>Filter</label>
-                    <select id="report-filter">
+                    <select id="report-filter" onchange="updateReportHint()">
                         <option value="">All</option>
                         <option value="aliased">Aliased</option>
                         <option value="overridden">Overridden</option>
@@ -662,6 +662,7 @@
                 </div>
                 <button class="primary" onclick="loadReport()">Filter</button>
             </div>
+            <p id="report-hint" style="font-size:0.85rem;color:var(--text-light);margin:0 0 0.75rem;display:none;"></p>
             <div class="table-wrap">
                 <table class="sortable">
                     <thead>
