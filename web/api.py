@@ -1273,8 +1273,10 @@ def anomalies(
             JOIN stations s ON s.node_id = fp.node_id
             LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
             LEFT JOIN LATERAL (
-                SELECT p2.price, p2.observed_at
+                SELECT COALESCE(pc2.corrected_price, p2.price) AS price,
+                       p2.observed_at
                 FROM fuel_prices p2
+                LEFT JOIN price_corrections pc2 ON pc2.fuel_price_id = p2.id
                 WHERE p2.node_id = fp.node_id
                   AND p2.fuel_type = fp.fuel_type
                   AND p2.observed_at < fp.observed_at
@@ -1845,6 +1847,45 @@ def station_price_records(
     return {"station": station, "records": records}
 
 
+# ---------------------------------------------------------------------------
+# Correction-cascade: re-evaluate anomaly flags on adjacent prices
+# ---------------------------------------------------------------------------
+
+def _reevaluate_adjacent_anomalies(cur, fuel_price_id, effective_price):
+    """After correcting/reverting a price, re-evaluate the large_change flag
+    on the next price record for the same station+fuel_type.
+
+    Only large_change flags depend on the previous price; floor/ceiling flags
+    are intrinsic to the price itself and are left untouched.
+    """
+    cur.execute("""
+        SELECT fp2.id, fp2.price, fp2.anomaly_flags
+        FROM fuel_prices fp
+        JOIN fuel_prices fp2
+          ON fp2.node_id = fp.node_id
+         AND fp2.fuel_type = fp.fuel_type
+         AND fp2.observed_at > fp.observed_at
+        WHERE fp.id = %s
+        ORDER BY fp2.observed_at ASC
+        LIMIT 1
+    """, (fuel_price_id,))
+    next_row = cur.fetchone()
+    if not next_row:
+        return
+
+    old_flags = next_row["anomaly_flags"] or []
+    flags = [f for f in old_flags if not f.startswith("large_change:")]
+
+    eff = float(effective_price)
+    if eff > 0:
+        change_pct = abs(float(next_row["price"]) - eff) / eff * 100
+        if change_pct > 30.0:
+            flags.append(f"large_change:{change_pct:.1f}%_from_{effective_price}")
+
+    cur.execute("UPDATE fuel_prices SET anomaly_flags = %s WHERE id = %s",
+                (flags or None, next_row["id"]))
+
+
 @app.post("/api/corrections")
 def create_correction(
     body: PriceCorrectionBody,
@@ -1874,6 +1915,7 @@ def create_correction(
             RETURNING id
         """, (body.fuel_price_id, original_price, body.corrected_price, reason, corrected_by))
         correction_id = cur.fetchone()["id"]
+        _reevaluate_adjacent_anomalies(cur, body.fuel_price_id, body.corrected_price)
         db.commit()
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
         db.commit()
@@ -1914,6 +1956,7 @@ def create_corrections_batch(
                 RETURNING id
             """, (item.fuel_price_id, original_price, item.corrected_price, reason, corrected_by))
             correction_id = cur.fetchone()["id"]
+            _reevaluate_adjacent_anomalies(cur, item.fuel_price_id, item.corrected_price)
             results.append({"id": correction_id, "fuel_price_id": item.fuel_price_id, "corrected_price": item.corrected_price})
         db.commit()
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
@@ -1929,10 +1972,11 @@ def delete_correction(
 ):
     """Revert a price correction (restore original price)."""
     with db.cursor() as cur:
-        cur.execute("DELETE FROM price_corrections WHERE fuel_price_id = %s RETURNING id", (fuel_price_id,))
+        cur.execute("DELETE FROM price_corrections WHERE fuel_price_id = %s RETURNING id, original_price", (fuel_price_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="No correction found for this price record")
+        _reevaluate_adjacent_anomalies(cur, fuel_price_id, row["original_price"])
         db.commit()
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
         db.commit()
