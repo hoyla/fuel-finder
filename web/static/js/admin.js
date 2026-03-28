@@ -1,15 +1,16 @@
 // ---------------------------------------------------------------------------
 // Anomalies
 // ---------------------------------------------------------------------------
-async function loadAnomalies() {
-    const data = await apiFetch('/anomalies');
+async function loadAnomalies(offset = 0) {
+    const data = await apiFetch(`/anomalies?limit=50&offset=${offset}`);
     const body = document.getElementById('anomaly-body');
-    if (!data.length) {
+    if (!data.rows.length) {
         body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">No anomalies detected</td></tr>';
+        document.getElementById('anomaly-pagination').innerHTML = '';
         return;
     }
     const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
-    body.innerHTML = data.map(r => {
+    body.innerHTML = data.rows.map(r => {
         let changeTxt = '—';
         let changeStyle = '';
         if (r.prev_price != null && r.prev_price > 0) {
@@ -31,6 +32,7 @@ async function loadAnomalies() {
             ${canEdit() ? `<td><a href="#" class="edit-prices-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" style="color:var(--accent);font-size:0.8rem;white-space:nowrap;">Edit prices</a></td>` : '<td></td>'}
         </tr>`;
     }).join('');
+    renderLogPagination('anomaly-pagination', data.total, offset, 50, loadAnomalies);
 }
 
 function switchAnomalySection() {
@@ -55,9 +57,10 @@ async function initOutlierFuelSelect() {
     loadOutliers();
 }
 
-async function loadOutliers() {
+async function loadOutliers(offset = 0) {
     const fuel = document.getElementById('outlier-fuel').value;
-    const url = fuel ? `/outliers?fuel_type=${fuel}&limit=200` : '/outliers?limit=200';
+    let url = `/outliers?limit=50&offset=${offset}`;
+    if (fuel) url += `&fuel_type=${encodeURIComponent(fuel)}`;
     const data = await apiFetch(url);
 
     // Show IQR bounds summary
@@ -92,6 +95,7 @@ async function loadOutliers() {
     const body = document.getElementById('outlier-body');
     if (!data.outliers.length) {
         body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">No outliers for this fuel type</td></tr>';
+        document.getElementById('outlier-pagination').innerHTML = '';
         return;
     }
     const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
@@ -114,6 +118,7 @@ async function loadOutliers() {
             <td>${fmtDate(r.observed_at)}</td>
         </tr>`;
     }).join('');
+    renderLogPagination('outlier-pagination', data.total, offset, 50, loadOutliers);
 }
 
 // ---------------------------------------------------------------------------
