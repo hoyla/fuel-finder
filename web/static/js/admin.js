@@ -28,7 +28,7 @@ async function loadAnomalies() {
             <td>${fmtDate(r.observed_at)}</td>
             <td style="${changeStyle}"><strong>${changeTxt}</strong></td>
             <td>${(r.anomaly_flags || []).map(f => `<span class="tag">${f}</span>`).join(' ')}</td>
-            ${canEdit() ? `<td><a href="#" onclick="openPriceEditor('${escHtml(r.node_id)}','${escHtml(r.trading_name)}','anomalies');return false;" style="color:var(--accent);font-size:0.8rem;white-space:nowrap;">Edit prices</a></td>` : '<td></td>'}
+            ${canEdit() ? `<td><a href="#" class="edit-prices-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" style="color:var(--accent);font-size:0.8rem;white-space:nowrap;">Edit prices</a></td>` : '<td></td>'}
         </tr>`;
     }).join('');
 }
