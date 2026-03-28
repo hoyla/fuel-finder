@@ -66,7 +66,7 @@ def upsert_stations(conn, stations):
             values.append((
                 s["node_id"],
                 s["trading_name"],
-                s.get("brand_name"),
+                (s.get("brand_name") or "").strip() or None,
                 s.get("is_same_trading_and_brand_name"),
                 s.get("public_phone_number"),
                 s.get("temporary_closure", False),
