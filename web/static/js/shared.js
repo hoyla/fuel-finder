@@ -43,7 +43,8 @@ async function initAuth() {
                     }
                     showApp(payload.email || payload['cognito:username'] || '');
                     return true;
-                } catch {
+                } catch (e) {
+                    console.warn('Token validation failed:', e);
                     showLogin(); return false;
                 }
             }
@@ -158,7 +159,8 @@ async function refreshTokens() {
         const expiresIn = (payload.exp * 1000) - Date.now() - 300000;
         if (expiresIn > 0) setTimeout(() => refreshTokens(), expiresIn);
         return true;
-    } catch {
+    } catch (e) {
+        console.warn('Token refresh failed:', e);
         localStorage.removeItem('ff_id_token');
         localStorage.removeItem('ff_refresh_token');
         _idToken = null;
@@ -256,8 +258,14 @@ const API = '/api';
 // Helpers
 // ---------------------------------------------------------------------------
 async function apiFetch(path) {
-    const r = await fetch(API + path, { headers: authHeaders() });
-    if (r.status === 401) { showLogin(); throw new Error('Session expired'); }
+    let r = await fetch(API + path, { headers: authHeaders() });
+    if (r.status === 401 && _authMode === 'cognito') {
+        const refreshed = await refreshTokens();
+        if (refreshed) {
+            r = await fetch(API + path, { headers: authHeaders() });
+        }
+        if (r.status === 401) { showLogin(); throw new Error('Session expired'); }
+    }
     if (!r.ok) throw new Error(`API error: ${r.status}`);
     return r.json();
 }
@@ -331,8 +339,14 @@ function fetchExport(url, nameParts, fmt, btn) {
     btn.disabled = true;
     btn.textContent = '⏳ Exporting…';
     fetch(url, { headers: authHeaders() })
-        .then(resp => {
-            if (resp.status === 401) { showLogin(); throw new Error('Session expired'); }
+        .then(async resp => {
+            if (resp.status === 401 && _authMode === 'cognito') {
+                const refreshed = await refreshTokens();
+                if (refreshed) {
+                    resp = await fetch(url, { headers: authHeaders() });
+                }
+                if (resp.status === 401) { showLogin(); throw new Error('Session expired'); }
+            }
             if (!resp.ok) throw new Error('Export failed: ' + resp.status);
             return resp.blob();
         })
