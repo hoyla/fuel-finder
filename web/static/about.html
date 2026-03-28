@@ -14,7 +14,7 @@
 <header>
     <h1><a href="/#dashboard" style="color:inherit;text-decoration:none;">⛽ UK fuel price tracker</a></h1>
     <nav>
-        <a href="/">Dashboard</a>
+        <a href="/#dashboard">Dashboard</a>
         <a href="/docs/api">API</a>
         <a href="/docs/about">About</a>
     </nav>
@@ -45,42 +45,44 @@
 
     <h2>The scraper</h2>
 
+    <p>We use an API key granted by gov.uk to check <a href="https://www.developer.fuel-finder.service.gov.uk/public-api">https://www.developer.fuel-finder.service.gov.uk/public-api</a> for updates to prices at UK fuel stations. We honour the documented rate limits, making a request only every 30 minutes.</p>
+
     <div class="diagram">
 <pre>
 Fuel Finder API (GOV.UK)
     │
     │  OAuth2 client credentials → bearer token (1h TTL)
-    │  GET /api/v1/pfs/fuel-prices?batch-number=N  (500 stations/batch, ~15 batches)
+    │  GET /api/v1/pfs/fuel-prices?batch-number=N   (500 stations/batch, ~15 batches)
     │  GET /api/v1/pfs?batch-number=N               (station details)
     ▼
-┌─────────────────────┐
-│    Scraper           │  Python — api_client.py + scrape.py
-│                     │
-│  1. Authenticate    │  OAuth2 client credentials
-│  2. Fetch batches   │  Paginate through all stations + prices
-│  3. Upsert stations │  Insert/update station records
-│  4. Insert prices   │  Append-only, deduplicated
-│  5. Detect anomalies│  Flag suspicious prices (not filter)
-│  6. Refresh view    │  Rebuild current_prices snapshot
-│  7. Enrich postcodes│  Lookup new postcodes via postcodes.io
-│  8. Backup to S3    │  Raw JSON (optional)
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│    PostgreSQL        │
-│                     │
-│  stations           │  ~7,500 fuel stations with lat/lng
-│  fuel_prices        │  append-only price change events
-│  brand_aliases      │  raw → canonical brand mapping
-│  brand_categories   │  brand → forecourt type
-│  station_brand_overrides │  per-station brand corrections
-│  fuel_type_labels   │  fuel code → human name
-│  postcode_regions   │  postcode → ONS region
-│  postcode_lookups   │  postcodes.io enrichment cache
-│  scrape_runs        │  scrape execution history
-│  current_prices     │  materialised view (live snapshot)
-└─────────────────────┘
+┌───────────────────────────────┐
+│  Scraper                      │  Python — api_client.py + scrape.py
+│                               │
+│  1. Authenticate              │  OAuth2 client credentials
+│  2. Fetch batches             │  Paginate through all stations + prices
+│  3. Upsert stations           │  Insert/update station records
+│  4. Insert prices             │  Append-only, deduplicated
+│  5. Detect anomalies          │  Flag suspicious prices (not filter)
+│  6. Refresh view              │  Rebuild current_prices snapshot
+│  7. Enrich postcodes          │  Lookup new postcodes via postcodes.io
+│  8. Backup to S3              │  Raw JSON (optional)
+└───────────────┬───────────────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│  PostgreSQL                   │
+│                               │
+│  stations                     │  ~7,500 fuel stations with lat/lng
+│  fuel_prices                  │  append-only price change events
+│  brand_aliases                │  raw → canonical brand mapping
+│  brand_categories             │  brand → forecourt type
+│  station_brand_overrides      │  per-station brand corrections
+│  fuel_type_labels             │  fuel code → human name
+│  postcode_regions             │  postcode → ONS region
+│  postcode_lookups             │  postcodes.io enrichment cache
+│  scrape_runs                  │  scrape execution history
+│  current_prices               │  materialised view (live snapshot)
+└───────────────────────────────┘
 </pre>
     </div>
 
@@ -146,7 +148,7 @@ Fuel Finder API (GOV.UK)
     <div class="card">
         <strong>Transparency:</strong> Outlier prices are never deleted or modified. They are flagged
         in the materialised view (<code>price_is_outlier = true</code>) and can be inspected on the
-        <a href="/">Anomalies → Statistical outliers</a> page, which shows the IQR bounds for each
+        <a href="/#anomalies/outliers">Anomalies → Statistical outliers</a> page, which shows the IQR bounds for each
         fuel type and every excluded price with its exclusion reason.
     </div>
 
@@ -157,7 +159,7 @@ Fuel Finder API (GOV.UK)
     <p>The API provides brand names inconsistently — <code>ESSO</code>, <code>Esso</code>, <code>esso</code> all appear for the same company. Three layers of normalisation clean this up:</p>
 
     <ol>
-        <li><strong>Brand aliases</strong> — bulk mapping of raw API strings to canonical names (e.g. <code>"TESCO"</code> → <code>"Tesco"</code>). Managed via the <a href="/">Data tab</a>.</li>
+        <li><strong>Brand aliases</strong> — bulk mapping of raw API strings to canonical names (e.g. <code>"TESCO"</code> → <code>"Tesco"</code>). Managed via the <a href="/#data/aliases">Data tab</a>.</li>
         <li><strong>Station overrides</strong> — per-station corrections for edge cases where the API brand is wrong or the alias isn't granular enough.</li>
         <li><strong>Resolution order</strong> — <code>station_override &gt; brand_alias &gt; raw_brand_name</code>. Overrides always win.</li>
     </ol>
@@ -181,7 +183,7 @@ Fuel Finder API (GOV.UK)
         </tbody>
     </table>
 
-    <div class="note info">Categories are managed on the <a href="/">Data tab</a>. After changes, hit <strong>Refresh View</strong> to rebuild the snapshot.</div>
+    <div class="note info">Categories are managed on the <a href="/#data/categories">Data tab</a>. After changes, hit <strong>Refresh View</strong> to rebuild the snapshot.</div>
 
     <h2>Regional mapping</h2>
 
@@ -201,7 +203,7 @@ Fuel Finder API (GOV.UK)
         <li><strong>Statistical areas</strong> — LSOA, MSOA, built-up area</li>
     </ul>
 
-    <p>Postcodes that postcodes.io doesn't recognise are recorded (so they aren't retried) and flagged in the <a href="/">Data tab</a> as potential data quality issues. Coordinates for these can be manually corrected.</p>
+    <p>Postcodes that postcodes.io doesn't recognise are recorded (so they aren't retried) and flagged in the <a href="/#data/postcodes">Data tab</a> as potential data quality issues. Coordinates for these can be manually corrected.</p>
 
     <h3>Licensing</h3>
 
@@ -233,7 +235,7 @@ Fuel Finder API (GOV.UK)
         <li>Authoritative coordinates, admin district, constituency, rural/urban (via <code>postcode_lookups</code>)</li>
     </ul>
 
-    <p>The view is refreshed after each scrape run and when you press <strong>Refresh View</strong> on the Data tab. All dashboard, map, search and API queries read from this view for fast, consistent results.</p>
+    <p>The view is refreshed after each scrape run and when you press <strong>Refresh View</strong> on the <a href="/#data/report">Data tab</a>. All dashboard, map, search and API queries read from this view for fast, consistent results.</p>
 
     <h2>Running on a schedule</h2>
 
