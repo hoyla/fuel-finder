@@ -45,7 +45,7 @@
 
     <h2>The scraper</h2>
 
-    <p>We use an API key granted by gov.uk to check <a href="https://www.developer.fuel-finder.service.gov.uk/public-api">https://www.developer.fuel-finder.service.gov.uk/public-api</a> for updates to prices at UK fuel stations. We honour the documented rate limits, making a request only every 30 minutes.</p>
+    <p>We use an API key granted by gov.uk to check <a href="https://www.developer.fuel-finder.service.gov.uk/public-api">developer.fuel-finder.service.gov.uk/public-api</a> for updates to prices at UK fuel stations.</p>
 
     <div class="diagram">
 <pre>
@@ -85,6 +85,19 @@ Fuel Finder API (GOV.UK)
 └───────────────────────────────┘
 </pre>
     </div>
+
+    <h3>API usage guidelines</h3>
+
+    <p>The scraper is designed to honour the <a href="https://www.developer.fuel-finder.service.gov.uk/dev-guideline">GOV.UK Fuel Finder developer guidelines</a>. The following safeguards are built in:</p>
+
+    <ul>
+        <li><strong>Rate limiting</strong> — A client-side sliding window enforces the 30 requests-per-minute limit. If a scrape requires more than 30 API calls, the scraper waits until capacity is available rather than exceeding the quota.</li>
+        <li><strong>Retry with backoff</strong> — If the API returns a <code>429 Too Many Requests</code> or a transient server error (500/502/503/504), the scraper retries with exponential backoff, respecting the <code>Retry-After</code> header when present.</li>
+        <li><strong>Compression</strong> — All requests include <code>Accept-Encoding: gzip, deflate</code> to reduce bandwidth, per the performance guidelines.</li>
+        <li><strong>No data redistribution</strong> — Raw API responses backed up to S3 are stored in a private bucket with all public access blocked. This data is retained solely for internal debugging, reprocessing, and data-integrity checks, and is never redistributed.</li>
+        <li><strong>Incremental fetching</strong> — Rather than re-fetching all prices every run, the scraper uses the <code>effective-start-timestamp</code> parameter to request only prices that have changed, minimising unnecessary API load.</li>
+        <li><strong>Sequential requests</strong> — Only one API request is in-flight at a time, respecting the one-concurrent-request-per-client limit.</li>
+    </ul>
 
     <h3>Scrape modes</h3>
 

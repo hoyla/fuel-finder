@@ -27,6 +27,14 @@ log = logging.getLogger(__name__)
 
 
 def upload_to_s3(data, key, bucket=None):
+    """Back up raw API response to S3 for internal audit/replay only.
+
+    The bucket has all public access blocked (BlockPublicAcls,
+    IgnorePublicAcls, BlockPublicPolicy, RestrictPublicBuckets).
+    Raw GOV.UK Fuel Finder data must not be redistributed per the
+    developer guidelines — this copy is retained solely for internal
+    debugging, reprocessing, and data-integrity checks.
+    """
     bucket = bucket or os.environ.get("S3_BUCKET", "fuel-finder-raw")
     region = os.environ.get("AWS_REGION", "eu-west-1")
     s3 = boto3.client("s3", region_name=region)
