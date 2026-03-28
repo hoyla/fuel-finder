@@ -600,6 +600,16 @@ def price_history_export(
     region: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
     rural_urban: Optional[str] = Query(None),
+    node_ids: Optional[str] = Query(None),
+    brand: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    postcode: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    district: Optional[str] = Query(None),
+    constituency: Optional[str] = Query(None),
+    supermarket_only: bool = Query(False),
+    motorway_only: bool = Query(False),
+    exclude_outliers: bool = Query(False),
     format: str = Query("csv"),
     db=Depends(get_db),
     _auth=Depends(require_editor),
@@ -628,6 +638,54 @@ def price_history_export(
         effective_days = days if days is not None else 30
         time_filter = "AND fp.observed_at >= NOW() - make_interval(days => %s)"
         time_params = [effective_days]
+
+    # Node / search filters
+    node_filter = ""
+    node_params: list = []
+
+    search_conditions = []
+    search_params_list: list = []
+    if brand:
+        search_conditions.append("UPPER(brand_name) LIKE %s")
+        search_params_list.append("%" + brand.upper() + "%")
+    if category:
+        cats = [c.strip() for c in category.split(",") if c.strip()]
+        if len(cats) == 1:
+            search_conditions.append("forecourt_type = %s")
+            search_params_list.append(cats[0])
+        elif cats:
+            ph = ", ".join(["%s"] * len(cats))
+            search_conditions.append(f"forecourt_type IN ({ph})")
+            search_params_list.extend(cats)
+    if postcode:
+        search_conditions.append("UPPER(postcode) LIKE %s")
+        search_params_list.append(postcode.upper().replace(" ", "") + "%")
+    if city:
+        search_conditions.append("UPPER(city) LIKE %s")
+        search_params_list.append("%" + city.upper() + "%")
+    if district:
+        search_conditions.append("admin_district = %s")
+        search_params_list.append(district)
+    if constituency:
+        search_conditions.append("parliamentary_constituency = %s")
+        search_params_list.append(constituency)
+    if supermarket_only:
+        search_conditions.append("is_supermarket_service_station = TRUE")
+    if motorway_only:
+        search_conditions.append("is_motorway_service_station = TRUE")
+    if exclude_outliers:
+        search_conditions.append("NOT price_is_outlier")
+
+    if search_conditions:
+        sub_where = " AND ".join(["fuel_type = %s", "NOT temporary_closure"] + search_conditions)
+        node_filter = f"AND fp.node_id IN (SELECT node_id FROM current_prices WHERE {sub_where})"
+        node_params = [fuel_type, *search_params_list]
+    elif node_ids:
+        ids = [n.strip() for n in node_ids.split(",") if n.strip()]
+        if ids:
+            placeholders = ", ".join(["%s"] * len(ids))
+            node_filter = f"AND fp.node_id IN ({placeholders})"
+            node_params = list(ids)
 
     # Location filters
     location_filters = ""
@@ -706,10 +764,11 @@ def price_history_export(
         LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
         WHERE fp.fuel_type = %s
           {time_filter}
+          {node_filter}
           {location_filters}
         ORDER BY fp.observed_at, s.trading_name
     """
-    params = (fuel_type, *time_params, *location_params)
+    params = (fuel_type, *time_params, *node_params, *location_params)
 
     columns = [
         "node_id", "trading_name", "raw_brand", "brand", "fuel_type",
@@ -1202,6 +1261,7 @@ def anomalies(
     with db.cursor() as cur:
         cur.execute("""
             SELECT fp.id, fp.node_id, s.trading_name, s.city,
+                   s.brand_name, s.postcode,
                    fp.fuel_type, fp.price, fp.anomaly_flags,
                    fp.observed_at,
                    prev.price AS prev_price,
