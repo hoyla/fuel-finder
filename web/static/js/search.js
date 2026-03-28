@@ -410,9 +410,12 @@ function downloadStationTrendData(fmt) {
 // Price Editor
 // ---------------------------------------------------------------------------
 let priceEditorState = { nodeId: null, backTo: 'anomalies' };
+const pendingCorrections = new Map(); // fuel_price_id → corrected_price
 
 function openPriceEditor(nodeId, stationName, backTo) {
     priceEditorState = { nodeId, backTo: backTo || 'anomalies' };
+    pendingCorrections.clear();
+    updatePeSaveBar();
     // Hide all panels, show editor
     panels.forEach(x => x.classList.remove('active'));
     tabs.forEach(x => x.classList.remove('active'));
@@ -471,21 +474,20 @@ async function loadPriceEditorRecords() {
         const rowClass = hasCorrection ? 'corrected' : (isAnomaly ? 'anomaly-row' : '');
         const suggestion = suggestCorrection(r.original_price);
         const suggestHtml = suggestion && !hasCorrection
-            ? (canEdit() ? `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}'">${suggestion}p</a>` : `${suggestion}p?`)
-            : (hasCorrection ? `<span style="font-size:0.78rem;color:var(--muted);">${r.correction_reason || ''}</span>` : '—');
+            ? (canEdit() ? `<a class="suggest-link" onclick="document.getElementById('corr-${r.fuel_price_id}').value='${suggestion}';markPending(${r.fuel_price_id})">${suggestion}p</a>` : `${suggestion}p?`)
+            : (hasCorrection ? `<span style="font-size:0.78rem;color:var(--muted);">${escHtml(r.correction_reason || '')}</span>` : '—');
         const actions = canEdit()
             ? (hasCorrection
                 ? `<button class="btn-revert" onclick="revertCorrection(${r.fuel_price_id})">↩ Revert</button>`
-                : `<input id="corr-${r.fuel_price_id}" class="correction-input" type="text" inputmode="decimal" placeholder="pence">
-                   <button class="btn-correct" onclick="saveCorrection(${r.fuel_price_id})">✓</button>`)
+                : `<input id="corr-${r.fuel_price_id}" class="correction-input" type="text" inputmode="decimal" placeholder="pence" onchange="markPending(${r.fuel_price_id})" oninput="markPending(${r.fuel_price_id})">`)
             : (hasCorrection ? '<span style="color:var(--muted);font-size:0.8rem;">Corrected</span>' : '');
-        return `<tr class="price-editor-row ${rowClass}">
+        return `<tr class="price-editor-row ${rowClass}" id="pe-row-${r.fuel_price_id}">
             <td>${r.fuel_name || r.fuel_type}</td>
             <td>${ppl(r.original_price)}</td>
             <td>${hasCorrection ? ppl(r.corrected_price) : '—'}</td>
             <td><strong>${ppl(r.effective_price)}</strong></td>
             <td>${fmtDate(r.observed_at)}</td>
-            <td>${isAnomaly ? (r.anomaly_flags || []).map(f => '<span class="tag">' + f + '</span>').join(' ') : '—'}</td>
+            <td>${isAnomaly ? (r.anomaly_flags || []).map(f => '<span class="tag">' + escHtml(f) + '</span>').join(' ') : '—'}</td>
             <td>${suggestHtml}</td>
             <td style="white-space:nowrap;">${actions}</td>
         </tr>`;
@@ -494,34 +496,59 @@ async function loadPriceEditorRecords() {
     document.getElementById('price-editor-status').textContent = '';
 }
 
-async function saveCorrection(fuelPriceId) {
+function markPending(fuelPriceId) {
     const input = document.getElementById('corr-' + fuelPriceId);
     const val = (input?.value || '').trim();
-    if (!val || isNaN(val)) {
-        alert('Please enter a valid number (price in pence, e.g. 136.9)');
-        return;
+    const row = document.getElementById('pe-row-' + fuelPriceId);
+    if (val && !isNaN(val) && parseFloat(val) > 0) {
+        pendingCorrections.set(fuelPriceId, parseFloat(val));
+        if (row) row.classList.add('pending-correction');
+    } else {
+        pendingCorrections.delete(fuelPriceId);
+        if (row) row.classList.remove('pending-correction');
     }
-    const correctedPrice = parseFloat(val);
-    if (correctedPrice <= 0) {
-        alert('Price must be greater than zero');
-        return;
+    updatePeSaveBar();
+}
+
+function updatePeSaveBar() {
+    const bar = document.getElementById('pe-save-bar');
+    const btn = document.getElementById('pe-save-all');
+    const count = pendingCorrections.size;
+    if (bar) bar.style.display = count ? 'flex' : 'none';
+    if (btn) btn.textContent = `Save ${count} correction${count !== 1 ? 's' : ''}`;
+}
+
+async function saveAllCorrections() {
+    if (!pendingCorrections.size) return;
+    const btn = document.getElementById('pe-save-all');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    const corrections = [];
+    for (const [fuelPriceId, correctedPrice] of pendingCorrections) {
+        corrections.push({ fuel_price_id: fuelPriceId, corrected_price: correctedPrice });
     }
     try {
-        const resp = await fetch(API + '/corrections', {
+        const resp = await fetch(API + '/corrections/batch', {
             method: 'POST',
             headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fuel_price_id: fuelPriceId, corrected_price: correctedPrice }),
+            body: JSON.stringify({ corrections }),
         });
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
             throw new Error(err.detail || `API error: ${resp.status}`);
         }
+        const result = await resp.json();
         const status = document.getElementById('price-editor-status');
         status.className = 'status-msg success';
-        status.textContent = `Corrected to ${correctedPrice}p`;
+        status.textContent = `Saved ${result.saved} correction${result.saved !== 1 ? 's' : ''}`;
+        pendingCorrections.clear();
+        updatePeSaveBar();
         await loadPriceEditorRecords();
     } catch (e) {
-        alert('Failed to save correction: ' + e.message);
+        alert('Failed to save corrections: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        updatePeSaveBar();
     }
 }
 

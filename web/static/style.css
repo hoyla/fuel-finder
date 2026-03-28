@@ -160,6 +160,8 @@
             background: #fff; color: var(--red); cursor: pointer; font-size: 0.8rem;
         }
         .btn-delete:hover { background: var(--red); color: #fff; }
+        .btn-delete:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--muted); color: var(--muted); }
+        .btn-delete:disabled:hover { background: #fff; color: var(--muted); }
         .category-tag {
             display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
             font-size: 0.8rem; font-weight: 500;
@@ -239,11 +241,6 @@
             width: 5rem; padding: 0.25rem 0.4rem; border: 1px solid var(--accent);
             border-radius: 4px; font-size: 0.85rem; text-align: right;
         }
-        .price-editor-row .btn-correct {
-            padding: 0.2rem 0.5rem; border: 1px solid var(--green); border-radius: 4px;
-            background: #fff; color: var(--green); cursor: pointer; font-size: 0.78rem;
-        }
-        .price-editor-row .btn-correct:hover { background: var(--green); color: #fff; }
         .price-editor-row .btn-revert {
             padding: 0.2rem 0.5rem; border: 1px solid var(--muted); border-radius: 4px;
             background: #fff; color: var(--muted); cursor: pointer; font-size: 0.78rem;
@@ -251,4 +248,17 @@
         .price-editor-row .btn-revert:hover { background: var(--muted); color: #fff; }
         .corrected { background: #d4edda !important; }
         .anomaly-row { background: #fff3cd; }
+        .pending-correction { background: #e8f0fe !important; }
         .suggest-link { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.78rem; }
+        .pe-save-bar {
+            display: flex; align-items: center; gap: 1rem;
+            padding: 0.6rem 1rem; margin-bottom: 0.75rem;
+            background: #e8f0fe; border: 1px solid var(--accent); border-radius: 6px;
+        }
+        .btn-save-all {
+            padding: 0.4rem 1.2rem; border: none; border-radius: 5px;
+            background: var(--accent); color: #fff; cursor: pointer;
+            font-size: 0.9rem; font-weight: 600;
+        }
+        .btn-save-all:hover { opacity: 0.85; }
+        .btn-save-all:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -243,7 +243,7 @@ class TestStaticFiles:
     def test_index_html(self, client):
         r = client.get("/")
         assert r.status_code == 200
-        assert "Fuel Finder" in r.text
+        assert "UK fuel price tracker" in r.text
 
 
 class TestPricesByCategory:

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fuel Finder</title>
+    <title>UK fuel price tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -14,7 +14,7 @@
 <div id="env-banner" class="env-banner" style="display:none"></div>
 
 <header>
-    <h1>⛽ Fuel Finder</h1>
+    <h1>⛽ UK fuel price tracker</h1>
     <span class="meta" id="last-scrape"></span>
     <nav style="display:flex;gap:1.5rem;margin-left:1rem;">
         <a href="/docs/api" style="color:#aaa;text-decoration:none;font-size:0.9rem;">API</a>
@@ -32,7 +32,7 @@
 <!-- Login overlay -->
 <div id="login-overlay">
     <div class="login-box">
-        <h2>⛽ Fuel Finder</h2>
+        <h2>⛽ UK fuel price tracker</h2>
         <div id="login-error" class="login-error"></div>
         <form id="login-form" onsubmit="return handleLogin(event)">
             <label for="login-email">Email</label>
@@ -543,9 +543,13 @@
             </div>
         </div>
         <p style="font-size:0.8rem;color:var(--muted);margin-bottom:0.75rem;">
-            Click a suggested correction to pre-fill, or type a corrected price and click ✓ to save.
-            Overrides are stored separately — original data is never modified.
+            Enter corrected prices then click <strong>Save</strong> to apply all changes at once.
+            Click a suggested correction to pre-fill. Overrides are stored separately — original data is never modified.
         </p>
+        <div id="pe-save-bar" class="pe-save-bar" style="display:none;">
+            <span id="pe-save-count" style="font-size:0.85rem;color:var(--fg);"></span>
+            <button id="pe-save-all" class="btn-save-all" onclick="saveAllCorrections()">Save corrections</button>
+        </div>
         <div class="table-wrap">
             <table class="sortable">
                 <thead>
@@ -581,7 +585,7 @@
                         <tr>
                             <th>ID</th><th>Started</th><th>Finished</th>
                             <th>Duration</th><th>Type</th><th>Status</th>
-                            <th>Batches</th><th title="Number of stations returned in this scrape. Incremental scrapes only fetch stations whose prices have changed, so this will be lower than a full scrape.">Stations &#9432;</th><th title="Total individual fuel price records inserted. Each station may report multiple fuel types, so this is typically higher than the station count.">Price Records &#9432;</th>
+                            <th>Batches</th><th title="Number of stations returned in this scrape. Incremental scrapes only fetch stations whose prices have changed, so this will be lower than a full scrape.">Stations &#9432;</th><th title="New price records inserted (only prices that changed since the previous scrape).">New Records &#9432;</th>
                             <th>Error</th>
                         </tr>
                     </thead>
