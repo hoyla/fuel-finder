@@ -1,4 +1,4 @@
-# Fuel Finder Scraper
+# Fuel Finder historical tracking
 
 Scrapes the [GOV.UK Fuel Finder API](https://www.developer.fuel-finder.service.gov.uk/) for UK fuel prices and station data, stores them in PostgreSQL, and optionally backs up raw JSON to S3.
 
