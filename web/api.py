@@ -131,8 +131,12 @@ def auth_me(request: Request, _auth=Depends(require_auth)):
     """Return the current user's role for frontend permission gating."""
     from auth import get_current_user
     api_key = request.headers.get("x-api-key", "")
+    real_role = get_user_role(request, api_key)
+    override = request.headers.get("x-role-override", "").lower()
+    effective = override if override in ("editor", "readonly") and real_role == "admin" else real_role
     return {
-        "role": get_user_role(request, api_key),
+        "role": effective,
+        "real_role": real_role,
         "email": get_current_user(request),
     }
 

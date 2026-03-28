@@ -296,9 +296,16 @@ async def resolve_role(
 
     Combines ``require_auth`` (gate) with ``get_user_role`` (role lookup)
     so endpoints can branch on the caller's tier.
+
+    Admins may send ``X-Role-Override: editor|readonly`` to preview
+    a lower tier's experience without changing accounts.
     """
     await require_auth(request, x_api_key)
-    return get_user_role(request, x_api_key)
+    real_role = get_user_role(request, x_api_key)
+    override = request.headers.get("x-role-override", "").lower()
+    if override in ("editor", "readonly") and real_role == "admin":
+        return override
+    return real_role
 
 
 # ---------------------------------------------------------------------------

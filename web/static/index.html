@@ -262,6 +262,11 @@
         <a href="/docs/about" style="color:#aaa;text-decoration:none;font-size:0.9rem;">About</a>
     </nav>
     <span id="user-email" style="font-size:0.8rem;color:#aaa;"></span>
+    <select id="role-switcher" style="display:none;font-size:0.75rem;padding:0.2rem 0.4rem;background:var(--card);color:#aaa;border:1px solid #444;border-radius:4px;cursor:pointer;" onchange="switchRole(this.value)">
+        <option value="">View as: Admin</option>
+        <option value="editor">View as: Editor</option>
+        <option value="readonly">View as: Read-only</option>
+    </select>
     <button id="logout-btn" style="display:none;" onclick="logout()">Log out</button>
 </header>
 
@@ -1045,6 +1050,8 @@ let _authMode = 'none';
 let _idToken = null;
 let _refreshToken = null;
 let _userRole = 'admin'; // 'admin' | 'editor' | 'readonly'
+let _realRole = 'admin'; // actual role (never changes)
+let _roleOverride = '';  // admin-only tier preview
 let _cognitoRegion = null;
 let _cognitoClientId = null;
 let _cognitoSession = null;  // for NEW_PASSWORD_REQUIRED challenge
@@ -1215,9 +1222,13 @@ async function fetchUserRole() {
         if (r.ok) {
             const data = await r.json();
             _userRole = data.role || 'readonly';
+            _realRole = data.real_role || data.role || 'readonly';
         }
     } catch { /* no-auth mode defaults to admin */ }
     applyRolePermissions();
+    // Show tier switcher for admins
+    const switcher = document.getElementById('role-switcher');
+    if (switcher) switcher.style.display = _realRole === 'admin' ? '' : 'none';
 }
 
 function canEdit() { return _userRole === 'admin' || _userRole === 'editor'; }
@@ -1257,10 +1268,19 @@ function logout() {
     location.reload();
 }
 
+function switchRole(override) {
+    _roleOverride = override;
+    _userRole = override || _realRole;
+    applyRolePermissions();
+}
+
 function authHeaders() {
     const h = {};
     if (_authMode === 'cognito' && _idToken) {
         h['Authorization'] = 'Bearer ' + _idToken;
+    }
+    if (_roleOverride) {
+        h['X-Role-Override'] = _roleOverride;
     }
     return h;
 }

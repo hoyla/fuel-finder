@@ -384,3 +384,98 @@ class TestReadonlyCanRead:
 
     def test_anomalies(self, readonly_client, has_data):
         assert readonly_client.get("/api/anomalies?fuel_type=E10").status_code == 200
+
+
+# ===================================================================
+# Admin role override (tier preview)
+# ===================================================================
+
+
+class TestRoleOverride:
+    """Admin X-Role-Override header for tier preview."""
+
+    def test_resolve_role_override_to_readonly(self):
+        """Admin with X-Role-Override: readonly gets readonly resolve_role."""
+        original_cognito = auth._USE_COGNITO
+        original_key = auth.API_KEY
+        try:
+            auth._USE_COGNITO = False
+            auth.API_KEY = ""
+            # No-auth mode → real role is admin, override to readonly
+            app.dependency_overrides.clear()
+            client = TestClient(app)
+            r = client.get(
+                "/api/prices/search?fuel_type=E10&limit=500",
+                headers={"X-Role-Override": "readonly"},
+            )
+            assert r.status_code == 200
+            assert len(r.json()["results"]) <= 200
+        finally:
+            auth._USE_COGNITO = original_cognito
+            auth.API_KEY = original_key
+
+    def test_resolve_role_override_to_editor(self):
+        """Admin with X-Role-Override: editor gets editor resolve_role."""
+        original_cognito = auth._USE_COGNITO
+        original_key = auth.API_KEY
+        try:
+            auth._USE_COGNITO = False
+            auth.API_KEY = ""
+            client = TestClient(app)
+            r = client.get(
+                "/api/prices/search?fuel_type=E10&limit=500",
+                headers={"X-Role-Override": "editor"},
+            )
+            assert r.status_code == 200
+            # Editor has no cap — should not be limited to 200
+        finally:
+            auth._USE_COGNITO = original_cognito
+            auth.API_KEY = original_key
+
+    def test_non_admin_override_ignored(self):
+        """Non-admin with X-Role-Override header is ignored."""
+        app.dependency_overrides[auth.require_auth] = _make_require_auth_ok()
+        app.dependency_overrides[auth.resolve_role] = _make_resolve_role("readonly")
+        try:
+            client = TestClient(app)
+            r = client.get(
+                "/api/prices/search?fuel_type=E10&limit=500",
+                headers={"X-Role-Override": "admin"},
+            )
+            assert r.status_code == 200
+            # Still capped at 200 because override was ignored
+            assert len(r.json()["results"]) <= 200
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_auth_me_returns_real_role(self):
+        """Auth/me returns both effective and real role."""
+        original_cognito = auth._USE_COGNITO
+        original_key = auth.API_KEY
+        try:
+            auth._USE_COGNITO = False
+            auth.API_KEY = ""
+            client = TestClient(app)
+            r = client.get("/auth/me", headers={"X-Role-Override": "readonly"})
+            assert r.status_code == 200
+            data = r.json()
+            assert data["role"] == "readonly"
+            assert data["real_role"] == "admin"
+        finally:
+            auth._USE_COGNITO = original_cognito
+            auth.API_KEY = original_key
+
+    def test_invalid_override_ignored(self):
+        """Invalid X-Role-Override value is ignored."""
+        original_cognito = auth._USE_COGNITO
+        original_key = auth.API_KEY
+        try:
+            auth._USE_COGNITO = False
+            auth.API_KEY = ""
+            client = TestClient(app)
+            r = client.get("/auth/me", headers={"X-Role-Override": "superadmin"})
+            assert r.status_code == 200
+            assert r.json()["role"] == "admin"
+        finally:
+            auth._USE_COGNITO = original_cognito
+            auth.API_KEY = original_key
