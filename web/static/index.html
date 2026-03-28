@@ -377,6 +377,7 @@
                 <button onclick="downloadMapData('csv')" disabled id="map-dl-csv">⬇ CSV</button>
                 <button onclick="downloadMapData('json')" disabled id="map-dl-json">⬇ JSON</button>
             </div>
+            <div class="readonly-notice" style="display:none;font-size:0.8rem;color:var(--muted);background:var(--bg-warn,#fff3cd);padding:0.4rem 0.75rem;border-radius:4px;margin-left:auto;">Read-only access — data exports are unavailable</div>
         </div>
         <div id="map">
             <div class="map-loading" id="map-loading">Loading stations…</div>
@@ -468,6 +469,7 @@
                 <button onclick="downloadTrendData('csv')" disabled id="trend-dl-csv">⬇ CSV</button>
                 <button onclick="downloadTrendData('json')" disabled id="trend-dl-json">⬇ JSON</button>
             </div>
+            <div class="readonly-notice" style="display:none;font-size:0.8rem;color:var(--muted);background:var(--bg-warn,#fff3cd);padding:0.4rem 0.75rem;border-radius:4px;">Read-only access — trend data limited to 90 days, exports unavailable</div>
             </div>
         </div>
         <div class="chart-container">
@@ -600,6 +602,7 @@
                     <button onclick="downloadSearchHistoryData('csv')" disabled id="search-hist-dl-csv">⬇ CSV</button>
                     <button onclick="downloadSearchHistoryData('json')" disabled id="search-hist-dl-json">⬇ JSON</button>
                 </div>
+                <div class="readonly-notice" style="display:none;font-size:0.8rem;color:var(--muted);background:var(--bg-warn,#fff3cd);padding:0.4rem 0.75rem;border-radius:4px;">Read-only access — search limited to 200 results, exports unavailable</div>
             </div>
         </div>
         <div class="table-wrap">
@@ -666,6 +669,7 @@
                 <button onclick="downloadStationTrendData('csv')" disabled id="st-dl-csv">⬇ CSV</button>
                 <button onclick="downloadStationTrendData('json')" disabled id="st-dl-json">⬇ JSON</button>
             </div>
+            <div class="readonly-notice" style="display:none;font-size:0.8rem;color:var(--muted);background:var(--bg-warn,#fff3cd);padding:0.4rem 0.75rem;border-radius:4px;">Read-only access — history limited to 90 days, exports unavailable</div>
         </div>
         <div class="chart-container">
             <h3 id="st-trend-heading">Price history</h3>
@@ -1237,6 +1241,11 @@ function applyRolePermissions() {
     // Download buttons: editor+ only
     document.querySelectorAll('#map-download-btns, #trend-download-btns, #search-download-btns, .download-btns').forEach(el => {
         el.style.display = canEdit() ? '' : 'none';
+    });
+
+    // Readonly notices
+    document.querySelectorAll('.readonly-notice').forEach(el => {
+        el.style.display = _userRole === 'readonly' ? '' : 'none';
     });
 }
 

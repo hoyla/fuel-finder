@@ -6,7 +6,7 @@ Auth is stubbed out for future use (JWT / API key).
 
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import boto3
@@ -50,7 +50,7 @@ def get_db():
 # Auth — Cognito JWT / API key / no-auth (see auth.py)
 # ---------------------------------------------------------------------------
 
-from auth import require_auth, require_admin, require_editor, get_auth_config, get_user_role
+from auth import require_auth, require_admin, require_editor, get_auth_config, get_user_role, resolve_role
 
 
 # ---------------------------------------------------------------------------
@@ -284,15 +284,17 @@ def station_price_history(
     end_date: Optional[str] = Query(None),
     granularity: Optional[str] = Query(None),
     db=Depends(get_db),
-    _auth=Depends(require_auth),
+    role: str = Depends(resolve_role),
 ):
     """Price history for a single station."""
+    max_days = 90 if role == "readonly" else 365
     if start_date or end_date:
         range_start = datetime.fromisoformat(start_date) if start_date else None
         range_end = datetime.fromisoformat(end_date) if end_date else None
         span_days = ((range_end or datetime.now()) - (range_start or range_end)).days if range_start or range_end else 30
+        span_days = min(span_days, max_days)
     else:
-        effective_days = days if days is not None else 30
+        effective_days = min(days if days is not None else 30, max_days)
         range_start = range_end = None
         span_days = effective_days
 
@@ -306,7 +308,7 @@ def station_price_history(
         time_filter = "fp.observed_at < %s + interval '1 day'"
         time_params = (range_end,)
     else:
-        effective_days = days if days is not None else 30
+        effective_days = min(days if days is not None else 30, max_days)
         time_filter = "fp.observed_at >= NOW() - make_interval(days => %s)"
         time_params = (effective_days,)
 
@@ -369,7 +371,7 @@ def price_history(
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
     db=Depends(get_db),
-    _auth=Depends(require_auth),
+    role: str = Depends(resolve_role),
 ):
     """Average price over time, optionally filtered by region.
 
@@ -380,18 +382,26 @@ def price_history(
     hourly for ranges <= 30 days and daily for longer.
     Excludes anomaly-flagged records and IQR-based statistical outliers.
     """
+    max_days = 90 if role == "readonly" else 365
     # Resolve the time range
     if start_date or end_date:
         range_start = datetime.fromisoformat(start_date) if start_date else None
         range_end = datetime.fromisoformat(end_date) if end_date else None
         if range_start and range_end:
             span_days = (range_end - range_start).days
+            if span_days > max_days:
+                range_start = range_end - timedelta(days=max_days)
+                span_days = max_days
         elif range_start:
             span_days = (datetime.now() - range_start).days
+            if span_days > max_days:
+                range_start = datetime.now() - timedelta(days=max_days)
+                span_days = max_days
         else:
             span_days = 30
     else:
         effective_days = days if days is not None else 30
+        effective_days = min(effective_days, max_days)
         range_start = None
         range_end = None
         span_days = effective_days
@@ -413,7 +423,7 @@ def price_history(
         bounds_time_filter = "AND observed_at < %s + interval '1 day'"
         bounds_time_params = (range_end,)
     else:
-        effective_days = days if days is not None else 30
+        effective_days = min(days if days is not None else 30, max_days)
         time_filter = "fp.observed_at >= NOW() - make_interval(days => %s)"
         time_params = (effective_days,)
         bounds_time_filter = "AND observed_at >= NOW() - make_interval(days => %s)"
@@ -850,9 +860,11 @@ def price_search(
     limit: int = Query(50, ge=1),
     offset: int = Query(0, ge=0),
     db=Depends(get_db),
-    _auth=Depends(require_auth),
+    role: str = Depends(resolve_role),
 ):
     """Flexible search/filter endpoint for the query builder UI."""
+    if role == "readonly":
+        limit = min(limit, 200)
     conditions = ["fuel_type = %s", "NOT temporary_closure"]
     params: list = [fuel_type]
 

@@ -288,6 +288,19 @@ def get_user_role(request: Request, x_api_key: str = "") -> str:
     return "admin"
 
 
+async def resolve_role(
+    request: Request,
+    x_api_key: str = Header(default=""),
+) -> str:
+    """Authenticate and return the user's role.
+
+    Combines ``require_auth`` (gate) with ``get_user_role`` (role lookup)
+    so endpoints can branch on the caller's tier.
+    """
+    await require_auth(request, x_api_key)
+    return get_user_role(request, x_api_key)
+
+
 # ---------------------------------------------------------------------------
 # Auth config endpoint (for frontend discovery)
 # ---------------------------------------------------------------------------
