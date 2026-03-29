@@ -72,6 +72,7 @@
         /* Controls */
         .controls { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: end; }
         .control label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.15rem; }
+        .control label[title] { cursor: help; text-decoration: underline dotted var(--muted); text-underline-offset: 2px; }
         .control select, .control input {
             padding: 0.3rem 0.5rem; border: 1px solid var(--border);
             border-radius: 5px; font-size: 0.85rem; background: var(--card-bg);
