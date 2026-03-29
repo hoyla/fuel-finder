@@ -174,7 +174,7 @@ function openStationTrend(nodeId, name, brand, city, postcode) {
     document.getElementById('st-granularity').value = 'auto';
     document.getElementById('station-trend-title').textContent = name;
     const parts = [brand, city, postcode].filter(Boolean);
-    document.getElementById('station-trend-subtitle').textContent = parts.join(' · ');
+    document.getElementById('station-trend-subtitle').textContent = parts.join(' · ') + ' · UK Fuel Finder node id: ' + nodeId;
     showStationTrendPanel();
     setStationTrendRange('30');
 }
@@ -466,7 +466,7 @@ async function loadPriceEditorRecords() {
     const station = resp.station;
     if (station) {
         const parts = [station.brand_name, station.city, station.postcode].filter(Boolean);
-        document.getElementById('price-editor-subtitle').textContent = parts.join(' · ');
+        document.getElementById('price-editor-subtitle').textContent = parts.join(' · ') + ' · UK Fuel Finder node id: ' + nodeId;
     }
     const body = document.getElementById('price-editor-body');
     if (!records.length) {
