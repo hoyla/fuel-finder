@@ -14,7 +14,7 @@ UK fuel price tracker. Scrapes the GOV.UK Fuel Finder API, stores price changes 
 - **web/static/api.html** — on-site API reference
 - **web/static/about.html** — methodology page
 - **scrape.py** — scraper orchestrator (runs on Lambda)
-- **migrate.py** — numbered SQL migration runner (migrations/ directory, currently 001–014)
+- **migrate.py** — numbered SQL migration runner (migrations/ directory, currently 001–015)
 - **docker-compose.yml** — postgres + web containers for local dev
 
 ## Three-tier auth model
@@ -49,7 +49,7 @@ docker compose up -d postgres
 - **current_prices** materialised view is the main query source for all dashboard/API endpoints
 - Price corrections use `COALESCE(corrected_price, original_price)` — originals never modified
 - Brand normalisation: `station_override > brand_alias > raw_brand_name`
-- Outlier exclusion: Tukey IQR 1.5× fences + rule-based anomaly flags
+- Outlier exclusion: Tukey IQR 1.5× fences for current-snapshot data (dashboard, breakdowns); Hampel filter (rolling median ± 3×MAD) for trend charts. Rule-based anomaly flags on insert.
 
 ## Code conventions
 
