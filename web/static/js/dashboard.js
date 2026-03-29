@@ -25,6 +25,7 @@ function renderBarChart(canvasId, labels, values, label, colour) {
         options: {
             indexAxis: 'y',
             responsive: true,
+            maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: { x: { min: xMin } }
         }
@@ -54,6 +55,7 @@ function renderBrandChart(canvasId, data) {
         },
         options: {
             indexAxis: 'y', responsive: true,
+            maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: { x: { min: Math.floor(minVal - padding) } }
         }
@@ -241,7 +243,7 @@ async function loadDashboardCharts() {
     document.getElementById('heading-brand-expensive').textContent = `Most expensive brands \u2013 ${fuelName}`;
     const trendHeading = document.getElementById('heading-trend');
     trendHeading.textContent = `Price trend \u2013 ${fuelName}`;
-    trendHeading.title = 'Daily averages based on all observations. May differ slightly from the current snapshot shown in cards above.';
+    trendHeading.title = 'Daily averages with Hampel filter smoothing. May differ slightly from the current snapshot shown in cards above.';
     document.getElementById('heading-district-expensive').textContent = `Most expensive local authorities \u2013 ${fuelName}`;
     document.getElementById('heading-district-cheap').textContent = `Cheapest local authorities \u2013 ${fuelName}`;
 
@@ -271,6 +273,7 @@ async function loadDashboardCharts() {
         },
         options: {
             indexAxis: 'y', responsive: true,
+            maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: { x: { min: Math.floor(Math.min(...catValues) - catPad) } }
         }
@@ -345,6 +348,7 @@ async function loadDashboardCharts() {
         },
         options: {
             indexAxis: 'y', responsive: true,
+            maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: { x: { min: Math.floor(Math.min(...ruValues) - ruPad) } }
         }

@@ -183,7 +183,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `is_supermarket_service_station` | `stations` | |
 | `temporary_closure` | `stations` | |
 | `anomaly_flags` | `fuel_prices` | `NULL` = no issues. Array of flag strings if anomalous |
-| `price_is_outlier` | Computed | `true` if anomaly-flagged OR outside IQR fences (Q1 − 1.5×IQR .. Q3 + 1.5×IQR) |
+| `price_is_outlier` | Computed | `true` if anomaly-flagged OR outside current IQR fences (Q1 − 1.5×IQR .. Q3 + 1.5×IQR). Applied to the latest-price snapshot only; trend charts use a Hampel filter instead |
 
 **Indexes:** `(node_id, fuel_type)` unique, `(fuel_type, price)`, `(postcode)`, `(region, fuel_type)`, `(forecourt_type, fuel_type)`, `(admin_district, fuel_type)`, `(parliamentary_constituency, fuel_type)`, `(rural_urban, fuel_type)`, `(country, fuel_type)`, `(lower(brand_name) text_pattern_ops)`, `(fuel_type, price_is_outlier)` partial WHERE NOT price_is_outlier
 

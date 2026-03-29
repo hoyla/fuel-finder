@@ -1981,12 +1981,12 @@ def station_price_records(
                     if pct > 30.0:
                         flags.append(f"large_change:{pct:.1f}%_from_{prev}")
                 if not flags and is_iqr_outlier:
-                    flags.append("iqr_outlier")
+                    flags.append("current_iqr_outlier")
                 r["effective_flags"] = flags or None
             else:
                 flags = list(r["anomaly_flags"] or [])
                 if not flags and is_iqr_outlier:
-                    flags.append("iqr_outlier")
+                    flags.append("current_iqr_outlier")
                 r["effective_flags"] = flags or None
 
         cur.execute("""

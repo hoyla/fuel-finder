@@ -99,7 +99,8 @@ async function loadOutliers(offset = 0) {
                 </tbody>
             </table>
             <p style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;">
-                Prices below the lower fence or above the upper fence are excluded from averages.
+                Prices below the lower fence or above the upper fence are excluded from current-snapshot averages (dashboard cards, breakdowns by region/brand/category).
+                Trend charts use a separate Hampel filter — see <a href="/docs/about#outlier-methodology" style="color:var(--accent);">methodology</a>.
             </p>
         `;
     }
@@ -115,7 +116,7 @@ async function loadOutliers(offset = 0) {
     body.innerHTML = data.outliers.map(r => {
         const reasonLabel = r.exclusion_reason === 'anomaly_flagged'
             ? (r.anomaly_flags || []).map(f => `<span class="tag">${escHtml(f)}</span>`).join(' ')
-            : '<span class="tag" style="background:#fff3cd;color:#856404;">outside IQR fence</span>';
+            : '<span class="tag" style="background:#fff3cd;color:#856404;">outside current IQR fence</span>';
         const overrideHtml = r.corrected_price != null
             ? `<span style="font-size:0.78rem;color:var(--muted);">${ppl(r.original_price)} → ${ppl(r.corrected_price)}</span>`
             : '—';
