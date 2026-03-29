@@ -499,8 +499,8 @@
         <!-- Sub-section: Statistical outliers -->
         <div id="anomaly-outliers" style="display:none;">
             <p style="color:var(--muted);margin-bottom:1rem;">
-                These prices are automatically excluded from all averaging calculations.
-                They fall outside the statistical plausible range (IQR fences) or were flagged by anomaly rules.
+                Like anomaly-flagged price reports, statistical outliers are excluded from all averaging calculations.
+                These prices fall outside the statistically plausible range, using IQR fences.
                 A station may still have other fuel types included in averages if only some prices are affected.
             </p>
             <div class="card" style="margin-bottom:1.25rem;background:#f0f4f8;">
@@ -517,8 +517,6 @@
                 </ol>
                 <p style="font-size:0.9rem;margin-top:0.5rem;">
                     This adapts automatically to the current price distribution — thresholds aren't hardcoded.
-                    Common reasons for outlier prices include decimal-point errors (e.g. 1.50 instead of 150.0),
-                    stations submitting prices in pounds instead of pence, and stale or test data.
                     The outlier prices are <strong>never deleted</strong> — they remain in the database
                     and are shown below for full transparency.
                 </p>
@@ -531,6 +529,13 @@
                     <label>Fuel type</label>
                     <select id="outlier-fuel" onchange="loadOutliers()"></select>
                 </div>
+            </div>
+
+            <div id="outlier-chart-wrap" style="display:none;margin-bottom:1.5rem;">
+                <canvas id="chart-price-dist" height="100"></canvas>
+                <p style="font-size:0.8rem;color:var(--muted);margin:0.4rem 0 0;text-align:center;">
+                    Price distribution — dashed lines show IQR fences
+                </p>
             </div>
 
             <div class="table-wrap">

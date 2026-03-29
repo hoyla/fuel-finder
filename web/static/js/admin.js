@@ -69,8 +69,94 @@ async function initOutlierFuelSelect(skipLoad) {
     if (!skipLoad) loadOutliers();
 }
 
+async function loadPriceDistribution(fuel) {
+    const wrap = document.getElementById('outlier-chart-wrap');
+    if (!fuel) {
+        wrap.style.display = 'none';
+        if (charts['chart-price-dist']) { charts['chart-price-dist'].destroy(); delete charts['chart-price-dist']; }
+        return;
+    }
+    let data;
+    try {
+        data = await apiFetch(`/admin/price-distribution?fuel_type=${encodeURIComponent(fuel)}`);
+    } catch (e) {
+        wrap.style.display = 'none';
+        return;
+    }
+
+    const labels = data.bins.map(b => b.bin_low.toFixed(1) + 'p');
+    const cleanData = data.bins.map(b => b.clean);
+    const outlierData = data.bins.map(b => b.outlier);
+
+    // Custom plugin: draw dashed vertical lines at IQR fences
+    const fencePlugin = {
+        id: 'fenceLines',
+        afterDraw(chart) {
+            const { ctx: c, scales: { x, y }, chartArea } = chart;
+            const binLows = data.bins.map(b => b.bin_low);
+            for (const fence of [data.lower_fence, data.upper_fence]) {
+                const idx = binLows.reduce((best, v, i) =>
+                    Math.abs(v - fence) < Math.abs(binLows[best] - fence) ? i : best, 0);
+                const xPos = x.getPixelForValue(idx);
+                c.save();
+                c.strokeStyle = '#505a5f';
+                c.lineWidth = 1.5;
+                c.setLineDash([5, 4]);
+                c.beginPath();
+                c.moveTo(xPos, chartArea.top);
+                c.lineTo(xPos, chartArea.bottom);
+                c.stroke();
+                // Label
+                c.fillStyle = '#505a5f';
+                c.font = '10px sans-serif';
+                c.textAlign = fence === data.lower_fence ? 'left' : 'right';
+                c.fillText(fence.toFixed(1) + 'p', xPos + (fence === data.lower_fence ? 3 : -3), chartArea.top + 12);
+                c.restore();
+            }
+        }
+    };
+
+    if (charts['chart-price-dist']) charts['chart-price-dist'].destroy();
+    const ctx = document.getElementById('chart-price-dist').getContext('2d');
+    charts['chart-price-dist'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Included', data: cleanData, backgroundColor: '#00703c99', borderColor: '#00703c', borderWidth: 0.5, stack: 's' },
+                { label: 'Outlier', data: outlierData, backgroundColor: '#fff3cd', borderColor: '#856404', borderWidth: 0.5, stack: 's' },
+            ]
+        },
+        options: {
+            responsive: true,
+            aspectRatio: 3.5,
+            plugins: {
+                legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        title: items => `~${items[0].label}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    ticks: { maxTicksLimit: 14, font: { size: 10 } }
+                },
+                y: {
+                    stacked: true,
+                    title: { display: true, text: 'Stations', font: { size: 10 } }
+                }
+            }
+        },
+        plugins: [fencePlugin]
+    });
+    wrap.style.display = '';
+}
+
 async function loadOutliers(offset = 0) {
     const fuel = document.getElementById('outlier-fuel').value;
+    if (offset === 0) loadPriceDistribution(fuel);
     let url = `/outliers?limit=50&offset=${offset}`;
     if (fuel) url += `&fuel_type=${encodeURIComponent(fuel)}`;
     if (outlierSort.col) url += `&sort=${outlierSort.col}&order=${outlierSort.dir}`;
@@ -85,7 +171,7 @@ async function loadOutliers(offset = 0) {
                 <thead>
                     <tr>
                         <th>Fuel Type</th><th>Q1 (25th pct)</th><th>Q3 (75th pct)</th>
-                        <th>IQR</th><th>Lower Fence</th><th>Upper Fence</th><th>Stations (clean)</th>
+                        <th>IQR</th><th>Lower Fence</th><th>Upper Fence</th><th>Stations (clean)</th><th>Stations (outlier)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -95,6 +181,7 @@ async function loadOutliers(offset = 0) {
                         <td>${b.iqr}p</td>
                         <td>${ppl(b.lower_fence)}</td><td>${ppl(b.upper_fence)}</td>
                         <td>${b.total_stations.toLocaleString()}</td>
+                        <td>${b.outlier_stations.toLocaleString()}</td>
                     </tr>`).join('')}
                 </tbody>
             </table>
