@@ -42,8 +42,27 @@ COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
 COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID", "")
 COGNITO_REGION = os.environ.get("COGNITO_REGION", os.environ.get("AWS_REGION", "eu-west-1"))
 API_KEY = os.environ.get("API_KEY", "")
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "local").strip().lower()
+ALLOW_NO_AUTH = os.environ.get("ALLOW_NO_AUTH", "").strip().lower() in {"1", "true", "yes", "on"}
 
 _USE_COGNITO = bool(COGNITO_USER_POOL_ID)
+
+
+def _is_no_auth_mode() -> bool:
+    """True when neither Cognito nor API key authentication is configured."""
+    return not _USE_COGNITO and not API_KEY
+
+
+def _is_no_auth_allowed() -> bool:
+    """Allow no-auth for local dev, or by explicit operator override."""
+    return ENVIRONMENT == "local" or ALLOW_NO_AUTH
+
+
+if _is_no_auth_mode() and not _is_no_auth_allowed():
+    raise RuntimeError(
+        "Authentication is not configured for this environment. "
+        "Set Cognito or API_KEY, or explicitly set ALLOW_NO_AUTH=true for controlled exceptions."
+    )
 
 # ---------------------------------------------------------------------------
 # Cognito JWKS (cached once per process)
@@ -176,18 +195,26 @@ async def require_auth(
 
     - Cognito JWT in ``Authorization: Bearer <token>`` header.
     - API key in ``X-Api-Key`` header (works alongside Cognito).
-    - No-auth mode:  passes through when neither is configured.
+    - No-auth mode:  local/dev only (or explicit ALLOW_NO_AUTH override).
     """
     # Try API key first (works in all modes when API_KEY is set)
     if API_KEY and x_api_key == API_KEY:
+        request.state.user_email = "api_key"
         return
 
     if _USE_COGNITO:
-        _extract_claims(request)
+        claims = _extract_claims(request)
+        request.state.user_email = claims.get("email") or claims.get("cognito:username") or "unknown"
         return
 
-    if not API_KEY:
-        return
+    if _is_no_auth_mode():
+        if _is_no_auth_allowed():
+            request.state.user_email = "local-dev"
+            return
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is not configured for this environment",
+        )
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
