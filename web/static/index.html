@@ -78,6 +78,7 @@
             <div class="chart-container">
                 <h3 id="heading-trend">Price trend</h3>
                 <canvas id="chart-dashboard-trend"></canvas>
+                <p style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends.</p>
             </div>
             <div class="chart-container">
                 <h3 id="heading-region">Average price by region</h3>

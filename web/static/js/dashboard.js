@@ -25,7 +25,7 @@ function renderBarChart(canvasId, labels, values, label, colour) {
         options: {
             indexAxis: 'y',
             responsive: true,
-            maintainAspectRatio: false,
+            aspectRatio: 1.6,
             plugins: { legend: { display: false } },
             scales: { x: { min: xMin } }
         }
@@ -55,7 +55,7 @@ function renderBrandChart(canvasId, data) {
         },
         options: {
             indexAxis: 'y', responsive: true,
-            maintainAspectRatio: false,
+            aspectRatio: 1.6,
             plugins: { legend: { display: false } },
             scales: { x: { min: Math.floor(minVal - padding) } }
         }
@@ -273,7 +273,7 @@ async function loadDashboardCharts() {
         },
         options: {
             indexAxis: 'y', responsive: true,
-            maintainAspectRatio: false,
+            aspectRatio: 1.8,
             plugins: { legend: { display: false } },
             scales: { x: { min: Math.floor(Math.min(...catValues) - catPad) } }
         }
@@ -309,6 +309,7 @@ async function loadDashboardCharts() {
         },
         options: {
             responsive: true,
+            aspectRatio: 1.8,
             scales: {
                 x: {
                     type: 'time',
@@ -348,7 +349,7 @@ async function loadDashboardCharts() {
         },
         options: {
             indexAxis: 'y', responsive: true,
-            maintainAspectRatio: false,
+            aspectRatio: 1.8,
             plugins: { legend: { display: false } },
             scales: { x: { min: Math.floor(Math.min(...ruValues) - ruPad) } }
         }

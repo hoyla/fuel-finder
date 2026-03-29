@@ -65,7 +65,6 @@
             background: var(--card-bg); border: 1px solid var(--border);
             border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem;
         }
-        .chart-container canvas { min-height: 340px; }
         .chart-container h3 { font-size: 1rem; margin-bottom: 0.75rem; }
         .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
         canvas { width: 100% !important; }
