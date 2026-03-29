@@ -150,6 +150,14 @@ function closeStationTrend() {
     history.back();
 }
 
+function goToOverrideBrand() {
+    document.getElementById('override-node').value = stationTrendState.nodeId;
+    switchTab('data');
+    document.getElementById('data-section').value = 'overrides';
+    switchDataSection();
+    history.replaceState({ panel: 'data', section: 'overrides' }, '', '#data/overrides');
+}
+
 function initStationTrendFuels() {
     const sel = document.getElementById('st-fuel');
     if (!sel.options.length) {
@@ -312,6 +320,8 @@ async function loadStationTrend() {
     // Show table view button only for single-station views
     document.getElementById('st-edit-btn').style.display =
         stationTrendState.mode === 'single' ? '' : 'none';
+    document.getElementById('st-override-btn').style.display =
+        stationTrendState.mode === 'single' && canEdit() ? '' : 'none';
 
     const hourly = resp.granularity === 'hourly';
     const isSingle = stationTrendState.mode === 'single';
