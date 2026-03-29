@@ -195,12 +195,24 @@ def summary(db=Depends(get_db), _auth=Depends(require_auth)):
         row = cur.fetchone()
         last_scrape = row["finished_at"].isoformat() if row and row["finished_at"] else None
 
+        cur.execute("""
+            SELECT COALESCE(SUM(price_records_count), 0) AS total_reports,
+                   COALESCE(SUM(price_records_count) FILTER (
+                       WHERE started_at >= CURRENT_DATE
+                   ), 0) AS reports_today
+            FROM scrape_runs
+            WHERE status = 'completed'
+        """)
+        reports = cur.fetchone()
+
     return {
         "by_fuel_type": by_fuel,
         "by_country": by_country,
         "total_stations": totals["total_stations"],
         "total_prices": totals["total_prices"],
         "last_scrape": last_scrape,
+        "total_reports": reports["total_reports"],
+        "reports_today": reports["reports_today"],
     }
 
 

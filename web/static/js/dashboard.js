@@ -53,11 +53,19 @@ async function loadDashboard() {
     const countryLines = (data.by_country || [])
         .map(c => `<div class="sub"><a href="#" class="country-link" data-country="${c.country_name}" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${c.country_name}: ${c.station_count.toLocaleString()}</a></div>`)
         .join('');
+    const reportsToday = data.reports_today || 0;
+    const reportsTodaySub = `<div class="sub">${reportsToday.toLocaleString()} station updates today</div>`;
     cards.innerHTML = `
         <div class="card">
             <div class="label">Stations</div>
             <div class="value">${data.total_stations.toLocaleString()}</div>
             ${countryLines}
+        </div>
+        <div class="card">
+            <div class="label">Reports</div>
+            <div class="value">${(data.total_reports || 0).toLocaleString()}</div>
+            <div class="sub">total price reports</div>
+            ${reportsTodaySub}
         </div>
     `;
     data.by_fuel_type.forEach(ft => {
