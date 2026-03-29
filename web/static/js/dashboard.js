@@ -199,6 +199,8 @@ async function loadDashboardCharts() {
     document.getElementById('heading-category').textContent = `Average price by forecourt type \u2013 ${fuelName}`;
     document.getElementById('heading-rural-urban').textContent = `Average price by rural/urban classification \u2013 ${fuelName}`;
     document.getElementById('heading-brand').textContent = `Cheapest brands \u2013 ${fuelName}`;
+    document.getElementById('heading-brand-expensive').textContent = `Most expensive brands \u2013 ${fuelName}`;
+    document.getElementById('heading-trend').textContent = `Price trend \u2013 ${fuelName}`;
     document.getElementById('heading-district-expensive').textContent = `Most expensive local authorities \u2013 ${fuelName}`;
     document.getElementById('heading-district-cheap').textContent = `Cheapest local authorities \u2013 ${fuelName}`;
 
@@ -236,10 +238,50 @@ async function loadDashboardCharts() {
         }
     });
 
-    // Brand chart
+    // Brand chart (cheapest)
     const brandData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15`);
     renderBarChart('chart-brand', brandData.map(b => b.brand_name), brandData.map(b => b.avg_price),
         'Avg pence/litre', '#00703c');
+
+    // Brand chart (most expensive)
+    const brandExpData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=500`);
+    const expensive15 = brandExpData.slice(-15).reverse();
+    renderBarChart('chart-brand-expensive', expensive15.map(b => b.brand_name), expensive15.map(b => b.avg_price),
+        'Avg pence/litre', '#d4351c');
+
+    // Price trend chart (all data, daily)
+    const trendResp = await apiFetch(`/prices/history?fuel_type=${encodeURIComponent(fuelCode)}&days=365&granularity=daily`);
+    const trendData = (trendResp.data || []).map(d => ({ x: new Date(d.bucket), y: d.avg_price }));
+    if (charts['chart-dashboard-trend']) charts['chart-dashboard-trend'].destroy();
+    const trendCtx = document.getElementById('chart-dashboard-trend').getContext('2d');
+    charts['chart-dashboard-trend'] = new Chart(trendCtx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Avg pence/litre',
+                data: trendData,
+                borderColor: '#1d70b8',
+                backgroundColor: '#1d70b833',
+                fill: true, tension: 0.3,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#1d70b8',
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'day', tooltipFormat: 'd MMM yyyy', displayFormats: { day: 'd MMM' } },
+                    ticks: { maxRotation: 45 }
+                },
+                y: { beginAtZero: false }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
 
     // Rural/Urban chart
     const ruData = await apiFetch(`/prices/by-rural-urban?fuel_type=${encodeURIComponent(fuelCode)}`);
@@ -290,6 +332,9 @@ async function loadDashboardCharts() {
         c => ({ fuel_type: fuelCode, category: c.forecourt_type, exclude_outliers: true }));
 
     addChartClickHandler('chart-brand', brandData,
+        b => ({ fuel_type: fuelCode, brand: b.brand_name, exclude_outliers: true }));
+
+    addChartClickHandler('chart-brand-expensive', expensive15,
         b => ({ fuel_type: fuelCode, brand: b.brand_name, exclude_outliers: true }));
 
     addChartClickHandler('chart-rural-urban', ruData,
