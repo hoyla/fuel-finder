@@ -53,7 +53,7 @@ function switchTab(panelName, pushState) {
         if (panelName === 'trends') loadTrends();
         if (panelName === 'anomalies') loadAnomalies();
         if (panelName === 'logs') { loadScrapeHistory(); loadCorrectionsLog(); }
-        if (panelName === 'data') loadReport();
+        if (panelName === 'data') switchDataSection();
         if (panelName === 'users') loadUsers();
     }
 

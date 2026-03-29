@@ -75,7 +75,15 @@ finally:
 
 app = FastAPI(title="Fuel Finder", version="1.0.0")
 
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+# CORS configuration: explicit allowlist for production, wildcard for local/staging.
+import_env = os.environ.get("ENVIRONMENT", "local").strip().lower()
+if import_env == "local":
+    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+else:
+    # Production: require explicit CORS_ORIGINS, default to localhost only for safety.
+    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "localhost").split(",")
+    if "*" in CORS_ORIGINS:
+        raise RuntimeError("Wildcard CORS origins are not allowed in production. Set CORS_ORIGINS explicitly.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -907,7 +915,8 @@ def price_map(
                    price, fuel_name, forecourt_type,
                    admin_district, rural_urban, parliamentary_constituency,
                    latitude, longitude,
-                   is_motorway_service_station, is_supermarket_service_station
+                   is_motorway_service_station, is_supermarket_service_station,
+                   observed_at
             FROM current_prices
             WHERE {where}
             ORDER BY price
@@ -1526,7 +1535,7 @@ def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends
         return cur.fetchone()
 
 
-@app.delete("/api/admin/brand-aliases/{raw_brand_name}")
+@app.delete("/api/admin/brand-aliases/{raw_brand_name:path}")
 def delete_brand_alias(raw_brand_name: str, db=Depends(get_db), _auth=Depends(require_editor)):
     """Remove a brand alias."""
     with db.cursor() as cur:
@@ -1569,7 +1578,7 @@ def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=D
         return cur.fetchone()
 
 
-@app.delete("/api/admin/brand-categories/{canonical_brand}")
+@app.delete("/api/admin/brand-categories/{canonical_brand:path}")
 def delete_brand_category(canonical_brand: str, db=Depends(get_db), _auth=Depends(require_editor)):
     """Remove a brand category mapping (brand will default to Independent)."""
     with db.cursor() as cur:

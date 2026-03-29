@@ -248,10 +248,23 @@
             display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem;
         }
 
+        .data-section-summary {
+            flex: 1 1 24rem;
+            margin: 0;
+            font-size: 0.82rem;
+            color: var(--muted);
+            line-height: 1.35;
+            max-width: 52rem;
+        }
+
         @media (max-width: 768px) {
             .chart-row { grid-template-columns: 1fr; }
             main { padding: 1rem; }
             .tabs { padding: 0 1rem; overflow-x: auto; }
+            .data-section-summary {
+                flex-basis: 100%;
+                order: 3;
+            }
         }
 
         /* Price editor */

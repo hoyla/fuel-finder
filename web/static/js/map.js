@@ -78,7 +78,8 @@ async function loadMapPrices() {
             ${escHtml(d.city)} ${escHtml(d.postcode)}<br>
             ${d.admin_district ? escHtml(d.admin_district) + '<br>' : ''}
             ${d.rural_urban ? '<em>' + escHtml(d.rural_urban) + '</em><br>' : ''}
-            <strong>${ppl(d.price)}</strong> ${escHtml(d.fuel_name) || fuel}
+            <strong>${ppl(d.price)}</strong> ${escHtml(d.fuel_name) || fuel}<br>
+            <small style="color:var(--muted)">Updated: ${d.observed_at ? new Date(d.observed_at).toLocaleString() : '—'}</small>
         `);
         cluster.addLayer(marker);
     }
