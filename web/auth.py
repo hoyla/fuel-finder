@@ -44,6 +44,7 @@ COGNITO_REGION = os.environ.get("COGNITO_REGION", os.environ.get("AWS_REGION", "
 API_KEY = os.environ.get("API_KEY", "")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "local").strip().lower()
 ALLOW_NO_AUTH = os.environ.get("ALLOW_NO_AUTH", "").strip().lower() in {"1", "true", "yes", "on"}
+AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").strip().lower() not in {"0", "false", "no", "off", ""}
 
 _USE_COGNITO = bool(COGNITO_USER_POOL_ID)
 
@@ -55,13 +56,17 @@ def _is_no_auth_mode() -> bool:
 
 def _is_no_auth_allowed() -> bool:
     """Allow no-auth for local dev, or by explicit operator override."""
+    if AUTH_ENABLED:
+        # AUTH_ENABLED=true forces auth, overrides ALLOW_NO_AUTH.
+        return False
     return ENVIRONMENT == "local" or ALLOW_NO_AUTH
 
 
 if _is_no_auth_mode() and not _is_no_auth_allowed():
     raise RuntimeError(
         "Authentication is not configured for this environment. "
-        "Set Cognito or API_KEY, or explicitly set ALLOW_NO_AUTH=true for controlled exceptions."
+        "Set Cognito or API_KEY, or explicitly set ALLOW_NO_AUTH=true for controlled exceptions. "
+        f"(AUTH_ENABLED={AUTH_ENABLED}, ENVIRONMENT={ENVIRONMENT})"
     )
 
 # ---------------------------------------------------------------------------

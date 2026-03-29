@@ -75,7 +75,15 @@ finally:
 
 app = FastAPI(title="Fuel Finder", version="1.0.0")
 
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+# CORS configuration: explicit allowlist for production, wildcard for local/staging.
+import_env = os.environ.get("ENVIRONMENT", "local").strip().lower()
+if import_env == "local":
+    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+else:
+    # Production: require explicit CORS_ORIGINS, default to localhost only for safety.
+    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "localhost").split(",")
+    if "*" in CORS_ORIGINS:
+        raise RuntimeError("Wildcard CORS origins are not allowed in production. Set CORS_ORIGINS explicitly.")
 
 app.add_middleware(
     CORSMiddleware,

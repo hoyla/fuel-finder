@@ -46,8 +46,18 @@ def _discover_migrations():
 
 
 def run_migrations(conn):
-    """Apply any pending migrations. Returns list of newly applied filenames."""
+    """Apply any pending migrations. Returns list of newly applied filenames.
+    
+    Uses an advisory lock to ensure only one process runs migrations at a time,
+    critical for multi-instance deployments.
+    """
     _ensure_migrations_table(conn)
+    
+    # Acquire advisory lock (PostgreSQL session-level, auto-released on disconnect).
+    # Lock ID 'fuel_finder_migrations' (arbitrary constant) ensures single-run semantics.
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_lock(hashtext('fuel_finder_migrations'))")
+    
     applied = _get_applied_versions(conn)
     available = _discover_migrations()
 
