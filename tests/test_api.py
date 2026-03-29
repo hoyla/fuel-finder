@@ -284,7 +284,9 @@ class TestStationPriceRecords:
         row = next((r for r in payload["records"] if r["fuel_price_id"] == fuel_price_id), None)
         assert row is not None
         assert row["effective_is_iqr_outlier"] is True
-        assert "iqr_outlier" in (row["effective_flags"] or [])
+        iqr_flags = [f for f in (row["effective_flags"] or []) if f.startswith("current_iqr_outlier")]
+        assert len(iqr_flags) == 1
+        assert "<" in iqr_flags[0] or ">" in iqr_flags[0]  # includes fence value
 
 
 class TestStaticFiles:

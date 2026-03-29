@@ -159,7 +159,9 @@ Fuel Finder API (GOV.UK)
 
     <p>Anomaly flags catch the most obvious errors, but the GOV.UK source data is manually entered by fuel station operators and inevitably contains subtler mistakes — a station reporting 1.50 instead of 150.0 (pounds not pence), or a stale test price that slipped through. Even a few of these can skew averages noticeably.</p>
 
-    <p>To avoid misleading statistics, <strong>all averages shown on the dashboard exclude statistical outliers</strong>. We use the <strong>Tukey IQR (interquartile range) fence</strong> method — the same technique commonly used in box-plot charts:</p>
+    <h4>Dashboard &amp; current snapshot (Tukey IQR)</h4>
+
+    <p>All averages shown on the dashboard cards, and the current-price breakdowns by region, brand, category, etc., exclude statistical outliers using the <strong>Tukey IQR (interquartile range) fence</strong> method — the same technique commonly used in box-plot charts:</p>
 
     <ol>
         <li>For each fuel type, compute <strong>Q1</strong> (25th percentile) and <strong>Q3</strong> (75th percentile) of all current non-anomalous prices</li>
@@ -170,14 +172,26 @@ Fuel Finder API (GOV.UK)
 
     <p>The 1.5 × IQR multiplier is the standard Tukey threshold (introduced in John Tukey's <em>Exploratory Data Analysis</em>, 1977). It identifies values that are far enough from the central distribution to be suspect, without being so aggressive that it trims legitimate price variation.</p>
 
-    <div class="card">
-        <strong>Transparency:</strong> Outlier prices are never deleted or modified. They are flagged
-        in the materialised view (<code>price_is_outlier = true</code>) and can be inspected on the
-        <a href="/#anomalies/outliers">Anomalies → Statistical outliers</a> page, which shows the IQR bounds for each
-        fuel type and every excluded price with its exclusion reason.
-    </div>
+    <p>The fences are recomputed each time the materialised view is refreshed (after every scrape), so they adapt automatically as prices change over time. Since IQR is applied to a single snapshot (the latest price per station), trending prices are not an issue.</p>
 
-    <p>The fences are recomputed each time the materialised view is refreshed (after every scrape), so they adapt automatically as prices change over time.</p>
+    <h4>Historical trend charts (Hampel filter)</h4>
+
+    <p>For trend charts that show price history over weeks or months, a static IQR fence would be inappropriate — if prices trend upward steadily, earlier (legitimately lower) prices would be wrongly excluded as outliers. Instead, trend data uses a <strong>Hampel filter</strong>, a technique widely used in financial time series and signal processing:</p>
+
+    <ol>
+        <li>For each time bucket (day or hour), compute the <strong>median</strong> and <strong>MAD</strong> (median absolute deviation) of prices in a sliding window around that bucket</li>
+        <li>If the bucket's average price deviates from the window median by more than <strong>3 × MAD</strong>, it is replaced with the window median</li>
+    </ol>
+
+    <p>This approach correctly handles trending data because each data point is only compared against its temporal neighbours, not the entire range. The window covers ±3 days for daily data and approximately ±1 day for hourly data.</p>
+
+    <div class="card">
+        <strong>Transparency:</strong> Outlier prices are never deleted or modified. IQR outliers are flagged
+        in the materialised view (<code>price_is_outlier = true</code>) and can be inspected on the
+        <a href="/#anomalies/outliers">Anomalies → Statistical outliers</a> page, which shows the current IQR bounds for each
+        fuel type and every excluded price with its exclusion reason. Hampel-smoothed trend averages
+        are computed on the fly and do not alter stored data.
+    </div>
 
     <h2>Brand normalisation</h2>
 

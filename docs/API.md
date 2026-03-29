@@ -81,7 +81,7 @@ Dashboard headline numbers: average/min/max prices per fuel type, station count,
 }
 ```
 
-Averages, min/max, and station counts exclude outliers and anomaly-flagged prices. `outliers_excluded` shows how many prices were excluded per fuel type.
+Averages, min/max, and station counts exclude IQR outliers and anomaly-flagged prices (Tukey IQR applied to current snapshot). `outliers_excluded` shows how many prices were excluded per fuel type.
 
 ### `GET /api/prices/by-region`
 
@@ -211,6 +211,8 @@ When search-style filters (brand, category, postcode, etc.) are provided, the en
 - `granularity`: `"hourly"` (≤30 days) or `"daily"` (>30 days)
 - `bucket`: ISO timestamp (hourly) or date string (daily)
 
+Anomaly-flagged prices are excluded. A Hampel filter (rolling median ± 3×MAD) smooths remaining outlier bucket averages without distorting legitimate trends. Window size: ±3 days for daily, ±24 hours for hourly.
+
 ### `GET /api/prices/history/export`
 
 Export raw individual price records matching the trend filters as a streaming download.
@@ -317,7 +319,7 @@ Recent price records flagged by anomaly detection, with previous price context. 
 
 ### `GET /api/outliers`
 
-Prices excluded as statistical outliers, with IQR bounds for transparency.
+Prices excluded as statistical outliers from the current snapshot, with IQR bounds for transparency.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -337,7 +339,7 @@ Prices excluded as statistical outliers, with IQR bounds for transparency.
 }
 ```
 
-`exclusion_reason`: `"anomaly_flagged"` (rule-based detection on insert) or `"iqr_outlier"` (Tukey IQR fence method).
+`exclusion_reason`: `"anomaly_flagged"` (rule-based detection on insert) or `"iqr_outlier"` (Tukey IQR fence applied to the current price snapshot).
 
 `original_price` and `corrected_price` are included when a correction exists, allowing the UI to show what was changed.
 

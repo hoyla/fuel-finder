@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
+import statistics
+
 import boto3
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -401,7 +403,8 @@ def price_history(
 
     Granularity can be 'hourly' or 'daily'. If not specified, defaults to
     hourly for ranges <= 30 days and daily for longer.
-    Excludes anomaly-flagged records and IQR-based statistical outliers.
+    Excludes anomaly-flagged records. Applies a Hampel filter (rolling
+    median ± 3×MAD) to smooth outlier averages without distorting trends.
     """
     max_days = 90 if role == "readonly" else 365
     # Resolve the time range
@@ -431,39 +434,16 @@ def price_history(
     if range_start and range_end:
         time_filter = "fp.observed_at >= %s AND fp.observed_at < %s + interval '1 day'"
         time_params = (range_start, range_end)
-        bounds_time_filter = "AND observed_at >= %s AND observed_at < %s + interval '1 day'"
-        bounds_time_params = (range_start, range_end)
     elif range_start:
         time_filter = "fp.observed_at >= %s"
         time_params = (range_start,)
-        bounds_time_filter = "AND observed_at >= %s"
-        bounds_time_params = (range_start,)
     elif range_end:
         time_filter = "fp.observed_at < %s + interval '1 day'"
         time_params = (range_end,)
-        bounds_time_filter = "AND observed_at < %s + interval '1 day'"
-        bounds_time_params = (range_end,)
     else:
         effective_days = min(days if days is not None else 30, max_days)
         time_filter = "fp.observed_at >= NOW() - make_interval(days => %s)"
         time_params = (effective_days,)
-        bounds_time_filter = "AND observed_at >= NOW() - make_interval(days => %s)"
-        bounds_time_params = (effective_days,)
-
-    # CTE to compute IQR fences per fuel type from non-anomalous data in the range
-    bounds_cte = f"""
-        WITH bounds AS (
-            SELECT fuel_type,
-                   PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price) AS q1,
-                   PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price) AS q3
-            FROM fuel_prices
-            WHERE fuel_type = %s
-              AND anomaly_flags IS NULL
-              {bounds_time_filter}
-            GROUP BY fuel_type
-        )
-    """
-    bounds_params = (fuel_type, *bounds_time_params)
 
     # Determine granularity
     if granularity in ('hourly', 'daily'):
@@ -587,25 +567,42 @@ def price_history(
         location_params = tuple(params_list)
 
     with db.cursor() as cur:
-        cur.execute(bounds_cte + f"""
+        cur.execute(f"""
             SELECT {time_col} AS bucket,
                    ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1) AS avg_price,
                    COUNT(DISTINCT fp.node_id) AS stations
             FROM fuel_prices fp
             LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
             {location_joins}
-            LEFT JOIN bounds b ON b.fuel_type = fp.fuel_type
             WHERE fp.fuel_type = %s
               AND {time_filter}
               {node_filter}
               {location_filters}
               AND fp.anomaly_flags IS NULL
-              AND (b.q1 IS NULL OR COALESCE(pc.corrected_price, fp.price) >= b.q1 - 1.5 * (b.q3 - b.q1))
-              AND (b.q3 IS NULL OR COALESCE(pc.corrected_price, fp.price) <= b.q3 + 1.5 * (b.q3 - b.q1))
             GROUP BY bucket
             ORDER BY bucket
-        """, (*bounds_params, fuel_type, *time_params, *node_params, *location_params))
-        return {"granularity": effective_granularity, "data": cur.fetchall()}
+        """, (fuel_type, *time_params, *node_params, *location_params))
+        rows = cur.fetchall()
+
+    # Apply Hampel filter to smooth outlier daily/hourly averages.
+    # Uses a rolling window with median ± 3×MAD to detect and replace
+    # anomalous buckets, handling trending data correctly.
+    if len(rows) >= 3:
+        prices = [float(r["avg_price"]) for r in rows]
+        win = 49 if effective_granularity == "hourly" else 7
+        half = win // 2
+        n = len(prices)
+        k = 1.4826  # consistency constant for Gaussian distribution
+        for i in range(n):
+            lo = max(0, i - half)
+            hi = min(n, i + half + 1)
+            window = prices[lo:hi]
+            med = statistics.median(window)
+            mad = statistics.median([abs(x - med) for x in window])
+            if mad * k > 0 and abs(prices[i] - med) > 3.0 * k * mad:
+                rows[i]["avg_price"] = round(med, 1)
+
+    return {"granularity": effective_granularity, "data": rows}
 
 
 @app.get("/api/prices/history/export")
@@ -1984,12 +1981,18 @@ def station_price_records(
                     if pct > 30.0:
                         flags.append(f"large_change:{pct:.1f}%_from_{prev}")
                 if not flags and is_iqr_outlier:
-                    flags.append("iqr_outlier")
+                    if eff < bounds["lower_fence"]:
+                        flags.append(f"current_iqr_outlier:{eff}<{bounds['lower_fence']:.1f}")
+                    else:
+                        flags.append(f"current_iqr_outlier:{eff}>{bounds['upper_fence']:.1f}")
                 r["effective_flags"] = flags or None
             else:
                 flags = list(r["anomaly_flags"] or [])
                 if not flags and is_iqr_outlier:
-                    flags.append("iqr_outlier")
+                    if effective_price < bounds["lower_fence"]:
+                        flags.append(f"current_iqr_outlier:{effective_price}<{bounds['lower_fence']:.1f}")
+                    else:
+                        flags.append(f"current_iqr_outlier:{effective_price}>{bounds['upper_fence']:.1f}")
                 r["effective_flags"] = flags or None
 
         cur.execute("""

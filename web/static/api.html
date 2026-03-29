@@ -272,7 +272,7 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/outliers</div>
-        <div class="desc">Prices excluded as statistical outliers, with IQR bounds for transparency.</div>
+        <div class="desc">Prices excluded as statistical outliers from current snapshot, with IQR bounds for transparency.</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
@@ -281,7 +281,7 @@
             </tbody>
         </table>
         <p>Returns: <code>{ bounds: { fuel_type: { q1, q3, iqr, lower_fence, upper_fence, total_stations } }, outliers: [...], total }</code></p>
-        <p>Each outlier has <code>exclusion_reason</code>: <code>"anomaly_flagged"</code> or <code>"iqr_outlier"</code>, plus <code>original_price</code> and <code>corrected_price</code> when a correction exists.</p>
+        <p>Each outlier has <code>exclusion_reason</code>: <code>"anomaly_flagged"</code> or <code>"iqr_outlier"</code> (Tukey IQR fence applied to the current price snapshot), plus <code>original_price</code> and <code>corrected_price</code> when a correction exists.</p>
     </div>
 
     <div class="endpoint">
@@ -299,7 +299,7 @@
         <p><code>effective_flags</code>: re-evaluated anomaly flags based on the effective (corrected or original) price.</p>
     </div>
 
-    <div class="note warning">All price aggregation endpoints (summary, by-region, by-brand, by-category, by-district, by-constituency, by-rural-urban, history) exclude statistical outliers and anomaly-flagged prices. See <a href="/docs/about#outlier-methodology">outlier methodology</a> for details.</div>
+    <div class="note warning">All current-snapshot aggregation endpoints (summary, by-region, by-brand, by-category, by-district, by-constituency, by-rural-urban) exclude IQR statistical outliers and anomaly-flagged prices. The history endpoint excludes anomaly-flagged prices and applies a Hampel filter (rolling median ± 3×MAD) to smooth remaining outlier averages. See <a href="/docs/about#outlier-methodology">outlier methodology</a> for details.</div>
 
     <!-- ===== REFERENCE ===== -->
     <h2 id="reference">Reference</h2>

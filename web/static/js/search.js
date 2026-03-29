@@ -332,6 +332,14 @@ async function loadStationTrend() {
         ? 'Showing per scrape window (data is fetched every 30 minutes).'
         : 'Showing daily ' + (isSingle ? 'prices.' : 'averages.');
 
+    // Show Hampel filter note for multi-station views (aggregate data uses Hampel smoothing)
+    const hampelNote = document.getElementById('st-hampel-note');
+    if (hampelNote) {
+        hampelNote.innerHTML = isSingle
+            ? 'Anomaly-flagged prices are excluded. All other prices are shown unfiltered — <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel smoothing</a> is only applied to multi-station aggregate charts.'
+            : 'Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends.';
+    }
+
     const labels = data.map(d => {
         const dt = new Date(d.bucket);
         if (hourly) {
@@ -494,7 +502,16 @@ async function loadPriceEditorRecords() {
 
         // Status: current effective anomaly state
         const statusHtml = hasEffFlags
-            ? effFlags.map(f => '<span class="tag">' + escHtml(f) + '</span>').join(' ')
+            ? effFlags.map(f => {
+                const iqrMatch = f.match(/^current_iqr_outlier:([\d.]+)([<>])([\d.]+)$/);
+                if (iqrMatch) {
+                    const fence = iqrMatch[3];
+                    const label = iqrMatch[2] === '<' ? `below ${fence}p lower fence` : `above ${fence}p upper fence`;
+                    return `<span class="tag" style="background:#fff3cd;color:#856404;">${label}</span>`;
+                }
+                if (f === 'current_iqr_outlier') return '<span class="tag" style="background:#fff3cd;color:#856404;">outside current IQR fence</span>';
+                return '<span class="tag">' + escHtml(f) + '</span>';
+            }).join(' ')
             : (hasCorrection ? '<span class="tag" style="background:#d4edda;color:#155724;">OK</span>' : '—');
 
         // Overrides: suggestion for unfixed anomalies, or correction details

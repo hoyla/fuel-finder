@@ -78,6 +78,7 @@
             <div class="chart-container">
                 <h3 id="heading-trend">Price trend</h3>
                 <canvas id="chart-dashboard-trend"></canvas>
+                <p style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends.</p>
             </div>
             <div class="chart-container">
                 <h3 id="heading-region">Average price by region</h3>
@@ -251,7 +252,7 @@
             <h3 id="trend-heading">Average price</h3>
             <canvas id="chart-trend"></canvas>
             <p id="trend-granularity-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
-            <p style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">The chart above excludes outliers and anomaly-flagged prices. Downloads include all raw data.</p>
+            <p style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends. Downloads include all raw data.</p>
         </div>
     </div>
 
@@ -454,6 +455,7 @@
             <h3 id="st-trend-heading">Price history</h3>
             <canvas id="chart-station-trend"></canvas>
             <p id="st-granularity-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
+            <p id="st-hampel-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
         </div>
     </div>
 
