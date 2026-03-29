@@ -212,10 +212,6 @@ function applyRolePermissions() {
     const refreshBtn = document.getElementById('btn-refresh-view');
     if (refreshBtn) refreshBtn.style.display = canEdit() ? '' : 'none';
 
-    // Station trend edit button
-    const stEditBtn = document.getElementById('st-edit-btn');
-    if (stEditBtn) stEditBtn.style.display = canEdit() ? '' : 'none';
-
     // Download buttons: editor+ only
     document.querySelectorAll('#map-download-btns, #trend-download-btns, #search-download-btns, .download-btns').forEach(el => {
         el.style.display = canEdit() ? '' : 'none';

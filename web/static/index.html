@@ -430,6 +430,7 @@
                 </select>
             </div>
             <button class="primary" onclick="loadStationTrend()">Update</button>
+            <button class="primary" id="st-edit-btn" onclick="openPriceEditor(stationTrendState.nodeId, stationTrendState.title, 'station-trend')" style="background:#505a5f;display:none;">All price records</button>
             <div class="download-btns">
                 <span style="font-size:0.8rem;color:var(--muted);">Download raw data for the selected filters:</span>
                 <button onclick="downloadStationTrendData('csv')" disabled id="st-dl-csv">⬇ CSV</button>
@@ -441,9 +442,6 @@
             <h3 id="st-trend-heading">Price history</h3>
             <canvas id="chart-station-trend"></canvas>
             <p id="st-granularity-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
-        </div>
-        <div id="st-edit-section" style="margin-top:1rem;display:none;">
-            <button class="primary" id="st-edit-btn" onclick="openPriceEditor(stationTrendState.nodeId, stationTrendState.title, 'station-trend')" style="background:#505a5f;">✏️ Edit prices for this station</button>
         </div>
     </div>
 

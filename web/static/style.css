@@ -225,6 +225,24 @@
         }
         .download-btns button:hover { background: var(--bg); color: var(--text); }
         .download-btns button:disabled { opacity: 0.4; cursor: default; }
+        /* Let the station-trend helper text wrap before the whole controls row wraps */
+        #panel-station-trend .download-btns {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.4rem;
+            flex: 1 1 22rem;
+            min-width: 0;
+        }
+        #panel-station-trend .download-btns > span {
+            white-space: normal;
+            text-align: right;
+            line-height: 1.2;
+            max-width: 12.5rem;
+        }
+        #panel-station-trend .download-btns button {
+            flex: 0 0 auto;
+        }
         .controls-row {
             display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem;
         }

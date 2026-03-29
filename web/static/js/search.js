@@ -309,8 +309,8 @@ async function loadStationTrend() {
     document.getElementById('st-dl-csv').disabled = !data.length;
     document.getElementById('st-dl-json').disabled = !data.length;
 
-    // Show edit button only for single-station views
-    document.getElementById('st-edit-section').style.display =
+    // Show table view button only for single-station views
+    document.getElementById('st-edit-btn').style.display =
         stationTrendState.mode === 'single' ? '' : 'none';
 
     const hourly = resp.granularity === 'hourly';
