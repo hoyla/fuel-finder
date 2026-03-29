@@ -915,7 +915,8 @@ def price_map(
                    price, fuel_name, forecourt_type,
                    admin_district, rural_urban, parliamentary_constituency,
                    latitude, longitude,
-                   is_motorway_service_station, is_supermarket_service_station
+                   is_motorway_service_station, is_supermarket_service_station,
+                   observed_at
             FROM current_prices
             WHERE {where}
             ORDER BY price
