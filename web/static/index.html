@@ -442,6 +442,7 @@
             </div>
             <button class="primary" onclick="loadStationTrend()">Update</button>
             <button class="primary" id="st-edit-btn" onclick="openPriceEditor(stationTrendState.nodeId, stationTrendState.title, 'station-trend')" style="background:#505a5f;display:none;">All price records</button>
+            <button class="primary" id="st-override-btn" onclick="goToOverrideBrand()" style="background:#f47738;display:none;">Override brand</button>
             <div class="download-btns">
                 <span style="font-size:0.8rem;color:var(--muted);">Download raw data for the selected filters:</span>
                 <button onclick="downloadStationTrendData('csv')" disabled id="st-dl-csv">⬇ CSV</button>
