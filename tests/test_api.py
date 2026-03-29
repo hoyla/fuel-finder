@@ -242,6 +242,55 @@ class TestOutliers:
             assert r["exclusion_reason"] in ("anomaly_flagged", "iqr_outlier")
 
 
+class TestStationPriceRecords:
+    def test_non_anomalous_iqr_outlier_is_shown_in_status(self, client, has_data):
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    WITH bounds AS (
+                        SELECT fp.fuel_type,
+                               PERCENTILE_CONT(0.25) WITHIN GROUP (
+                                   ORDER BY COALESCE(pc.corrected_price, fp.price)
+                               ) AS q1,
+                               PERCENTILE_CONT(0.75) WITHIN GROUP (
+                                   ORDER BY COALESCE(pc.corrected_price, fp.price)
+                               ) AS q3
+                        FROM fuel_prices fp
+                        LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+                        WHERE fp.anomaly_flags IS NULL
+                        GROUP BY fp.fuel_type
+                    )
+                    SELECT fp.node_id, fp.fuel_type, fp.id
+                    FROM fuel_prices fp
+                    LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+                    JOIN bounds b ON b.fuel_type = fp.fuel_type
+                    WHERE fp.anomaly_flags IS NULL
+                      AND (
+                          COALESCE(pc.corrected_price, fp.price) < b.q1 - 1.5 * (b.q3 - b.q1)
+                          OR COALESCE(pc.corrected_price, fp.price) > b.q3 + 1.5 * (b.q3 - b.q1)
+                      )
+                    ORDER BY fp.observed_at DESC
+                    LIMIT 1
+                """)
+                candidate = cur.fetchone()
+        finally:
+            conn.close()
+
+        if not candidate:
+            pytest.skip("No non-anomalous IQR outlier records found in fixture data")
+
+        node_id, fuel_type, fuel_price_id = candidate
+        resp = client.get(f"/api/prices/station/{node_id}/records?fuel_type={fuel_type}&limit=500")
+        assert resp.status_code == 200
+        payload = resp.json()
+
+        row = next((r for r in payload["records"] if r["fuel_price_id"] == fuel_price_id), None)
+        assert row is not None
+        assert row["effective_is_iqr_outlier"] is True
+        assert "iqr_outlier" in (row["effective_flags"] or [])
+
+
 class TestStaticFiles:
     def test_index_html(self, client):
         r = client.get("/")

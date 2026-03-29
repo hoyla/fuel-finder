@@ -1912,6 +1912,36 @@ def station_price_records(
         """, params + [limit])
         records = cur.fetchall()
 
+        # Compute per-fuel IQR fences from non-anomalous effective prices so we
+        # can surface which station records are excluded from averages as
+        # statistical outliers.
+        bounds_by_fuel = {}
+        fuel_types = sorted({r["fuel_type"] for r in records if r.get("fuel_type")})
+        if fuel_types:
+            placeholders = ", ".join(["%s"] * len(fuel_types))
+            cur.execute(f"""
+                SELECT fp.fuel_type,
+                       PERCENTILE_CONT(0.25) WITHIN GROUP (
+                           ORDER BY COALESCE(pc.corrected_price, fp.price)
+                       ) AS q1,
+                       PERCENTILE_CONT(0.75) WITHIN GROUP (
+                           ORDER BY COALESCE(pc.corrected_price, fp.price)
+                       ) AS q3
+                FROM fuel_prices fp
+                LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+                WHERE fp.anomaly_flags IS NULL
+                  AND fp.fuel_type IN ({placeholders})
+                GROUP BY fp.fuel_type
+            """, fuel_types)
+            for b in cur.fetchall():
+                q1 = float(b["q1"])
+                q3 = float(b["q3"])
+                iqr = q3 - q1
+                bounds_by_fuel[b["fuel_type"]] = {
+                    "lower_fence": q1 - 1.5 * iqr,
+                    "upper_fence": q3 + 1.5 * iqr,
+                }
+
         # Compute effective_flags: the current anomaly state of the effective
         # price (corrected or original).  For uncorrected records this is just
         # the anomaly_flags set at scrape time (kept accurate by the cascade
@@ -1919,8 +1949,19 @@ def station_price_records(
         # Status column reflects whether the correction actually resolved the
         # anomaly.
         for r in records:
+            effective_price = float(r["corrected_price"] if r["corrected_price"] is not None else r["original_price"])
+            bounds = bounds_by_fuel.get(r["fuel_type"])
+            is_iqr_outlier = bool(
+                bounds
+                and (
+                    effective_price < bounds["lower_fence"]
+                    or effective_price > bounds["upper_fence"]
+                )
+            )
+            r["effective_is_iqr_outlier"] = is_iqr_outlier
+
             if r["corrected_price"] is not None:
-                eff = float(r["corrected_price"])
+                eff = effective_price
                 flags = []
                 if eff < 80.0:
                     flags.append(f"price_below_floor:{eff}<80.0")
@@ -1931,9 +1972,14 @@ def station_price_records(
                     pct = abs(eff - float(prev)) / float(prev) * 100
                     if pct > 30.0:
                         flags.append(f"large_change:{pct:.1f}%_from_{prev}")
+                if not flags and is_iqr_outlier:
+                    flags.append("iqr_outlier")
                 r["effective_flags"] = flags or None
             else:
-                r["effective_flags"] = r["anomaly_flags"]
+                flags = list(r["anomaly_flags"] or [])
+                if not flags and is_iqr_outlier:
+                    flags.append("iqr_outlier")
+                r["effective_flags"] = flags or None
 
         cur.execute("""
             SELECT s.trading_name, s.brand_name, s.city, s.postcode
