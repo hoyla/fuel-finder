@@ -249,17 +249,13 @@ class TestStationPriceRecords:
             with conn.cursor() as cur:
                 cur.execute("""
                     WITH bounds AS (
-                        SELECT fp.fuel_type,
-                               PERCENTILE_CONT(0.25) WITHIN GROUP (
-                                   ORDER BY COALESCE(pc.corrected_price, fp.price)
-                               ) AS q1,
-                               PERCENTILE_CONT(0.75) WITHIN GROUP (
-                                   ORDER BY COALESCE(pc.corrected_price, fp.price)
-                               ) AS q3
-                        FROM fuel_prices fp
-                        LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
-                        WHERE fp.anomaly_flags IS NULL
-                        GROUP BY fp.fuel_type
+                        SELECT fuel_type,
+                               PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price) AS q1,
+                               PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price) AS q3
+                        FROM current_prices
+                        WHERE NOT temporary_closure
+                          AND NOT price_is_outlier
+                        GROUP BY fuel_type
                     )
                     SELECT fp.node_id, fp.fuel_type, fp.id
                     FROM fuel_prices fp
