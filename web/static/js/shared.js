@@ -438,10 +438,10 @@ function sortTable(table, colIdx, th) {
 }
 
 // ---------------------------------------------------------------------------
-// Navigate to Search with pre-filled filters
+// Clear all search filters
 // ---------------------------------------------------------------------------
-function navigateToSearch(filters) {
-    // Reset all search fields
+function clearSearchFilters() {
+    document.getElementById('search-fuel').value = 'E10';
     document.getElementById('search-postcode').value = '';
     document.getElementById('search-station').value = '';
     document.getElementById('search-brand').value = '';
@@ -454,6 +454,14 @@ function navigateToSearch(filters) {
     ['search-category-ms', 'search-country-ms', 'search-region-ms', 'search-rural-urban-ms'].forEach(resetMultiSelect);
     document.getElementById('search-district').value = '';
     document.getElementById('search-constituency').value = '';
+}
+
+// ---------------------------------------------------------------------------
+// Navigate to Search with pre-filled filters
+// ---------------------------------------------------------------------------
+function navigateToSearch(filters) {
+    // Reset all search fields
+    clearSearchFilters();
 
     // Set fuel type
     if (filters.fuel_type) {
