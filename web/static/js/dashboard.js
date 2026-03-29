@@ -6,6 +6,10 @@ let charts = {};
 function renderBarChart(canvasId, labels, values, label, colour) {
     if (charts[canvasId]) charts[canvasId].destroy();
     const ctx = document.getElementById(canvasId).getContext('2d');
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const padding = (maxVal - minVal) * 0.5 || 1;
+    const xMin = Math.floor(minVal - padding);
     charts[canvasId] = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -16,7 +20,7 @@ function renderBarChart(canvasId, labels, values, label, colour) {
             indexAxis: 'y',
             responsive: true,
             plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: false } }
+            scales: { x: { min: xMin } }
         }
     });
 }
@@ -199,6 +203,8 @@ async function loadDashboardCharts() {
     document.getElementById('heading-category').textContent = `Average price by forecourt type \u2013 ${fuelName}`;
     document.getElementById('heading-rural-urban').textContent = `Average price by rural/urban classification \u2013 ${fuelName}`;
     document.getElementById('heading-brand').textContent = `Cheapest brands \u2013 ${fuelName}`;
+    document.getElementById('heading-brand-expensive').textContent = `Most expensive brands \u2013 ${fuelName}`;
+    document.getElementById('heading-trend').textContent = `Price trend \u2013 ${fuelName}`;
     document.getElementById('heading-district-expensive').textContent = `Most expensive local authorities \u2013 ${fuelName}`;
     document.getElementById('heading-district-cheap').textContent = `Cheapest local authorities \u2013 ${fuelName}`;
 
@@ -217,13 +223,15 @@ async function loadDashboardCharts() {
     });
     if (charts['chart-category']) charts['chart-category'].destroy();
     const catCtx = document.getElementById('chart-category').getContext('2d');
+    const catValues = catData.map(c => c.avg_price);
+    const catPad = (Math.max(...catValues) - Math.min(...catValues)) * 0.5 || 1;
     charts['chart-category'] = new Chart(catCtx, {
         type: 'bar',
         data: {
             labels: catData.map(c => `${c.forecourt_type} (${c.station_count})`),
             datasets: [{
                 label: 'Avg pence/litre',
-                data: catData.map(c => c.avg_price),
+                data: catValues,
                 backgroundColor: catColours.map(c => c + '99'),
                 borderColor: catColours,
                 borderWidth: 1,
@@ -232,14 +240,53 @@ async function loadDashboardCharts() {
         options: {
             indexAxis: 'y', responsive: true,
             plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: false } }
+            scales: { x: { min: Math.floor(Math.min(...catValues) - catPad) } }
         }
     });
 
-    // Brand chart
+    // Brand chart (cheapest)
     const brandData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15`);
     renderBarChart('chart-brand', brandData.map(b => b.brand_name), brandData.map(b => b.avg_price),
         'Avg pence/litre', '#00703c');
+
+    // Brand chart (most expensive)
+    const brandExpData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15&order=desc`);
+    renderBarChart('chart-brand-expensive', brandExpData.map(b => b.brand_name), brandExpData.map(b => b.avg_price),
+        'Avg pence/litre', '#d4351c');
+
+    // Price trend chart (all data, daily)
+    const trendResp = await apiFetch(`/prices/history?fuel_type=${encodeURIComponent(fuelCode)}&days=365&granularity=daily`);
+    const trendData = (trendResp.data || []).map(d => ({ x: new Date(d.bucket), y: d.avg_price }));
+    if (charts['chart-dashboard-trend']) charts['chart-dashboard-trend'].destroy();
+    const trendCtx = document.getElementById('chart-dashboard-trend').getContext('2d');
+    charts['chart-dashboard-trend'] = new Chart(trendCtx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Avg pence/litre',
+                data: trendData,
+                borderColor: '#1d70b8',
+                backgroundColor: '#1d70b833',
+                fill: true, tension: 0.3,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#1d70b8',
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'day', tooltipFormat: 'd MMM yyyy', displayFormats: { day: 'd MMM' } },
+                    ticks: { maxRotation: 45 }
+                },
+                y: { beginAtZero: false }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
 
     // Rural/Urban chart
     const ruData = await apiFetch(`/prices/by-rural-urban?fuel_type=${encodeURIComponent(fuelCode)}`);
@@ -252,13 +299,15 @@ async function loadDashboardCharts() {
     });
     if (charts['chart-rural-urban']) charts['chart-rural-urban'].destroy();
     const ruCtx = document.getElementById('chart-rural-urban').getContext('2d');
+    const ruValues = ruData.map(r => r.avg_price);
+    const ruPad = (Math.max(...ruValues) - Math.min(...ruValues)) * 0.5 || 1;
     charts['chart-rural-urban'] = new Chart(ruCtx, {
         type: 'bar',
         data: {
             labels: ruData.map(r => `${r.unified_label || 'Unknown'} (${r.station_count})`),
             datasets: [{
                 label: 'Avg pence/litre',
-                data: ruData.map(r => r.avg_price),
+                data: ruValues,
                 backgroundColor: ruColours.map(c => c + '99'),
                 borderColor: ruColours,
                 borderWidth: 1,
@@ -267,7 +316,7 @@ async function loadDashboardCharts() {
         options: {
             indexAxis: 'y', responsive: true,
             plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: false } }
+            scales: { x: { min: Math.floor(Math.min(...ruValues) - ruPad) } }
         }
     });
 
@@ -290,6 +339,9 @@ async function loadDashboardCharts() {
         c => ({ fuel_type: fuelCode, category: c.forecourt_type, exclude_outliers: true }));
 
     addChartClickHandler('chart-brand', brandData,
+        b => ({ fuel_type: fuelCode, brand: b.brand_name, exclude_outliers: true }));
+
+    addChartClickHandler('chart-brand-expensive', brandExpData,
         b => ({ fuel_type: fuelCode, brand: b.brand_name, exclude_outliers: true }));
 
     addChartClickHandler('chart-rural-urban', ruData,
