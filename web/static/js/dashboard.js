@@ -204,7 +204,9 @@ async function loadDashboardCharts() {
     document.getElementById('heading-rural-urban').textContent = `Average price by rural/urban classification \u2013 ${fuelName}`;
     document.getElementById('heading-brand').textContent = `Cheapest brands \u2013 ${fuelName}`;
     document.getElementById('heading-brand-expensive').textContent = `Most expensive brands \u2013 ${fuelName}`;
-    document.getElementById('heading-trend').textContent = `Price trend \u2013 ${fuelName}`;
+    const trendHeading = document.getElementById('heading-trend');
+    trendHeading.textContent = `Price trend \u2013 ${fuelName}`;
+    trendHeading.title = 'Daily averages based on all observations. May differ slightly from the current snapshot shown in cards above.';
     document.getElementById('heading-district-expensive').textContent = `Most expensive local authorities \u2013 ${fuelName}`;
     document.getElementById('heading-district-cheap').textContent = `Cheapest local authorities \u2013 ${fuelName}`;
 
