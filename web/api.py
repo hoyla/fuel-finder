@@ -1810,27 +1810,45 @@ def outliers(
     with db.cursor() as cur:
         # Compute IQR bounds for context
         cur.execute("""
-            SELECT fuel_type,
-                   ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)::numeric, 1) AS q1,
-                   ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)::numeric, 1) AS q3,
-                   ROUND((PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
-                        - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price))::numeric, 1) AS iqr,
-                   ROUND((PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)
-                        - 1.5 * (PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
-                        - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)))::numeric, 1) AS lower_fence,
-                   ROUND((PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
-                        + 1.5 * (PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
-                        - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)))::numeric, 1) AS upper_fence,
-                   COUNT(*) AS total_stations
-            FROM current_prices
-            WHERE NOT temporary_closure
-              AND NOT price_is_outlier
-            GROUP BY fuel_type
-            ORDER BY fuel_type
+            WITH clean AS (
+                SELECT fuel_type, price
+                FROM current_prices
+                WHERE NOT temporary_closure
+                  AND NOT price_is_outlier
+                  AND anomaly_flags IS NULL
+            ),
+            bounds AS (
+                SELECT fuel_type,
+                       ROUND(PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)::numeric, 1) AS q1,
+                       ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)::numeric, 1) AS q3,
+                       ROUND((PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+                            - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price))::numeric, 1) AS iqr,
+                       ROUND((PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)
+                            - 1.5 * (PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+                            - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)))::numeric, 1) AS lower_fence,
+                       ROUND((PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+                            + 1.5 * (PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+                            - PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)))::numeric, 1) AS upper_fence,
+                       COUNT(*) AS total_stations
+                FROM clean
+                GROUP BY fuel_type
+            ),
+            outlier_counts AS (
+                SELECT fuel_type, COUNT(*) AS outlier_stations
+                FROM current_prices
+                WHERE NOT temporary_closure
+                  AND price_is_outlier
+                  AND anomaly_flags IS NULL
+                GROUP BY fuel_type
+            )
+            SELECT b.*, COALESCE(o.outlier_stations, 0) AS outlier_stations
+            FROM bounds b
+            LEFT JOIN outlier_counts o USING (fuel_type)
+            ORDER BY b.fuel_type
         """)
         bounds = {r["fuel_type"]: r for r in cur.fetchall()}
 
-        conditions = ["cp.price_is_outlier", "NOT cp.temporary_closure"]
+        conditions = ["cp.price_is_outlier", "NOT cp.temporary_closure", "cp.anomaly_flags IS NULL"]
         params: list = []
         if fuel_type:
             conditions.append("cp.fuel_type = %s")
@@ -1848,10 +1866,7 @@ def outliers(
                    cp.fuel_type, cp.fuel_name,
                    cp.price, cp.brand_name, cp.forecourt_type,
                    cp.anomaly_flags, cp.observed_at,
-                   CASE
-                       WHEN cp.anomaly_flags IS NOT NULL THEN 'anomaly_flagged'
-                       ELSE 'iqr_outlier'
-                   END AS exclusion_reason,
+                   'iqr_outlier' AS exclusion_reason,
                    fp_latest.price AS original_price,
                    pc.corrected_price
             FROM current_prices cp
@@ -1878,6 +1893,94 @@ def outliers(
         "limit": limit,
         "offset": offset,
     }
+
+
+@app.get("/api/admin/price-distribution")
+def price_distribution(
+    fuel_type: str = Query(...),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    """Price histogram (80 bins) split by outlier/clean status, with IQR fence values.
+
+    Anomaly-flagged prices are excluded entirely.  The remaining prices are
+    split into clean (within IQR fences) and outlier (outside fences).
+
+    Bin boundaries are computed from the visible window (lower_fence − IQR to
+    upper_fence + IQR) so all 80 bins span the region of interest rather than
+    the full price range which is dominated by extreme outliers.
+    Prices outside the window are counted in the edge bins.
+
+    IQR fences are computed from non-anomalous prices, matching the
+    dashboard's exclusion logic.
+    """
+    with db.cursor() as cur:
+        cur.execute("""
+            WITH fences AS (
+                SELECT
+                    fuel_type,
+                    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price) AS q1,
+                    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price) AS q3
+                FROM current_prices
+                WHERE fuel_type = %s AND NOT temporary_closure AND anomaly_flags IS NULL
+                GROUP BY fuel_type
+            ),
+            params AS (
+                SELECT
+                    q1,
+                    q3,
+                    q3 - q1 AS iqr,
+                    q1 - 1.5 * (q3 - q1) AS lower_fence,
+                    q3 + 1.5 * (q3 - q1) AS upper_fence,
+                    -- visible window: fence ± one IQR of padding
+                    (q1 - 1.5 * (q3 - q1)) - (q3 - q1) AS wmin,
+                    (q3 + 1.5 * (q3 - q1)) + (q3 - q1) AS wmax,
+                    ((q3 + 1.5 * (q3 - q1)) + (q3 - q1)
+                     - (q1 - 1.5 * (q3 - q1)) + (q3 - q1)) / 80.0 AS step
+                FROM fences
+            ),
+            buckets AS (
+                SELECT
+                    -- clamp to [1, 80] so edge prices fall into the end bins
+                    GREATEST(1, LEAST(80,
+                        width_bucket(cp.price, p.wmin, p.wmax + 0.001, 80)
+                    )) AS bucket,
+                    -- classify: outside fences = outlier, inside = clean
+                    CASE WHEN cp.price < p.lower_fence
+                              OR cp.price > p.upper_fence
+                         THEN 'outlier' ELSE 'clean' END AS status,
+                    COUNT(*) AS cnt
+                FROM current_prices cp, params p
+                WHERE cp.fuel_type = %s AND NOT cp.temporary_closure AND cp.anomaly_flags IS NULL
+                GROUP BY bucket, status
+            )
+            SELECT
+                ROUND((p.wmin + (b.bucket - 1) * p.step)::numeric, 2) AS bin_low,
+                COALESCE(SUM(b.cnt) FILTER (WHERE b.status = 'clean'), 0) AS clean,
+                COALESCE(SUM(b.cnt) FILTER (WHERE b.status = 'outlier'), 0) AS outlier,
+                ROUND(p.q1::numeric, 2) AS q1,
+                ROUND(p.iqr::numeric, 2) AS iqr,
+                ROUND(p.lower_fence::numeric, 2) AS lower_fence,
+                ROUND(p.upper_fence::numeric, 2) AS upper_fence
+            FROM buckets b, params p
+            GROUP BY b.bucket, p.wmin, p.step, p.q1, p.iqr, p.lower_fence, p.upper_fence
+            ORDER BY b.bucket
+        """, [fuel_type, fuel_type])
+        rows = cur.fetchall()
+    if not rows:
+        raise HTTPException(404, "No data for fuel type")
+    first = rows[0]
+    fences = {
+        "q1": float(first["q1"]),
+        "iqr": float(first["iqr"]),
+        "lower_fence": float(first["lower_fence"]),
+        "upper_fence": float(first["upper_fence"]),
+    }
+    bins = [
+        {"bin_low": float(r["bin_low"]), "clean": r["clean"], "outlier": r["outlier"]}
+        for r in rows
+    ]
+    return {"bins": bins, **fences}
 
 
 # ---------------------------------------------------------------------------
