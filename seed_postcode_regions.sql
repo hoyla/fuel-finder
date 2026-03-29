@@ -110,16 +110,16 @@ INSERT INTO postcode_regions (postcode_area, region, region_group) VALUES
     ('WA',  'North West', 'North'),
     ('WN',  'North West', 'North'),
 
-    -- Yorkshire and the Humber
-    ('BD',  'Yorkshire and the Humber', 'North'),
-    ('HD',  'Yorkshire and the Humber', 'North'),
-    ('HG',  'Yorkshire and the Humber', 'North'),
-    ('HU',  'Yorkshire and the Humber', 'North'),
-    ('HX',  'Yorkshire and the Humber', 'North'),
-    ('LS',  'Yorkshire and the Humber', 'North'),
-    ('S',   'Yorkshire and the Humber', 'North'),
-    ('WF',  'Yorkshire and the Humber', 'North'),
-    ('YO',  'Yorkshire and the Humber', 'North'),
+    -- Yorkshire and The Humber
+    ('BD',  'Yorkshire and The Humber', 'North'),
+    ('HD',  'Yorkshire and The Humber', 'North'),
+    ('HG',  'Yorkshire and The Humber', 'North'),
+    ('HU',  'Yorkshire and The Humber', 'North'),
+    ('HX',  'Yorkshire and The Humber', 'North'),
+    ('LS',  'Yorkshire and The Humber', 'North'),
+    ('S',   'Yorkshire and The Humber', 'North'),
+    ('WF',  'Yorkshire and The Humber', 'North'),
+    ('YO',  'Yorkshire and The Humber', 'North'),
 
     -- North East
     ('DH',  'North East', 'North'),
