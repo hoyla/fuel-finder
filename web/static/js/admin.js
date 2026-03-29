@@ -190,8 +190,23 @@ function _bindServerSort(tbodyId, keys, sortState, reloadFn) {
 // Data / Admin tab
 // ---------------------------------------------------------------------------
 const dataSections = ['report', 'aliases', 'categories', 'overrides', 'postcodes'];
+const DATA_SECTION_SUMMARIES = {
+    report: 'Shows how each raw brand is normalised (alias and override resolution), plus final brand/category classification and station counts.',
+    aliases: 'Maps raw source brand strings to canonical brand names so reporting and filtering stay consistent across spelling variations.',
+    categories: 'Assigns each canonical brand to a forecourt type used throughout dashboard and filter breakdowns.',
+    overrides: 'Applies per-station canonical brand fixes when one location needs a specific correction beyond global alias rules.',
+    postcodes: 'Highlights stations with postcode lookup gaps or suspect coordinates so you can patch location quality and rerun view refresh.',
+};
+
+function updateDataSectionSummary(active) {
+    const summary = document.getElementById('data-section-summary');
+    if (!summary) return;
+    summary.textContent = DATA_SECTION_SUMMARIES[active] || '';
+}
+
 function switchDataSection() {
     const active = document.getElementById('data-section').value;
+    updateDataSectionSummary(active);
     dataSections.forEach(s => {
         document.getElementById('data-' + s).style.display = s === active ? '' : 'none';
     });
