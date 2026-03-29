@@ -6,6 +6,10 @@ let charts = {};
 function renderBarChart(canvasId, labels, values, label, colour) {
     if (charts[canvasId]) charts[canvasId].destroy();
     const ctx = document.getElementById(canvasId).getContext('2d');
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const padding = (maxVal - minVal) * 0.5 || 1;
+    const xMin = Math.floor(minVal - padding);
     charts[canvasId] = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -16,7 +20,7 @@ function renderBarChart(canvasId, labels, values, label, colour) {
             indexAxis: 'y',
             responsive: true,
             plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: false } }
+            scales: { x: { min: xMin } }
         }
     });
 }
@@ -219,13 +223,15 @@ async function loadDashboardCharts() {
     });
     if (charts['chart-category']) charts['chart-category'].destroy();
     const catCtx = document.getElementById('chart-category').getContext('2d');
+    const catValues = catData.map(c => c.avg_price);
+    const catPad = (Math.max(...catValues) - Math.min(...catValues)) * 0.5 || 1;
     charts['chart-category'] = new Chart(catCtx, {
         type: 'bar',
         data: {
             labels: catData.map(c => `${c.forecourt_type} (${c.station_count})`),
             datasets: [{
                 label: 'Avg pence/litre',
-                data: catData.map(c => c.avg_price),
+                data: catValues,
                 backgroundColor: catColours.map(c => c + '99'),
                 borderColor: catColours,
                 borderWidth: 1,
@@ -234,7 +240,7 @@ async function loadDashboardCharts() {
         options: {
             indexAxis: 'y', responsive: true,
             plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: false } }
+            scales: { x: { min: Math.floor(Math.min(...catValues) - catPad) } }
         }
     });
 
@@ -244,9 +250,8 @@ async function loadDashboardCharts() {
         'Avg pence/litre', '#00703c');
 
     // Brand chart (most expensive)
-    const brandExpData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=500`);
-    const expensive15 = brandExpData.slice(-15).reverse();
-    renderBarChart('chart-brand-expensive', expensive15.map(b => b.brand_name), expensive15.map(b => b.avg_price),
+    const brandExpData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15&order=desc`);
+    renderBarChart('chart-brand-expensive', brandExpData.map(b => b.brand_name), brandExpData.map(b => b.avg_price),
         'Avg pence/litre', '#d4351c');
 
     // Price trend chart (all data, daily)
@@ -294,13 +299,15 @@ async function loadDashboardCharts() {
     });
     if (charts['chart-rural-urban']) charts['chart-rural-urban'].destroy();
     const ruCtx = document.getElementById('chart-rural-urban').getContext('2d');
+    const ruValues = ruData.map(r => r.avg_price);
+    const ruPad = (Math.max(...ruValues) - Math.min(...ruValues)) * 0.5 || 1;
     charts['chart-rural-urban'] = new Chart(ruCtx, {
         type: 'bar',
         data: {
             labels: ruData.map(r => `${r.unified_label || 'Unknown'} (${r.station_count})`),
             datasets: [{
                 label: 'Avg pence/litre',
-                data: ruData.map(r => r.avg_price),
+                data: ruValues,
                 backgroundColor: ruColours.map(c => c + '99'),
                 borderColor: ruColours,
                 borderWidth: 1,
@@ -309,7 +316,7 @@ async function loadDashboardCharts() {
         options: {
             indexAxis: 'y', responsive: true,
             plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: false } }
+            scales: { x: { min: Math.floor(Math.min(...ruValues) - ruPad) } }
         }
     });
 
@@ -334,7 +341,7 @@ async function loadDashboardCharts() {
     addChartClickHandler('chart-brand', brandData,
         b => ({ fuel_type: fuelCode, brand: b.brand_name, exclude_outliers: true }));
 
-    addChartClickHandler('chart-brand-expensive', expensive15,
+    addChartClickHandler('chart-brand-expensive', brandExpData,
         b => ({ fuel_type: fuelCode, brand: b.brand_name, exclude_outliers: true }));
 
     addChartClickHandler('chart-rural-urban', ruData,

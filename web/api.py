@@ -245,12 +245,14 @@ def prices_by_region(
 def prices_by_brand(
     fuel_type: str = Query("E10"),
     limit: int = Query(20, ge=1, le=100),
+    order: str = Query("asc"),
     db=Depends(get_db),
     _auth=Depends(require_auth),
 ):
     """Average price by brand for a given fuel type."""
+    sort_dir = "DESC" if order.lower() == "desc" else "ASC"
     with db.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT brand_name,
                    forecourt_type,
                    ROUND(AVG(price)::numeric, 1) AS avg_price,
@@ -264,7 +266,7 @@ def prices_by_brand(
               AND NOT price_is_outlier
             GROUP BY brand_name, forecourt_type
             HAVING COUNT(*) >= 3
-            ORDER BY avg_price
+            ORDER BY avg_price {sort_dir}
             LIMIT %s
         """, (fuel_type, limit))
         return cur.fetchall()
