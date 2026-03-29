@@ -115,7 +115,14 @@ async function loadOutliers(offset = 0) {
     body.innerHTML = data.outliers.map(r => {
         const reasonLabel = r.exclusion_reason === 'anomaly_flagged'
             ? (r.anomaly_flags || []).map(f => `<span class="tag">${escHtml(f)}</span>`).join(' ')
-            : '<span class="tag" style="background:#fff3cd;color:#856404;">outside IQR fence</span>';
+            : (() => {
+                const b = data.bounds[r.fuel_type];
+                if (b) {
+                    const dir = r.price < b.lower_fence ? `below ${ppl(b.lower_fence)} lower` : `above ${ppl(b.upper_fence)} upper`;
+                    return `<span class="tag" style="background:#fff3cd;color:#856404;">${dir} fence</span>`;
+                }
+                return '<span class="tag" style="background:#fff3cd;color:#856404;">outside IQR fence</span>';
+            })();
         const overrideHtml = r.corrected_price != null
             ? `<span style="font-size:0.78rem;color:var(--muted);">${ppl(r.original_price)} → ${ppl(r.corrected_price)}</span>`
             : '—';
