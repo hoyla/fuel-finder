@@ -1534,7 +1534,7 @@ def upsert_brand_alias(body: "BrandAliasBody", db=Depends(get_db), _auth=Depends
         return cur.fetchone()
 
 
-@app.delete("/api/admin/brand-aliases/{raw_brand_name}")
+@app.delete("/api/admin/brand-aliases/{raw_brand_name:path}")
 def delete_brand_alias(raw_brand_name: str, db=Depends(get_db), _auth=Depends(require_editor)):
     """Remove a brand alias."""
     with db.cursor() as cur:
@@ -1577,7 +1577,7 @@ def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=D
         return cur.fetchone()
 
 
-@app.delete("/api/admin/brand-categories/{canonical_brand}")
+@app.delete("/api/admin/brand-categories/{canonical_brand:path}")
 def delete_brand_category(canonical_brand: str, db=Depends(get_db), _auth=Depends(require_editor)):
     """Remove a brand category mapping (brand will default to Independent)."""
     with db.cursor() as cur:
