@@ -336,7 +336,7 @@ async function loadStationTrend() {
     const hampelNote = document.getElementById('st-hampel-note');
     if (hampelNote) {
         hampelNote.innerHTML = isSingle
-            ? 'Anomaly-flagged prices are excluded.'
+            ? 'Anomaly-flagged prices are excluded. All other prices are shown unfiltered — <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel smoothing</a> is only applied to multi-station aggregate charts.'
             : 'Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends.';
     }
 
