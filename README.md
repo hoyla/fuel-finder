@@ -4,7 +4,7 @@ Pulls snapshots from the [GOV.UK Fuel Finder API](https://www.developer.fuel-fin
 
 Designed to build a **historical price database** from an API that only provides live snapshots. Every row in `fuel_prices` represents a genuine price change, enabling time-series analysis across ~7,500 UK fuel stations.
 
-<img width="800" alt="fuel price tracking web UI" src="https://github.com/user-attachments/assets/b70ca4e8-d977-4bff-b877-6f78f1e159ab" />
+<img width="800" alt="fuel price tracking web UI" src="https://github.com/user-attachments/assets/7302c6ae-a34c-478b-a8c9-46e6f840bf88" />
 
 ## Quick start (local)
 
