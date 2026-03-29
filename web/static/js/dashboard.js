@@ -3,6 +3,12 @@
 // ---------------------------------------------------------------------------
 let charts = {};
 
+const FORECOURT_COLOURS = {
+    'Supermarket': '#00703c', 'Major Oil': '#1d70b8', 'Motorway': '#d4351c',
+    'Motorway Operator': '#f47738', 'Fuel Group': '#505a5f',
+    'Convenience': '#b58840', 'Independent': '#5694ca'
+};
+
 function renderBarChart(canvasId, labels, values, label, colour) {
     if (charts[canvasId]) charts[canvasId].destroy();
     const ctx = document.getElementById(canvasId).getContext('2d');
@@ -21,6 +27,35 @@ function renderBarChart(canvasId, labels, values, label, colour) {
             responsive: true,
             plugins: { legend: { display: false } },
             scales: { x: { min: xMin } }
+        }
+    });
+}
+
+function renderBrandChart(canvasId, data) {
+    if (charts[canvasId]) charts[canvasId].destroy();
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    const labels = data.map(b => `${b.brand_name} [${b.forecourt_type}]`);
+    const values = data.map(b => b.avg_price);
+    const colours = data.map(b => FORECOURT_COLOURS[b.forecourt_type] || '#999');
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const padding = (maxVal - minVal) * 0.5 || 1;
+    charts[canvasId] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Avg pence/litre',
+                data: values,
+                backgroundColor: colours.map(c => c + '99'),
+                borderColor: colours,
+                borderWidth: 1,
+            }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { min: Math.floor(minVal - padding) } }
         }
     });
 }
@@ -217,12 +252,7 @@ async function loadDashboardCharts() {
 
     // Category chart
     const catData = await apiFetch(`/prices/by-category?fuel_type=${encodeURIComponent(fuelCode)}`);
-    const catColours = catData.map(c => {
-        const m = { 'Supermarket':'#00703c', 'Major Oil':'#1d70b8', 'Motorway':'#d4351c',
-                    'Motorway Operator':'#f47738', 'Fuel Group':'#505a5f',
-                    'Convenience':'#b58840', 'Independent':'#5694ca' };
-        return m[c.forecourt_type] || '#999';
-    });
+    const catColours = catData.map(c => FORECOURT_COLOURS[c.forecourt_type] || '#999');
     if (charts['chart-category']) charts['chart-category'].destroy();
     const catCtx = document.getElementById('chart-category').getContext('2d');
     const catValues = catData.map(c => c.avg_price);
@@ -248,13 +278,11 @@ async function loadDashboardCharts() {
 
     // Brand chart (cheapest)
     const brandData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15`);
-    renderBarChart('chart-brand', brandData.map(b => b.brand_name), brandData.map(b => b.avg_price),
-        'Avg pence/litre', '#00703c');
+    renderBrandChart('chart-brand', brandData);
 
     // Brand chart (most expensive)
     const brandExpData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15&order=desc`);
-    renderBarChart('chart-brand-expensive', brandExpData.map(b => b.brand_name), brandExpData.map(b => b.avg_price),
-        'Avg pence/litre', '#d4351c');
+    renderBrandChart('chart-brand-expensive', brandExpData);
 
     // Price trend chart (all data, daily)
     const trendResp = await apiFetch(`/prices/history?fuel_type=${encodeURIComponent(fuelCode)}&days=365&granularity=daily`);
