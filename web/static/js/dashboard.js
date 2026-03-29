@@ -268,8 +268,8 @@ async function loadDashboardCharts() {
                 borderColor: '#1d70b8',
                 backgroundColor: '#1d70b833',
                 fill: true, tension: 0.3,
-                pointRadius: 3,
-                pointHoverRadius: 6,
+                pointRadius: 1.5,
+                pointHoverRadius: 4,
                 pointBackgroundColor: '#1d70b8',
                 borderWidth: 2,
             }]
