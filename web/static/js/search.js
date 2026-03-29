@@ -503,6 +503,12 @@ async function loadPriceEditorRecords() {
         // Status: current effective anomaly state
         const statusHtml = hasEffFlags
             ? effFlags.map(f => {
+                const iqrMatch = f.match(/^current_iqr_outlier:([\d.]+)([<>])([\d.]+)$/);
+                if (iqrMatch) {
+                    const fence = iqrMatch[3];
+                    const label = iqrMatch[2] === '<' ? `below ${fence}p lower fence` : `above ${fence}p upper fence`;
+                    return `<span class="tag" style="background:#fff3cd;color:#856404;">${label}</span>`;
+                }
                 if (f === 'current_iqr_outlier') return '<span class="tag" style="background:#fff3cd;color:#856404;">outside current IQR fence</span>';
                 return '<span class="tag">' + escHtml(f) + '</span>';
             }).join(' ')

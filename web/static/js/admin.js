@@ -114,9 +114,20 @@ async function loadOutliers(offset = 0) {
     }
     const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
     body.innerHTML = data.outliers.map(r => {
-        const reasonLabel = r.exclusion_reason === 'anomaly_flagged'
-            ? (r.anomaly_flags || []).map(f => `<span class="tag">${escHtml(f)}</span>`).join(' ')
-            : '<span class="tag" style="background:#fff3cd;color:#856404;">outside current IQR fence</span>';
+        let reasonLabel;
+        if (r.exclusion_reason === 'anomaly_flagged') {
+            reasonLabel = (r.anomaly_flags || []).map(f => `<span class="tag">${escHtml(f)}</span>`).join(' ');
+        } else {
+            // Show the actual fence the price breached
+            const b = data.bounds[r.fuel_type];
+            if (b && r.price < b.lower_fence) {
+                reasonLabel = `<span class="tag" style="background:#fff3cd;color:#856404;">below ${ppl(b.lower_fence)} lower fence</span>`;
+            } else if (b && r.price > b.upper_fence) {
+                reasonLabel = `<span class="tag" style="background:#fff3cd;color:#856404;">above ${ppl(b.upper_fence)} upper fence</span>`;
+            } else {
+                reasonLabel = '<span class="tag" style="background:#fff3cd;color:#856404;">outside current IQR fence</span>';
+            }
+        }
         const overrideHtml = r.corrected_price != null
             ? `<span style="font-size:0.78rem;color:var(--muted);">${ppl(r.original_price)} → ${ppl(r.corrected_price)}</span>`
             : '—';
