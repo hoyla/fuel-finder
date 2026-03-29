@@ -21,6 +21,18 @@
 </header>
 
 <main>
+    <p>A historical UK fuel price tracker built on the GOV.UK Fuel Finder API. Prices from approximately 7,500 stations are scraped every 30 minutes and stored to enable analysis the live API can't provide.</p>
+
+    <ul style="margin: 1rem 0 1.5rem 1.5rem; line-height: 1.8;">
+        <li><strong>Live dashboard</strong> — current prices by region, brand and forecourt category</li>
+        <li><strong>Price history</strong> — trends over time for individual stations or filtered groups</li>
+        <li><strong>Interactive map</strong> — colour-coded price distribution across the UK</li>
+        <li><strong>Station search</strong> — filter by brand, location, postcode area, rural/urban classification and more</li>
+        <li><strong>Anomaly &amp; outlier detection</strong> — suspicious or statistically extreme prices flagged and excluded from averages</li>
+        <li><strong>Price correction tools</strong> — editors can review and correct misreported values <em style="color:var(--muted,#666)">(editor/admin only)</em></li>
+        <li><strong>REST API</strong> — all data available programmatically; see the <a href="/docs/api">API reference</a></li>
+    </ul>
+
     <h2>How it works</h2>
 
     <p>This tool gathers data from the government's <a href="https://www.find-fuel-prices.service.gov.uk/">consumer fuel price finder</a> — and stores it in a PostgreSQL database to build a <strong>historical price record</strong> that the API itself doesn't provide.</p>
