@@ -66,12 +66,26 @@ async function loadMapPrices() {
         disableClusteringAtZoom: 12,
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
+        iconCreateFunction: function (cl) {
+            const children = cl.getAllChildMarkers();
+            let sum = 0;
+            for (const m of children) sum += m.options.price;
+            const avg = sum / children.length;
+            const bg = priceColour(avg);
+            const count = children.length;
+            const size = count < 10 ? 36 : count < 100 ? 44 : 52;
+            return L.divIcon({
+                html: `<div style="background:${bg};width:${size}px;height:${size}px;" class="price-cluster"><span>${count}</span></div>`,
+                className: 'price-cluster-icon',
+                iconSize: L.point(size, size),
+            });
+        },
     });
 
     for (const d of data) {
         const marker = L.circleMarker([d.latitude, d.longitude], {
             radius: 5, fillColor: priceColour(d.price), color: '#333',
-            weight: 0.5, fillOpacity: 0.85,
+            weight: 0.5, fillOpacity: 0.85, price: d.price,
         }).bindPopup(`
             <strong><a href="#" class="station-link" data-node="${escHtml(d.node_id)}" data-name="${escHtml(d.trading_name)}" data-brand="${escHtml(d.brand_name || '')}" data-city="${escHtml(d.city || '')}" data-postcode="${escHtml(d.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(d.trading_name)}</a></strong><br>
             ${escHtml(d.brand_name) || ''} · ${escHtml(d.forecourt_type) || 'Independent'}<br>

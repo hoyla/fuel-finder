@@ -115,6 +115,17 @@
 
         /* Map */
         #map { height: calc(100vh - 220px); min-height: 400px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 1.5rem; position: relative; }
+
+        /* Price-coloured cluster icons (override default MarkerCluster heat colours) */
+        .price-cluster-icon { background: transparent !important; }
+        .price-cluster {
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            border: 2px solid rgba(255,255,255,0.85); box-shadow: 0 0 4px rgba(0,0,0,0.3);
+        }
+        .price-cluster span {
+            color: #fff; font-weight: 700; font-size: 0.7rem; text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+
         .map-legend {
             position: absolute; bottom: 20px; right: 10px; z-index: 1000;
             background: rgba(255,255,255,0.92); padding: 8px 12px; border-radius: 6px;
