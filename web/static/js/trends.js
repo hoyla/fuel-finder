@@ -80,8 +80,10 @@ async function loadTrends() {
         const firstKey = Object.keys(allData)[0];
         lastTrendData = firstKey ? allData[firstKey] : [];
         const hasData = datasets.length > 0;
-        document.getElementById('trend-dl-csv').disabled = !hasData;
-        document.getElementById('trend-dl-json').disabled = !hasData;
+        document.getElementById('trend-dl-csv').disabled = true;
+        document.getElementById('trend-dl-json').disabled = true;
+        document.getElementById('trend-dl-csv').title = 'Select a single fuel type to export raw data';
+        document.getElementById('trend-dl-json').title = 'Select a single fuel type to export raw data';
         document.getElementById('trend-heading').textContent =
             hourly ? 'Hourly average price — all fuel types' : 'Daily average price — all fuel types';
         document.getElementById('trend-granularity-note').textContent = hourly
@@ -125,6 +127,8 @@ async function loadTrends() {
     lastTrendData = data;
     document.getElementById('trend-dl-csv').disabled = !data.length;
     document.getElementById('trend-dl-json').disabled = !data.length;
+    document.getElementById('trend-dl-csv').title = '';
+    document.getElementById('trend-dl-json').title = '';
     const hourly = resp.granularity === 'hourly';
     document.getElementById('trend-heading').textContent =
         hourly ? 'Hourly average price' : 'Daily average price';

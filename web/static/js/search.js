@@ -46,10 +46,13 @@ async function doSearch(offset = 0) {
         <button ${offset + 50 >= data.total ? 'disabled' : ''} onclick="doSearch(${offset + 50})">Next →</button>
     `;
 
+    const allFuelsSearch = !document.getElementById('search-fuel').value;
     document.getElementById('search-dl-csv').disabled = !data.total;
     document.getElementById('search-dl-json').disabled = !data.total;
-    document.getElementById('search-hist-dl-csv').disabled = !data.total;
-    document.getElementById('search-hist-dl-json').disabled = !data.total;
+    document.getElementById('search-hist-dl-csv').disabled = !data.total || allFuelsSearch;
+    document.getElementById('search-hist-dl-json').disabled = !data.total || allFuelsSearch;
+    document.getElementById('search-hist-dl-csv').title = allFuelsSearch ? 'Select a single fuel type to export historical data' : '';
+    document.getElementById('search-hist-dl-json').title = allFuelsSearch ? 'Select a single fuel type to export historical data' : '';
     _syncSortIndicators('search-body', searchSort, SEARCH_SORT_KEYS);
 }
 
@@ -338,8 +341,10 @@ async function loadStationTrend() {
         const hourly = granularity === 'hourly';
         const hasData = datasets.length > 0;
         lastStationTrendData = [];
-        document.getElementById('st-dl-csv').disabled = !hasData;
-        document.getElementById('st-dl-json').disabled = !hasData;
+        document.getElementById('st-dl-csv').disabled = true;
+        document.getElementById('st-dl-json').disabled = true;
+        document.getElementById('st-dl-csv').title = 'Select a single fuel type to export raw data';
+        document.getElementById('st-dl-json').title = 'Select a single fuel type to export raw data';
         const suffix = ' — all fuel types';
         document.getElementById('st-trend-heading').textContent =
             isSingle ? (hourly ? 'Hourly price' + suffix : 'Daily price' + suffix)
@@ -393,7 +398,8 @@ async function loadStationTrend() {
 
     document.getElementById('st-dl-csv').disabled = !data.length;
     document.getElementById('st-dl-json').disabled = !data.length;
-
+    document.getElementById('st-dl-csv').title = '';
+    document.getElementById('st-dl-json').title = '';
     const hourly = resp.granularity === 'hourly';
     document.getElementById('st-trend-heading').textContent =
         isSingle ? (hourly ? 'Hourly price' : 'Daily price')
