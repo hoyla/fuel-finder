@@ -343,6 +343,33 @@ Prices excluded as statistical outliers from the current snapshot, with IQR boun
 
 `original_price` and `corrected_price` are included when a correction exists, allowing the UI to show what was changed.
 
+### `GET /api/admin/price-distribution`
+
+Price histogram (80 bins) split by outlier/clean status, with IQR fence values. Used by the Statistical Outliers page to render the IQR distribution chart. Anomaly-flagged prices are excluded entirely; remaining prices are split into clean (within IQR fences) and outlier (outside fences).
+
+**Auth:** `require_auth`
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fuel_type` | string | — | **Required.** Fuel type to analyse |
+
+**Response:**
+```json
+{
+  "q1": 146.9,
+  "q3": 153.9,
+  "iqr": 7.0,
+  "lower_fence": 136.4,
+  "upper_fence": 164.4,
+  "bins": [
+    { "bin_min": 129.4, "bin_max": 130.1, "clean": 0, "outlier": 2 },
+    { "bin_min": 130.1, "bin_max": 130.8, "clean": 0, "outlier": 1 }
+  ]
+}
+```
+
+Bin boundaries span from `lower_fence − IQR` to `upper_fence + IQR`, focusing on the region of interest. Prices outside this window are counted in the edge bins.
+
 ### `GET /api/prices/station/{node_id}/records`
 
 Raw individual price records for a station, with any corrections and computed effective flags. Used by the price editor.

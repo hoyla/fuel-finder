@@ -14,7 +14,7 @@ UK fuel price tracker. Scrapes the GOV.UK Fuel Finder API, stores price changes 
 - **web/static/api.html** — on-site API reference
 - **web/static/about.html** — methodology page
 - **scrape.py** — scraper orchestrator (runs on Lambda)
-- **migrate.py** — numbered SQL migration runner (migrations/ directory, currently 001–015)
+- **migrate.py** — numbered SQL migration runner (migrations/ directory, currently 001–016)
 - **docker-compose.yml** — postgres + web containers for local dev
 
 ## Three-tier auth model

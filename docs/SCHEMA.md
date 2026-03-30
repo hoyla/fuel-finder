@@ -100,6 +100,7 @@ Maps UK postcode area prefixes (1-2 letters) to ONS-style regions. Used for regi
 | `postcode_area` | `TEXT PK` | 1-2 letter prefix, e.g. `SW`, `M`, `BT` |
 | `region` | `TEXT` | ONS-style region: London, North West, Scotland, etc. |
 | `region_group` | `TEXT` | Broader grouping: North, Midlands, South, London, Wales, Scotland, Northern Ireland |
+| `country` | `TEXT` | Derived from region: England, Scotland, Wales, Northern Ireland. Added in migration 016 |
 
 ### `fuel_type_labels`
 
@@ -173,7 +174,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `forecourt_type` | `brand_categories` | `Motorway` if motorway flag set, else from `brand_categories`, else `Independent` |
 | `city` | `stations` | |
 | `county` | `stations` | |
-| `country` | `stations` | |
+| `country` | Resolved | Fallback chain: postcodes.io country → `postcode_regions.country` → `'Other/Unknown'` |
 | `postcode` | `stations` | |
 | `region` | `postcode_regions` | e.g. London, North West, Scotland |
 | `region_group` | `postcode_regions` | e.g. North, South, Midlands, London |

@@ -195,8 +195,9 @@ fuel-finder-scraper/
 │   ├── 011_outlier_exclusion.sql
 │   ├── 012_performance_indexes.sql
 │   ├── 013_price_corrections.sql
-│   └── 014_current_prices_corrections.sql
-│   └── 015_trim_brand_names.sql
+│   ├── 014_current_prices_corrections.sql
+│   ├── 015_trim_brand_names.sql
+│   └── 016_normalise_geography.sql
 ├── seed_brand_aliases.sql    # Legacy seed file (superseded by migrations)
 ├── seed_postcode_regions.sql # Legacy seed file (superseded by migrations)
 ├── seed_fuel_types.sql       # Legacy seed file (superseded by migrations)
@@ -223,7 +224,7 @@ fuel-finder-scraper/
 │       │   └── app.js        # Initialisation
 │       ├── api.html          # API documentation page
 │       └── about.html        # How the scraper works
-├── tests/                    # pytest test suite (151 tests)
+├── tests/                    # pytest test suite (152 tests)
 │   ├── conftest.py
 │   ├── test_anomaly_detection.py
 │   ├── test_api.py
