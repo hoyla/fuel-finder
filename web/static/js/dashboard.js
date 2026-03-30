@@ -114,11 +114,12 @@ async function loadDashboard() {
             ? `<div class="sub"><a href="#" class="outlier-link" data-fuel="${ft.fuel_type}" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${ft.outliers_excluded} outlier${ft.outliers_excluded === 1 ? '' : 's'} excluded</a></div>`
             : '';
         cards.innerHTML += `
-            <div class="card">
+            <div class="card" data-fuel-price="${ft.fuel_type}">
                 <div class="label">${ft.fuel_name || ft.fuel_type} average price</div>
                 <div class="value">${ppl(ft.avg_price)}</div>
+                <canvas class="sparkline" data-fuel="${ft.fuel_type}" width="160" height="32"></canvas>
                 <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)}</div>
-                <div class="sub">${ft.station_count} stations</div>
+                <div class="sub">${ft.station_count.toLocaleString()} stations</div>
                 ${outlierNote}
             </div>
         `;
@@ -128,12 +129,32 @@ async function loadDashboard() {
         (data.by_fuel_type || []).map(ft => [ft.fuel_type, Number(ft.avg_price)])
     );
 
-    const [e10Past, b7Past] = await Promise.all([
+    const [e10Baseline, b7Baseline] = await Promise.all([
         fetchThirtyDaysAgoBaseline('E10'),
         fetchThirtyDaysAgoBaseline('B7_STANDARD'),
     ]);
-    cards.innerHTML += renderThirtyDayChangeCard('E10', 'Unleaded (E10)<br>30-day change', summaryNowByFuel.E10, e10Past);
-    cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel (B7)<br>30-day change', summaryNowByFuel.B7_STANDARD, b7Past);
+    const e10Past = e10Baseline?.price ?? null;
+    const e10Date = e10Baseline?.date ?? null;
+    const b7Past = b7Baseline?.price ?? null;
+    const b7Date = b7Baseline?.date ?? null;
+    cards.innerHTML += renderThirtyDayChangeCard('E10', 'Unleaded (E10)<br>30-day change', summaryNowByFuel.E10, e10Past, e10Date);
+    cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel (B7)<br>30-day change', summaryNowByFuel.B7_STANDARD, b7Past, b7Date);
+
+    // Wire up 30-day change cards to navigate to Trends tab
+    document.querySelectorAll('[data-fuel-change]').forEach(card => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', e => {
+            if (e.target.closest('a')) return;
+            const fuel = card.dataset.fuelChange;
+            const sel = document.getElementById('trend-fuel');
+            if (sel.querySelector(`option[value="${fuel}"]`)) sel.value = fuel;
+            switchTab('trends');
+            loadTrends();
+        });
+    });
+
+    // Load sparklines for fuel price cards
+    loadSparklines(data.by_fuel_type.map(ft => ft.fuel_type));
 
     // Wire up outlier links to jump to the anomalies → outliers sub-section
     document.querySelectorAll('.outlier-link').forEach(link => {
@@ -164,7 +185,7 @@ async function loadDashboard() {
     await loadDashboardCharts();
 }
 
-function renderThirtyDayChangeCard(fuelCode, title, priceNow, price30DaysAgo) {
+function renderThirtyDayChangeCard(fuelCode, title, priceNow, price30DaysAgo, baselineDate) {
     if (priceNow == null || price30DaysAgo == null || !isFinite(priceNow) || !isFinite(price30DaysAgo) || price30DaysAgo <= 0) {
         return `
             <div class="card">
@@ -188,12 +209,18 @@ function renderThirtyDayChangeCard(fuelCode, title, priceNow, price30DaysAgo) {
         arrow = '↓';
     }
 
+    let dateLabel = '30 days ago';
+    if (baselineDate) {
+        const d = new Date(baselineDate + 'T00:00:00');
+        dateLabel = d.toLocaleDateString('en-GB', { month: 'long', day: 'numeric' });
+    }
+
     const pct = Math.abs(pctChange).toFixed(1) + '%';
     return `
         <div class="card" data-fuel-change="${fuelCode}">
             <div class="label">${title}</div>
             <div class="value change-value ${trendClass}"><span class="change-arrow">${arrow}</span><span>${pct}</span></div>
-            <div class="sub">30 days ago: ${ppl(price30DaysAgo)}</div>
+            <div class="sub">${dateLabel}: ${ppl(price30DaysAgo)}</div>
             <div class="sub">Now: ${ppl(priceNow)}</div>
         </div>
     `;
@@ -224,10 +251,44 @@ async function fetchThirtyDaysAgoBaseline(fuelCode) {
         });
 
         const baseline = Number(points[0].avg_price);
-        return isFinite(baseline) ? baseline : null;
+        const bucketDate = points[0].bucket;
+        return isFinite(baseline) ? { price: baseline, date: bucketDate } : null;
     } catch {
         return null;
     }
+}
+
+async function loadSparklines(fuelCodes) {
+    const fmt = d => d.toISOString().slice(0, 10);
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    const promises = fuelCodes.map(async code => {
+        try {
+            const resp = await apiFetch(
+                `/prices/history?fuel_type=${encodeURIComponent(code)}&start_date=${fmt(start)}&end_date=${fmt(end)}&granularity=daily`
+            );
+            const points = (resp.data || []).filter(d => d.avg_price != null).map(d => d.avg_price);
+            const canvas = document.querySelector(`.sparkline[data-fuel="${code}"]`);
+            if (!canvas || points.length < 2) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const min = Math.min(...points), max = Math.max(...points);
+            const range = max - min || 1;
+            ctx.clearRect(0, 0, w, h);
+            ctx.beginPath();
+            points.forEach((v, i) => {
+                const x = (i / (points.length - 1)) * w;
+                const y = h - ((v - min) / range) * (h - 4) - 2;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            const trending = points[points.length - 1] > points[0];
+            ctx.strokeStyle = trending ? 'var(--red, #d4351c)' : 'var(--green, #00703c)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        } catch { /* ignore */ }
+    });
+    await Promise.all(promises);
 }
 
 async function loadDashboardCharts() {
