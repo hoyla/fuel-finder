@@ -548,8 +548,8 @@ async function fetchAllFuelTrends(urlBuilder, hourly) {
             backgroundColor: colour + '33',
             fill: false,
             tension: 0.3,
-            pointRadius: isHourly ? 0.5 : 3,
-            pointHoverRadius: isHourly ? 3 : 6,
+            pointRadius: isHourly ? 1 : 3,
+            pointHoverRadius: isHourly ? 4 : 6,
             pointBackgroundColor: colour,
             borderWidth: isHourly ? 1.5 : 2,
         });
