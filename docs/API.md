@@ -158,7 +158,7 @@ Price history for a single station.
 | `days` | int | `30` | Days back (1–365; readonly capped at 90) |
 | `start_date` | string | — | Start date (YYYY-MM-DD) |
 | `end_date` | string | — | End date (YYYY-MM-DD) |
-| `granularity` | string | auto | `hourly` or `daily` (auto: hourly ≤30d) |
+| `granularity` | string | `hourly` | `hourly` or `daily`. Defaults to hourly |
 
 **Response:**
 ```json
@@ -173,7 +173,7 @@ Price history for a single station.
 
 ### `GET /api/prices/history`
 
-Average price over time. Uses **hourly** granularity for ranges of 30 days or fewer, **daily** for longer ranges.
+Average price over time. Uses **hourly** granularity for ranges under 30 days, **daily** for 30 days or longer. Daily queries use the pre-aggregated `daily_prices` table for faster response times.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -181,7 +181,7 @@ Average price over time. Uses **hourly** granularity for ranges of 30 days or fe
 | `days` | int | `30` | Days back (1–365; readonly capped at 90) |
 | `start_date` | string | — | Start date (YYYY-MM-DD) |
 | `end_date` | string | — | End date (YYYY-MM-DD) |
-| `granularity` | string | auto | `hourly` or `daily` (auto: hourly ≤30d) |
+| `granularity` | string | auto | `hourly` or `daily`. Auto: hourly for <30 days, daily for ≥30 days |
 | `region` | string | — | Region filter (comma-separated for multiple) |
 | `country` | string | — | Country filter (comma-separated) |
 | `rural_urban` | string | — | Rural/urban classification filter (comma-separated) |
@@ -246,7 +246,7 @@ Flexible search/filter endpoint with pagination.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `fuel_type` | string | `E10` | Fuel type code |
+| `fuel_type` | string | — | Fuel type code. Omit to search across all fuel types |
 | `postcode` | string | — | Postcode prefix filter (e.g. `SW1`, `M`) |
 | `station` | string | — | Trading name substring filter |
 | `brand` | string | — | Brand name substring filter |
@@ -589,4 +589,4 @@ Manual overrides for misreported prices. Original data in `fuel_prices` is never
 
 Each row: `{ corrected_at, original_price, corrected_price, reason, corrected_by, trading_name, city, fuel_type, fuel_name, observed_at }`
 
-Creating or deleting a correction automatically refreshes the materialised view.
+Creating or deleting a correction automatically refreshes the `current_prices` materialised view and updates affected rows in the `daily_prices` summary table.
