@@ -562,7 +562,8 @@ async function loadFuelTypes() {
     for (const sel of document.querySelectorAll('#dashboard-fuel, #map-fuel, #trend-fuel, #search-fuel')) {
         sel.innerHTML = '';
         // Add "All fuel types" for search and trend selectors
-        if (sel.id === 'search-fuel' || sel.id === 'trend-fuel') {
+        const hasAll = sel.id === 'search-fuel' || sel.id === 'trend-fuel';
+        if (hasAll) {
             const allOpt = document.createElement('option');
             allOpt.value = ''; allOpt.textContent = 'All fuel types';
             sel.appendChild(allOpt);
@@ -571,7 +572,7 @@ async function loadFuelTypes() {
             const o = document.createElement('option');
             o.value = ft.fuel_type_code;
             o.textContent = ft.fuel_name || ft.fuel_type_code;
-            if (ft.fuel_type_code === 'E10') o.selected = true;
+            if (ft.fuel_type_code === 'E10' && !hasAll) o.selected = true;
             sel.appendChild(o);
         });
     }
