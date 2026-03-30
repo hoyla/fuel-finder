@@ -496,15 +496,83 @@ function navigateToSearch(filters) {
 // ---------------------------------------------------------------------------
 let fuelTypes = [];
 
+// Colours for multi-fuel trend charts
+const FUEL_COLOURS = {
+    E10:         '#5694CA',  // light blue
+    E5:          '#1d4f91',  // dark blue
+    B7_STANDARD: '#e07070',  // light red-pink
+    B7_PREMIUM:  '#8b3a3a',  // dark red-brown
+    B10:         '#6fbf73',  // light green
+    HVO:         '#2e7d32',  // dark green
+};
+
+function fuelColour(code) {
+    return FUEL_COLOURS[code] || '#888';
+}
+
+function fuelLabel(code) {
+    const ft = fuelTypes.find(f => f.fuel_type_code === code);
+    return ft ? (ft.fuel_name || code) : code;
+}
+
+/**
+ * Fetch history for all fuel types in parallel, returning Chart.js datasets.
+ * @param {function} urlBuilder - fn(fuelCode) returning the API URL
+ * @param {boolean} hourly - whether the data is hourly granularity
+ * @returns {Promise<{datasets: Array, granularity: string, allData: Object}>}
+ */
+async function fetchAllFuelTrends(urlBuilder, hourly) {
+    const results = await Promise.all(
+        fuelTypes.map(async ft => {
+            const resp = await apiFetch(urlBuilder(ft.fuel_type_code));
+            return { code: ft.fuel_type_code, resp };
+        })
+    );
+    // Determine granularity from first non-empty response
+    let granularity = hourly ? 'hourly' : 'daily';
+    for (const r of results) {
+        if (r.resp.granularity) { granularity = r.resp.granularity; break; }
+    }
+    const isHourly = granularity === 'hourly';
+    const datasets = [];
+    const allData = {};
+    for (const { code, resp } of results) {
+        const data = resp.data || [];
+        if (!data.length) continue;
+        allData[code] = data;
+        const colour = fuelColour(code);
+        datasets.push({
+            label: fuelLabel(code),
+            data: data.map(d => ({ x: new Date(d.bucket), y: d.avg_price })),
+            borderColor: colour,
+            backgroundColor: colour + '33',
+            fill: false,
+            tension: 0.3,
+            pointRadius: isHourly ? 1 : 3,
+            pointHoverRadius: isHourly ? 4 : 6,
+            pointBackgroundColor: colour,
+            borderWidth: isHourly ? 1.5 : 2,
+        });
+    }
+    return { datasets, granularity, allData };
+}
+
 async function loadFuelTypes() {
     fuelTypes = await apiFetch('/fuel-types');
     for (const sel of document.querySelectorAll('#dashboard-fuel, #map-fuel, #trend-fuel, #search-fuel')) {
         sel.innerHTML = '';
+        // Add "All fuel types" for search and trend selectors
+        const hasAll = sel.id === 'search-fuel' || sel.id === 'trend-fuel';
+        if (hasAll) {
+            const allOpt = document.createElement('option');
+            allOpt.value = ''; allOpt.textContent = 'All fuel types';
+            sel.appendChild(allOpt);
+        }
         fuelTypes.forEach(ft => {
             const o = document.createElement('option');
             o.value = ft.fuel_type_code;
             o.textContent = ft.fuel_name || ft.fuel_type_code;
-            if (ft.fuel_type_code === 'E10') o.selected = true;
+            if (ft.fuel_type_code === 'E10' && !hasAll) o.selected = true;
             sel.appendChild(o);
         });
     }

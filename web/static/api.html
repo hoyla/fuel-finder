@@ -149,7 +149,7 @@
                 <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365; readonly capped at 90)</td></tr>
                 <tr><td><code>start_date</code></td><td>string</td><td>&mdash;</td><td>Start date (YYYY-MM-DD)</td></tr>
                 <tr><td><code>end_date</code></td><td>string</td><td>&mdash;</td><td>End date (YYYY-MM-DD)</td></tr>
-                <tr><td><code>granularity</code></td><td>string</td><td>auto</td><td><code>hourly</code> or <code>daily</code> (auto: hourly &le;30d)</td></tr>
+                <tr><td><code>granularity</code></td><td>string</td><td>hourly</td><td><code>hourly</code> or <code>daily</code>. Defaults to hourly</td></tr>
             </tbody>
         </table>
         <p>Returns: <code>{ granularity, station: { trading_name, brand_name, city, postcode }, data: [ { bucket, avg_price } ] }</code></p>
@@ -157,7 +157,7 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/prices/history</div>
-        <div class="desc">Average price over time. Uses hourly granularity for &le;30 days, daily for longer. Supports location, brand, and search-style filters for aggregate trends.</div>
+        <div class="desc">Average price over time. Uses hourly granularity for &lt;30 days, daily for &ge;30 days. Daily queries use the pre-aggregated daily_prices table. Supports location, brand, and search-style filters for aggregate trends.</div>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
@@ -165,7 +165,7 @@
                 <tr><td><code>days</code></td><td>int</td><td>30</td><td>Days back (1&ndash;365; readonly capped at 90)</td></tr>
                 <tr><td><code>start_date</code></td><td>string</td><td>&mdash;</td><td>Start date (YYYY-MM-DD)</td></tr>
                 <tr><td><code>end_date</code></td><td>string</td><td>&mdash;</td><td>End date (YYYY-MM-DD)</td></tr>
-                <tr><td><code>granularity</code></td><td>string</td><td>auto</td><td><code>hourly</code> or <code>daily</code> (auto: hourly &le;30d)</td></tr>
+                <tr><td><code>granularity</code></td><td>string</td><td>auto</td><td><code>hourly</code> or <code>daily</code>. Auto: hourly for &lt;30 days, daily for &ge;30 days</td></tr>
                 <tr><td><code>region</code></td><td>string</td><td>&mdash;</td><td>Region filter (comma-separated)</td></tr>
                 <tr><td><code>country</code></td><td>string</td><td>&mdash;</td><td>Country filter (comma-separated)</td></tr>
                 <tr><td><code>rural_urban</code></td><td>string</td><td>&mdash;</td><td>Rural/urban classification (comma-separated)</td></tr>
@@ -219,7 +219,7 @@
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-                <tr><td><code>fuel_type</code></td><td>string</td><td>E10</td><td>Fuel type code</td></tr>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Fuel type code. Omit to search across all fuel types</td></tr>
                 <tr><td><code>postcode</code></td><td>string</td><td>&mdash;</td><td>Postcode prefix (e.g. SW1)</td></tr>
                 <tr><td><code>station</code></td><td>string</td><td>&mdash;</td><td>Trading name substring</td></tr>
                 <tr><td><code>brand</code></td><td>string</td><td>&mdash;</td><td>Brand substring</td></tr>

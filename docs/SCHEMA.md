@@ -134,6 +134,26 @@ Tracks which numbered SQL migrations have been applied. Managed automatically by
 | `filename` | `TEXT` | Full migration filename |
 | `applied_at` | `TIMESTAMPTZ` | When migration was applied |
 
+### `daily_prices`
+
+Pre-aggregated daily price summaries per station per fuel type. Avoids repeated `GROUP BY` on the large `fuel_prices` table for daily trend queries. Maintained by the scraper after each run and by the API after price corrections.
+
+| Column | Type | Notes |
+|---|---|---|
+| `node_id` | `TEXT` | PK (composite) |
+| `fuel_type` | `TEXT` | PK (composite) |
+| `price_date` | `DATE` | PK (composite) |
+| `avg_price` | `NUMERIC(6,1)` | Average price for the day (corrections applied, anomalies excluded) |
+| `min_price` | `NUMERIC(6,1)` | Minimum price for the day |
+| `max_price` | `NUMERIC(6,1)` | Maximum price for the day |
+| `sample_count` | `INTEGER` | Number of price records aggregated |
+
+**Primary key:** `(node_id, fuel_type, price_date)`
+
+**Indexes:** `(fuel_type, price_date)` — covers aggregate trend queries
+
+Used by `/prices/history` and `/prices/station/{id}/history` when granularity is daily. Hourly queries still read directly from `fuel_prices`.
+
 ### `price_corrections`
 
 Manual overrides for misreported prices. Original data in `fuel_prices` is never modified — corrections are stored separately and applied in the materialised view via `COALESCE(correction, original)`.
