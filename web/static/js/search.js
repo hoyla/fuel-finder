@@ -340,24 +340,16 @@ async function loadStationTrend() {
             : 'Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends.';
     }
 
-    const labels = data.map(d => {
-        const dt = new Date(d.bucket);
-        if (hourly) {
-            return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-                 + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-        }
-        return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-    });
+    const chartData = data.map(d => ({ x: new Date(d.bucket), y: d.avg_price }));
 
     if (charts['chart-station-trend']) charts['chart-station-trend'].destroy();
     const ctx = document.getElementById('chart-station-trend').getContext('2d');
     charts['chart-station-trend'] = new Chart(ctx, {
         type: 'line',
         data: {
-            labels,
             datasets: [{
                 label: isSingle ? 'Pence/litre' : 'Avg pence/litre',
-                data: data.map(d => d.avg_price),
+                data: chartData,
                 borderColor: '#1d70b8',
                 backgroundColor: '#1d70b833',
                 fill: true, tension: 0.3,
@@ -370,14 +362,21 @@ async function loadStationTrend() {
         options: {
             responsive: true,
             scales: {
-                x: { ticks: { maxTicksAutoSkip: true, maxRotation: 45 } },
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: hourly ? 'hour' : 'day',
+                        tooltipFormat: hourly ? 'd MMM, HH:mm' : 'd MMM yyyy',
+                        displayFormats: { hour: 'd MMM HH:mm', day: 'd MMM' }
+                    },
+                    ticks: { maxRotation: 45 }
+                },
                 y: { beginAtZero: false }
             },
             plugins: {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        title: (items) => items[0].label,
                         label: (item) => {
                             const d = data[item.dataIndex];
                             const suffix = d.stations ? ` · averaged from ${d.stations} stations` : '';
