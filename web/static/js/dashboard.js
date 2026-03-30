@@ -118,7 +118,7 @@ async function loadDashboard() {
                 <div class="label">${ft.fuel_name || ft.fuel_type} average price</div>
                 <div class="value">${ppl(ft.avg_price)}</div>
                 <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)}</div>
-                <div class="sub">${ft.station_count} stations</div>
+                <div class="sub">${ft.station_count.toLocaleString()} stations</div>
                 ${outlierNote}
             </div>
         `;
@@ -128,12 +128,16 @@ async function loadDashboard() {
         (data.by_fuel_type || []).map(ft => [ft.fuel_type, Number(ft.avg_price)])
     );
 
-    const [e10Past, b7Past] = await Promise.all([
+    const [e10Baseline, b7Baseline] = await Promise.all([
         fetchThirtyDaysAgoBaseline('E10'),
         fetchThirtyDaysAgoBaseline('B7_STANDARD'),
     ]);
-    cards.innerHTML += renderThirtyDayChangeCard('E10', 'Unleaded (E10)<br>30-day change', summaryNowByFuel.E10, e10Past);
-    cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel (B7)<br>30-day change', summaryNowByFuel.B7_STANDARD, b7Past);
+    const e10Past = e10Baseline?.price ?? null;
+    const e10Date = e10Baseline?.date ?? null;
+    const b7Past = b7Baseline?.price ?? null;
+    const b7Date = b7Baseline?.date ?? null;
+    cards.innerHTML += renderThirtyDayChangeCard('E10', 'Unleaded (E10)<br>30-day change', summaryNowByFuel.E10, e10Past, e10Date);
+    cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel (B7)<br>30-day change', summaryNowByFuel.B7_STANDARD, b7Past, b7Date);
 
     // Wire up outlier links to jump to the anomalies → outliers sub-section
     document.querySelectorAll('.outlier-link').forEach(link => {
@@ -164,7 +168,7 @@ async function loadDashboard() {
     await loadDashboardCharts();
 }
 
-function renderThirtyDayChangeCard(fuelCode, title, priceNow, price30DaysAgo) {
+function renderThirtyDayChangeCard(fuelCode, title, priceNow, price30DaysAgo, baselineDate) {
     if (priceNow == null || price30DaysAgo == null || !isFinite(priceNow) || !isFinite(price30DaysAgo) || price30DaysAgo <= 0) {
         return `
             <div class="card">
@@ -188,12 +192,18 @@ function renderThirtyDayChangeCard(fuelCode, title, priceNow, price30DaysAgo) {
         arrow = '↓';
     }
 
+    let dateLabel = '30 days ago';
+    if (baselineDate) {
+        const d = new Date(baselineDate + 'T00:00:00');
+        dateLabel = d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+    }
+
     const pct = Math.abs(pctChange).toFixed(1) + '%';
     return `
         <div class="card" data-fuel-change="${fuelCode}">
             <div class="label">${title}</div>
             <div class="value change-value ${trendClass}"><span class="change-arrow">${arrow}</span><span>${pct}</span></div>
-            <div class="sub">30 days ago: ${ppl(price30DaysAgo)}</div>
+            <div class="sub">${dateLabel}: ${ppl(price30DaysAgo)}</div>
             <div class="sub">Now: ${ppl(priceNow)}</div>
         </div>
     `;
@@ -224,7 +234,8 @@ async function fetchThirtyDaysAgoBaseline(fuelCode) {
         });
 
         const baseline = Number(points[0].avg_price);
-        return isFinite(baseline) ? baseline : null;
+        const bucketDate = points[0].bucket;
+        return isFinite(baseline) ? { price: baseline, date: bucketDate } : null;
     } catch {
         return null;
     }
