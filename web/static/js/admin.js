@@ -31,7 +31,7 @@ async function loadAnomalies(offset = 0) {
             changeTxt = `${sign}${pct}%`;
         }
         return `<tr>
-            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
+            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" data-category="${escHtml(r.forecourt_type || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
             <td>${r.city || '—'}</td>
             <td>${r.fuel_type}</td>
             <td>${r.prev_price != null ? ppl(r.prev_price) : '—'}</td>
@@ -219,7 +219,7 @@ async function loadOutliers(offset = 0) {
             ? `<span style="font-size:0.78rem;color:var(--muted);">${ppl(r.original_price)} → ${ppl(r.corrected_price)}</span>`
             : '—';
         return `<tr>
-            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
+            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" data-category="${escHtml(r.forecourt_type || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
             <td>${escHtml(r.city || '—')}</td>
             <td>${escHtml(r.postcode || '—')}</td>
             <td>${escHtml(r.brand_name || '—')}</td>

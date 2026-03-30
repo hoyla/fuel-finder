@@ -280,7 +280,7 @@ document.addEventListener('click', e => {
     const link = e.target.closest('.station-link');
     if (!link) return;
     e.preventDefault();
-    openStationTrend(link.dataset.node, link.dataset.name, link.dataset.brand, link.dataset.city, link.dataset.postcode);
+    openStationTrend(link.dataset.node, link.dataset.name, link.dataset.brand, link.dataset.city, link.dataset.postcode, link.dataset.category, link.dataset.rawBrand);
 });
 
 // Global delegation handler for edit-prices links (avoids inline onclick apostrophe issues)

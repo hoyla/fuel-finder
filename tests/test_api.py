@@ -475,10 +475,11 @@ class TestStationHistory:
         assert data["granularity"] in ("hourly", "daily")
         assert isinstance(data["data"], list)
 
-    def test_daily_granularity_for_long_range(self, client, has_data):
+    def test_hourly_granularity_for_long_range(self, client, has_data):
+        """Station-level history always defaults to hourly regardless of range."""
         node_id = self._get_station_id(client)
         data = client.get(f"/api/prices/station/{node_id}/history?fuel_type=E10&days=60").json()
-        assert data["granularity"] == "daily"
+        assert data["granularity"] == "hourly"
 
     def test_explicit_granularity_override(self, client, has_data):
         node_id = self._get_station_id(client)
