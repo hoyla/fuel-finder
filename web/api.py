@@ -346,7 +346,7 @@ def station_price_history(
     if granularity in ('hourly', 'daily'):
         effective_granularity = granularity
     else:
-        effective_granularity = "hourly" if span_days <= 30 else "daily"
+        effective_granularity = "hourly"
 
     time_col = "date_trunc('hour', fp.observed_at)" if effective_granularity == 'hourly' else "DATE(fp.observed_at)"
 
@@ -410,7 +410,7 @@ def price_history(
     days parameter (relative to now). If none are provided, defaults to 30 days.
 
     Granularity can be 'hourly' or 'daily'. If not specified, defaults to
-    hourly for ranges <= 30 days and daily for longer.
+    hourly for ranges under 30 days and daily for 30 days or longer.
     Excludes anomaly-flagged records. Applies a Hampel filter (rolling
     median ± 3×MAD) to smooth outlier averages without distorting trends.
     """
@@ -457,7 +457,7 @@ def price_history(
     if granularity in ('hourly', 'daily'):
         effective_granularity = granularity
     else:
-        effective_granularity = "hourly" if span_days <= 30 else "daily"
+        effective_granularity = "hourly" if span_days < 30 else "daily"
 
     if effective_granularity == 'hourly':
         time_col = "date_trunc('hour', fp.observed_at)"
