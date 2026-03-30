@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS fuel_type_labels (
 
 CREATE TABLE IF NOT EXISTS brand_categories (
     canonical_brand     TEXT PRIMARY KEY,
-    forecourt_type      TEXT NOT NULL  -- 'Supermarket', 'Major Oil', 'Motorway Operator', 'Independent'
+    forecourt_type      TEXT NOT NULL  -- 'Supermarket', 'Major Oil', 'Motorway Operator', 'Independent', etc.
 );
 
 -- Postcode geographic enrichment from postcodes.io.
@@ -170,7 +170,7 @@ SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
     ) AS brand_name,
     CASE
         WHEN s.is_motorway_service_station THEN 'Motorway'
-        ELSE COALESCE(bc.forecourt_type, 'Independent')
+        ELSE COALESCE(bc.forecourt_type, 'Uncategorised')
     END AS forecourt_type,
     s.city,
     s.county,

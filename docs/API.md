@@ -487,7 +487,7 @@ Map canonical brands to forecourt types.
 
 **POST body:** `{ "canonical_brand": "Tesco", "forecourt_type": "Supermarket" }`
 
-**Allowed forecourt types:** `Supermarket`, `Major Oil`, `Motorway Operator`, `Fuel Group`, `Convenience`, `Independent`
+**Allowed forecourt types:** `Supermarket`, `Major Oil`, `Motorway Operator`, `Fuel Group`, `Convenience`, `Independent`, `Uncategorised`
 
 ### Station overrides
 

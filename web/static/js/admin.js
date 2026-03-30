@@ -387,7 +387,7 @@ async function loadScrapeHistory(offset = 0) {
 const REPORT_HINTS = {
     aliased: 'Aliased — the raw brand string matched a brand alias rule and was mapped to a canonical name. No per-station override applies.',
     overridden: 'Overridden — these stations have a per-station brand override that sets their canonical brand directly, taking priority over any alias.',
-    unmapped: 'Unmapped — no alias and no override, and the brand has no category entry. These default to showing the raw brand name and are classified as Independent. Worth reviewing for missing aliases.',
+    unmapped: 'Unmapped — no alias and no override, and the brand has no category entry. These default to showing the raw brand name and are classified as Uncategorised. Worth reviewing for missing aliases.',
 };
 
 function updateReportHint() {
@@ -493,7 +493,7 @@ async function saveCategory() {
 }
 
 async function deleteCategory(brand) {
-    if (!confirm(`Delete category for "${brand}"? It will default to Independent.`)) return;
+    if (!confirm(`Delete category for "${brand}"? It will default to Uncategorised.`)) return;
     try {
         await apiDelete(`/admin/brand-categories/${encodeURIComponent(brand)}`);
         loadCategories();

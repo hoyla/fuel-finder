@@ -120,9 +120,9 @@ Maps canonical brand names to forecourt types for meaningful price comparisons. 
 | Column | Type | Notes |
 |---|---|---|
 | `canonical_brand` | `TEXT PK` | Must match a resolved canonical brand name |
-| `forecourt_type` | `TEXT` | One of: `Supermarket`, `Major Oil`, `Motorway Operator`, `Fuel Group`, `Convenience`, `Independent` |
+| `forecourt_type` | `TEXT` | One of: `Supermarket`, `Major Oil`, `Motorway Operator`, `Fuel Group`, `Convenience`, `Independent`, `Uncategorised` |
 
-Brands not present in this table default to `Independent` in the `current_prices` view. Stations with `is_motorway_service_station = TRUE` are always classified as `Motorway` regardless of brand category.
+Brands not present in this table default to `Uncategorised` in the `current_prices` view. `Independent` is reserved for brands explicitly assigned that category. Stations with `is_motorway_service_station = TRUE` are always classified as `Motorway` regardless of brand category.
 
 ### `schema_migrations`
 
@@ -171,7 +171,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `trading_name` | `stations` | |
 | `raw_brand_name` | `stations.brand_name` | Original API value |
 | `brand_name` | Resolved | `COALESCE(override, alias, raw)` |
-| `forecourt_type` | `brand_categories` | `Motorway` if motorway flag set, else from `brand_categories`, else `Independent` |
+| `forecourt_type` | `brand_categories` | `Motorway` if motorway flag set, else from `brand_categories`, else `Uncategorised` |
 | `city` | `stations` | |
 | `county` | `stations` | |
 | `country` | Resolved | Fallback chain: postcodes.io country → `postcode_regions.country` → `'Other/Unknown'` |

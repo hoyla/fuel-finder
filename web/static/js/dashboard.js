@@ -6,7 +6,7 @@ let charts = {};
 const FORECOURT_COLOURS = {
     'Supermarket': '#00703c', 'Major Oil': '#1d70b8', 'Motorway': '#d4351c',
     'Motorway Operator': '#f47738', 'Fuel Group': '#505a5f',
-    'Convenience': '#b58840', 'Independent': '#5694ca'
+    'Convenience': '#b58840', 'Independent': '#5694ca', 'Uncategorised': '#999'
 };
 
 function renderBarChart(canvasId, labels, values, label, colour) {

@@ -292,8 +292,8 @@ document.addEventListener('click', e => {
 });
 
 function categoryTag(type) {
-    const cls = (type || 'independent').toLowerCase().replace(/ /g, '-');
-    return `<span class="category-tag ${cls}">${escHtml(type) || 'Independent'}</span>`;
+    const cls = (type || 'uncategorised').toLowerCase().replace(/ /g, '-');
+    return `<span class="category-tag ${cls}">${escHtml(type) || 'Uncategorised'}</span>`;
 }
 
 // ---------------------------------------------------------------------------

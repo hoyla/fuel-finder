@@ -1,11 +1,11 @@
 -- Forecourt type categorisation via canonical brand.
 -- Classifies stations into meaningful groups for price comparison.
 -- Uses canonical brand names (after alias resolution).
--- Stations not matched here default to 'Independent' in the view.
+-- Stations not matched here default to 'Uncategorised' in the view.
 
 CREATE TABLE IF NOT EXISTS brand_categories (
     canonical_brand     TEXT PRIMARY KEY,
-    forecourt_type      TEXT NOT NULL  -- 'Supermarket', 'Major Oil', 'Motorway Operator', 'Independent'
+    forecourt_type      TEXT NOT NULL  -- 'Supermarket', 'Major Oil', 'Motorway Operator', 'Independent', etc.
 );
 
 INSERT INTO brand_categories (canonical_brand, forecourt_type) VALUES

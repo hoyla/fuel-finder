@@ -769,7 +769,9 @@ def price_history_export(
                pl.admin_district,
                pl.parliamentary_constituency,
                pl.rural_urban,
-               bc.forecourt_type,
+               CASE WHEN s.is_motorway_service_station THEN 'Motorway'
+                    ELSE COALESCE(bc.forecourt_type, 'Uncategorised')
+               END AS forecourt_type,
                s.latitude,
                s.longitude,
                s.is_motorway_service_station,
@@ -1119,15 +1121,31 @@ def price_search_export(
         conditions.append("s.is_motorway_service_station = TRUE")
     if exclude_outliers:
         conditions.append("fp.anomaly_flags IS NULL")
+    # Export queries raw tables (not the materialised view), so 'Uncategorised'
+    # must be resolved to a NULL brand_categories lookup + non-motorway check.
     if category:
         cats = [c.strip() for c in category.split(",") if c.strip()]
-        if len(cats) == 1:
-            conditions.append("bc.forecourt_type = %s")
-            params.append(cats[0])
-        elif cats:
-            placeholders = ", ".join(["%s"] * len(cats))
-            conditions.append(f"bc.forecourt_type IN ({placeholders})")
-            params.extend(cats)
+        resolved = []
+        has_uncategorised = False
+        for c in cats:
+            if c == 'Uncategorised':
+                has_uncategorised = True
+            elif c == 'Motorway':
+                resolved.append(('motorway_flag', None))
+            else:
+                resolved.append(('bc', c))
+        parts = []
+        bc_vals = [c for tag, c in resolved if tag == 'bc']
+        if bc_vals:
+            ph = ", ".join(["%s"] * len(bc_vals))
+            parts.append(f"bc.forecourt_type IN ({ph})")
+            params.extend(bc_vals)
+        if any(tag == 'motorway_flag' for tag, _ in resolved):
+            parts.append("s.is_motorway_service_station = TRUE")
+        if has_uncategorised:
+            parts.append("(bc.forecourt_type IS NULL AND NOT s.is_motorway_service_station)")
+        if parts:
+            conditions.append("(" + " OR ".join(parts) + ")")
     if district:
         conditions.append("pl.admin_district = %s")
         params.append(district)
@@ -1188,7 +1206,9 @@ def price_search_export(
                pl.admin_district,
                pl.parliamentary_constituency,
                pl.rural_urban,
-               bc.forecourt_type,
+               CASE WHEN s.is_motorway_service_station THEN 'Motorway'
+                    ELSE COALESCE(bc.forecourt_type, 'Uncategorised')
+               END AS forecourt_type,
                s.latitude,
                s.longitude,
                s.is_motorway_service_station,
@@ -1565,7 +1585,7 @@ def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=D
     """Create or update a brand category mapping."""
     brand = body.canonical_brand.strip()
     cat = body.forecourt_type.strip()
-    allowed = {"Supermarket", "Major Oil", "Motorway Operator", "Fuel Group", "Convenience", "Independent"}
+    allowed = {"Supermarket", "Major Oil", "Motorway Operator", "Fuel Group", "Convenience", "Independent", "Uncategorised"}
     if not brand or not cat:
         raise HTTPException(400, "canonical_brand and forecourt_type required")
     if cat not in allowed:
@@ -1583,7 +1603,7 @@ def upsert_brand_category(body: "BrandCategoryBody", db=Depends(get_db), _auth=D
 
 @app.delete("/api/admin/brand-categories/{canonical_brand:path}")
 def delete_brand_category(canonical_brand: str, db=Depends(get_db), _auth=Depends(require_editor)):
-    """Remove a brand category mapping (brand will default to Independent)."""
+    """Remove a brand category mapping (brand will default to Uncategorised)."""
     with db.cursor() as cur:
         cur.execute("DELETE FROM brand_categories WHERE canonical_brand = %s RETURNING canonical_brand", (canonical_brand,))
         db.commit()
@@ -1680,7 +1700,7 @@ def normalisation_report(
                    COALESCE(sbo.canonical_brand, ba.canonical_brand, s.brand_name) AS final_brand,
                    CASE
                        WHEN s.is_motorway_service_station THEN 'Motorway'
-                       ELSE COALESCE(bc.forecourt_type, 'Independent')
+                       ELSE COALESCE(bc.forecourt_type, 'Uncategorised')
                    END AS forecourt_type,
                    CASE
                        WHEN sbo.canonical_brand IS NOT NULL THEN 'override'
