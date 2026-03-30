@@ -88,7 +88,7 @@ async function loadMapPrices() {
             weight: 0.5, fillOpacity: 0.85, price: d.price,
         }).bindPopup(`
             <strong><a href="#" class="station-link" data-node="${escHtml(d.node_id)}" data-name="${escHtml(d.trading_name)}" data-brand="${escHtml(d.brand_name || '')}" data-raw-brand="${escHtml(d.raw_brand_name || '')}" data-city="${escHtml(d.city || '')}" data-postcode="${escHtml(d.postcode || '')}" data-category="${escHtml(d.forecourt_type || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(d.trading_name)}</a></strong><br>
-            ${escHtml(d.brand_name) || ''} · ${escHtml(d.forecourt_type) || 'Independent'}<br>
+            ${escHtml(d.brand_name) || ''} · ${escHtml(d.forecourt_type) || 'Uncategorised'}<br>
             ${escHtml(d.city)} ${escHtml(d.postcode)}<br>
             ${d.admin_district ? escHtml(d.admin_district) + '<br>' : ''}
             ${d.rural_urban ? '<em>' + escHtml(d.rural_urban) + '</em><br>' : ''}

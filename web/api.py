@@ -1121,6 +1121,8 @@ def price_search_export(
         conditions.append("s.is_motorway_service_station = TRUE")
     if exclude_outliers:
         conditions.append("fp.anomaly_flags IS NULL")
+    # Export queries raw tables (not the materialised view), so 'Uncategorised'
+    # must be resolved to a NULL brand_categories lookup + non-motorway check.
     if category:
         cats = [c.strip() for c in category.split(",") if c.strip()]
         resolved = []
