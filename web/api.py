@@ -618,7 +618,7 @@ def price_history(
 
 @app.get("/api/prices/history/export")
 def price_history_export(
-    fuel_type: str = Query("E10"),
+    fuel_type: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     days: Optional[int] = Query(None, ge=1, le=3650),
@@ -702,9 +702,13 @@ def price_history_export(
         search_conditions.append("NOT price_is_outlier")
 
     if search_conditions:
-        sub_where = " AND ".join(["fuel_type = %s", "NOT temporary_closure"] + search_conditions)
+        sc_base = ["NOT temporary_closure"] + search_conditions
+        if fuel_type:
+            sc_base.insert(0, "fuel_type = %s")
+            search_params_list = [fuel_type] + search_params_list
+        sub_where = " AND ".join(sc_base)
         node_filter = f"AND fp.node_id IN (SELECT node_id FROM current_prices WHERE {sub_where})"
-        node_params = [fuel_type, *search_params_list]
+        node_params = list(search_params_list)
     elif node_ids:
         ids = [n.strip() for n in node_ids.split(",") if n.strip()]
         if ids:
@@ -749,6 +753,9 @@ def price_history_export(
             location_filters += f" AND pl.rural_urban IN ({ph})"
             location_params.extend(vals)
 
+    fuel_filter = "fp.fuel_type = %s" if fuel_type else "TRUE"
+    fuel_params = (fuel_type,) if fuel_type else ()
+
     query = f"""
         SELECT fp.node_id,
                s.trading_name,
@@ -789,13 +796,13 @@ def price_history_export(
         LEFT JOIN brand_categories bc
             ON bc.canonical_brand = COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name)
         LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
-        WHERE fp.fuel_type = %s
+        WHERE {fuel_filter}
           {time_filter}
           {node_filter}
           {location_filters}
         ORDER BY fp.observed_at, s.trading_name
     """
-    params = (fuel_type, *time_params, *node_params, *location_params)
+    params = tuple(fuel_params) + tuple(time_params) + tuple(node_params) + tuple(location_params)
 
     columns = [
         "node_id", "trading_name", "raw_brand", "brand", "fuel_type",
@@ -931,7 +938,7 @@ def price_map(
 
 @app.get("/api/prices/search")
 def price_search(
-    fuel_type: str = Query("E10"),
+    fuel_type: Optional[str] = Query(None),
     postcode: Optional[str] = Query(None),
     station: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
@@ -957,8 +964,11 @@ def price_search(
     """Flexible search/filter endpoint for the query builder UI."""
     if role == "readonly":
         limit = min(limit, 200)
-    conditions = ["fuel_type = %s", "NOT temporary_closure"]
-    params: list = [fuel_type]
+    conditions = ["NOT temporary_closure"]
+    params: list = []
+    if fuel_type:
+        conditions.append("fuel_type = %s")
+        params.append(fuel_type)
 
     if postcode:
         conditions.append("UPPER(postcode) LIKE %s")
@@ -1066,7 +1076,7 @@ def price_search(
 
 @app.get("/api/prices/search/export")
 def price_search_export(
-    fuel_type: str = Query("E10"),
+    fuel_type: Optional[str] = Query(None),
     postcode: Optional[str] = Query(None),
     station: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
@@ -1094,8 +1104,11 @@ def price_search_export(
     import csv
     import io
 
-    conditions = ["fp.fuel_type = %s"]
-    params: list = [fuel_type]
+    conditions = []
+    params: list = []
+    if fuel_type:
+        conditions.append("fp.fuel_type = %s")
+        params.append(fuel_type)
 
     if postcode:
         conditions.append("UPPER(s.postcode) LIKE %s")
@@ -1186,7 +1199,7 @@ def price_search_export(
         if parts:
             conditions.append("(" + " OR ".join(parts) + ")")
 
-    where = " AND ".join(conditions)
+    where = " AND ".join(conditions) if conditions else "TRUE"
 
     query = f"""
         SELECT fp.node_id,

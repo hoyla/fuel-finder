@@ -10,7 +10,8 @@ function downloadTrendData(fmt) {
     const ruralUrban = getMultiSelectValues('trend-rural-urban-ms');
     const startDate = document.getElementById('trend-start').value;
     const endDate = document.getElementById('trend-end').value;
-    let url = `/api/prices/history/export?fuel_type=${encodeURIComponent(fuel)}&format=${fmt}`;
+    let url = `/api/prices/history/export?format=${fmt}`;
+    if (fuel) url += `&fuel_type=${encodeURIComponent(fuel)}`;
     if (startDate) url += `&start_date=${startDate}`;
     if (endDate) url += `&end_date=${endDate}`;
     if (!startDate && !endDate) url += '&days=30';
@@ -57,15 +58,69 @@ async function loadTrends() {
     const startDate = document.getElementById('trend-start').value;
     const endDate = document.getElementById('trend-end').value;
     const gran = document.getElementById('trend-granularity').value;
-    let url = `/prices/history?fuel_type=${fuel}`;
-    if (startDate) url += `&start_date=${startDate}`;
-    if (endDate) url += `&end_date=${endDate}`;
-    if (!startDate && !endDate) url += '&days=30';
-    if (gran !== 'auto') url += `&granularity=${gran}`;
-    if (region) url += `&region=${encodeURIComponent(region)}`;
-    if (country) url += `&country=${encodeURIComponent(country)}`;
-    if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
-    const resp = await apiFetch(url);
+
+    function buildUrl(fuelCode) {
+        let url = `/prices/history?fuel_type=${fuelCode}`;
+        if (startDate) url += `&start_date=${startDate}`;
+        if (endDate) url += `&end_date=${endDate}`;
+        if (!startDate && !endDate) url += '&days=30';
+        if (gran !== 'auto') url += `&granularity=${gran}`;
+        if (region) url += `&region=${encodeURIComponent(region)}`;
+        if (country) url += `&country=${encodeURIComponent(country)}`;
+        if (ruralUrban) url += `&rural_urban=${encodeURIComponent(ruralUrban)}`;
+        return url;
+    }
+
+    const allFuels = !fuel;
+
+    if (allFuels) {
+        const { datasets, granularity, allData } = await fetchAllFuelTrends(buildUrl);
+        const hourly = granularity === 'hourly';
+        // Store first fuel's data for download fallback
+        const firstKey = Object.keys(allData)[0];
+        lastTrendData = firstKey ? allData[firstKey] : [];
+        const hasData = datasets.length > 0;
+        document.getElementById('trend-dl-csv').disabled = !hasData;
+        document.getElementById('trend-dl-json').disabled = !hasData;
+        document.getElementById('trend-heading').textContent =
+            hourly ? 'Hourly average price — all fuel types' : 'Daily average price — all fuel types';
+        document.getElementById('trend-granularity-note').textContent = hourly
+            ? 'Showing average per scrape window (data is fetched every 30 minutes).'
+            : 'Showing daily averages.';
+
+        if (charts['chart-trend']) charts['chart-trend'].destroy();
+        const ctx = document.getElementById('chart-trend').getContext('2d');
+        charts['chart-trend'] = new Chart(ctx, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: hourly ? 'hour' : 'day',
+                            tooltipFormat: hourly ? 'd MMM, HH:mm' : 'd MMM yyyy',
+                            displayFormats: { hour: 'd MMM HH:mm', day: 'd MMM' }
+                        },
+                        ticks: { maxRotation: 45 }
+                    },
+                    y: { beginAtZero: false }
+                },
+                plugins: {
+                    legend: { display: true },
+                    tooltip: {
+                        callbacks: {
+                            label: (item) => `${item.dataset.label}: ${item.parsed.y}p`
+                        }
+                    }
+                }
+            }
+        });
+        return;
+    }
+
+    const resp = await apiFetch(buildUrl(fuel));
     const data = resp.data;
     lastTrendData = data;
     document.getElementById('trend-dl-csv').disabled = !data.length;

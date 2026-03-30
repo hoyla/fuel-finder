@@ -71,7 +71,8 @@ function buildSearchUrl(limit, offset) {
     const region = getMultiSelectValues('search-region-ms');
     const country = getMultiSelectValues('search-country-ms');
 
-    let url = `/prices/search?fuel_type=${fuel}&limit=${limit}&offset=${offset}`;
+    let url = `/prices/search?limit=${limit}&offset=${offset}`;
+    if (fuel) url += `&fuel_type=${fuel}`;
     if (searchSort.col) url += `&sort=${searchSort.col}&order=${searchSort.dir}`;
     if (postcode) url += `&postcode=${encodeURIComponent(postcode)}`;
     if (station) url += `&station=${encodeURIComponent(station)}`;
@@ -161,6 +162,9 @@ function goToOverrideBrand() {
 function initStationTrendFuels() {
     const sel = document.getElementById('st-fuel');
     if (!sel.options.length) {
+        const allOpt = document.createElement('option');
+        allOpt.value = ''; allOpt.textContent = 'All fuel types';
+        sel.appendChild(allOpt);
         fuelTypes.forEach(ft => {
             const o = document.createElement('option');
             o.value = ft.fuel_type_code;
@@ -170,8 +174,7 @@ function initStationTrendFuels() {
     }
     // Sync fuel type from search panel
     const searchFuel = document.getElementById('search-fuel').value;
-    if (searchFuel) sel.value = searchFuel;
-    else sel.value = 'E10';
+    sel.value = searchFuel; // empty string = "All fuel types"
 }
 
 function openStationTrend(nodeId, name, brand, city, postcode, category, rawBrand) {
@@ -291,49 +294,107 @@ async function loadStationTrend() {
     document.getElementById('st-granularity-note').textContent = '';
     if (charts['chart-station-trend']) { charts['chart-station-trend'].destroy(); delete charts['chart-station-trend']; }
 
-    let url;
-    if (stationTrendState.mode === 'single') {
-        url = `/prices/station/${encodeURIComponent(stationTrendState.nodeId)}/history?fuel_type=${fuel}`;
-    } else if (stationTrendState.mode === 'search') {
-        // Pass search filters directly — much faster than sending thousands of node_ids
-        url = `/prices/history?fuel_type=${fuel}`;
-        const sf = stationTrendState.searchFilters;
-        if (sf.brand) url += `&brand=${encodeURIComponent(sf.brand)}`;
-        if (sf.city) url += `&city=${encodeURIComponent(sf.city)}`;
-        if (sf.postcode) url += `&postcode=${encodeURIComponent(sf.postcode)}`;
-        if (sf.category) url += `&category=${encodeURIComponent(sf.category)}`;
-        if (sf.district) url += `&district=${encodeURIComponent(sf.district)}`;
-        if (sf.constituency) url += `&constituency=${encodeURIComponent(sf.constituency)}`;
-        if (sf.rural_urban) url += `&rural_urban=${encodeURIComponent(sf.rural_urban)}`;
-        if (sf.region) url += `&region=${encodeURIComponent(sf.region)}`;
-        if (sf.country) url += `&country=${encodeURIComponent(sf.country)}`;
-        if (sf.supermarket_only) url += '&supermarket_only=true';
-        if (sf.motorway_only) url += '&motorway_only=true';
-        if (sf.exclude_outliers) url += '&exclude_outliers=true';
-    } else {
-        const ids = stationTrendState.nodeIds.join(',');
-        url = `/prices/history?fuel_type=${fuel}&node_ids=${encodeURIComponent(ids)}`;
-    }
-    if (startDate) url += `&start_date=${startDate}`;
-    if (endDate) url += `&end_date=${endDate}`;
-    if (!startDate && !endDate) url += '&days=30';
-    if (gran !== 'auto') url += `&granularity=${gran}`;
+    const isSingle = stationTrendState.mode === 'single';
+    const allFuels = !fuel;
 
-    const resp = await apiFetch(url);
+    function buildUrl(fuelCode) {
+        let url;
+        if (stationTrendState.mode === 'single') {
+            url = `/prices/station/${encodeURIComponent(stationTrendState.nodeId)}/history?fuel_type=${fuelCode}`;
+        } else if (stationTrendState.mode === 'search') {
+            url = `/prices/history?fuel_type=${fuelCode}`;
+            const sf = stationTrendState.searchFilters;
+            if (sf.brand) url += `&brand=${encodeURIComponent(sf.brand)}`;
+            if (sf.city) url += `&city=${encodeURIComponent(sf.city)}`;
+            if (sf.postcode) url += `&postcode=${encodeURIComponent(sf.postcode)}`;
+            if (sf.category) url += `&category=${encodeURIComponent(sf.category)}`;
+            if (sf.district) url += `&district=${encodeURIComponent(sf.district)}`;
+            if (sf.constituency) url += `&constituency=${encodeURIComponent(sf.constituency)}`;
+            if (sf.rural_urban) url += `&rural_urban=${encodeURIComponent(sf.rural_urban)}`;
+            if (sf.region) url += `&region=${encodeURIComponent(sf.region)}`;
+            if (sf.country) url += `&country=${encodeURIComponent(sf.country)}`;
+            if (sf.supermarket_only) url += '&supermarket_only=true';
+            if (sf.motorway_only) url += '&motorway_only=true';
+            if (sf.exclude_outliers) url += '&exclude_outliers=true';
+        } else {
+            const ids = stationTrendState.nodeIds.join(',');
+            url = `/prices/history?fuel_type=${fuelCode}&node_ids=${encodeURIComponent(ids)}`;
+        }
+        if (startDate) url += `&start_date=${startDate}`;
+        if (endDate) url += `&end_date=${endDate}`;
+        if (!startDate && !endDate) url += '&days=30';
+        if (gran !== 'auto') url += `&granularity=${gran}`;
+        return url;
+    }
+
+    // Show table view / override buttons only for single-station single-fuel views
+    document.getElementById('st-edit-btn').style.display =
+        isSingle && !allFuels ? '' : 'none';
+    document.getElementById('st-override-btn').style.display =
+        isSingle && !allFuels && canEdit() ? '' : 'none';
+
+    if (allFuels) {
+        const { datasets, granularity } = await fetchAllFuelTrends(buildUrl);
+        const hourly = granularity === 'hourly';
+        const hasData = datasets.length > 0;
+        lastStationTrendData = [];
+        document.getElementById('st-dl-csv').disabled = !hasData;
+        document.getElementById('st-dl-json').disabled = !hasData;
+        const suffix = ' — all fuel types';
+        document.getElementById('st-trend-heading').textContent =
+            isSingle ? (hourly ? 'Hourly price' + suffix : 'Daily price' + suffix)
+                     : (hourly ? 'Hourly average price' + suffix : 'Daily average price' + suffix);
+        document.getElementById('st-granularity-note').textContent = hourly
+            ? 'Showing per scrape window (data is fetched every 30 minutes).'
+            : 'Showing daily ' + (isSingle ? 'prices.' : 'averages.');
+
+        const hampelNote = document.getElementById('st-hampel-note');
+        if (hampelNote) {
+            hampelNote.innerHTML = isSingle
+                ? 'Anomaly-flagged prices are excluded. All other prices are shown unfiltered — <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel smoothing</a> is only applied to multi-station aggregate charts.'
+                : 'Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends.';
+        }
+
+        if (charts['chart-station-trend']) charts['chart-station-trend'].destroy();
+        const ctx = document.getElementById('chart-station-trend').getContext('2d');
+        charts['chart-station-trend'] = new Chart(ctx, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: hourly ? 'hour' : 'day',
+                            tooltipFormat: hourly ? 'd MMM, HH:mm' : 'd MMM yyyy',
+                            displayFormats: { hour: 'd MMM HH:mm', day: 'd MMM' }
+                        },
+                        ticks: { maxRotation: 45 }
+                    },
+                    y: { beginAtZero: false }
+                },
+                plugins: {
+                    legend: { display: true },
+                    tooltip: {
+                        callbacks: {
+                            label: (item) => `${item.dataset.label}: ${item.parsed.y}p`
+                        }
+                    }
+                }
+            }
+        });
+        return;
+    }
+
+    const resp = await apiFetch(buildUrl(fuel));
     const data = resp.data;
     lastStationTrendData = data;
 
     document.getElementById('st-dl-csv').disabled = !data.length;
     document.getElementById('st-dl-json').disabled = !data.length;
 
-    // Show table view button only for single-station views
-    document.getElementById('st-edit-btn').style.display =
-        stationTrendState.mode === 'single' ? '' : 'none';
-    document.getElementById('st-override-btn').style.display =
-        stationTrendState.mode === 'single' && canEdit() ? '' : 'none';
-
     const hourly = resp.granularity === 'hourly';
-    const isSingle = stationTrendState.mode === 'single';
     document.getElementById('st-trend-heading').textContent =
         isSingle ? (hourly ? 'Hourly price' : 'Daily price')
                  : (hourly ? 'Hourly average price' : 'Daily average price');
@@ -403,7 +464,8 @@ function downloadStationTrendData(fmt) {
     const startDate = document.getElementById('st-start').value;
     const endDate = document.getElementById('st-end').value;
 
-    let url = `/api/prices/history/export?fuel_type=${encodeURIComponent(fuel)}&format=${fmt}`;
+    let url = `/api/prices/history/export?format=${fmt}`;
+    if (fuel) url += `&fuel_type=${encodeURIComponent(fuel)}`;
     if (startDate) url += `&start_date=${startDate}`;
     if (endDate) url += `&end_date=${endDate}`;
     if (!startDate && !endDate) url += '&days=30';
