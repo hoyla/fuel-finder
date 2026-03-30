@@ -498,12 +498,12 @@ let fuelTypes = [];
 
 // Colours for multi-fuel trend charts
 const FUEL_COLOURS = {
-    E10: '#1d70b8',   // blue
-    E5:  '#28a197',   // teal
-    B7:  '#d4351c',   // red
-    SDZ: '#f47738',   // orange
-    P1:  '#6f72af',   // purple
-    LPG: '#85994b',   // green
+    E10:         '#5694CA',  // light blue
+    E5:          '#1d4f91',  // dark blue
+    B7_STANDARD: '#e07070',  // light red-pink
+    B7_PREMIUM:  '#8b3a3a',  // dark red-brown
+    B10:         '#6fbf73',  // light green
+    HVO:         '#2e7d32',  // dark green
 };
 
 function fuelColour(code) {
