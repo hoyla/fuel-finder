@@ -182,10 +182,11 @@
         .category-tag.supermarket { background: #d4edda; color: #155724; }
         .category-tag.major-oil { background: #cce5ff; color: #004085; }
         .category-tag.motorway { background: #f8d7da; color: #721c24; }
-        .category-tag.fuel-group { background: #e2e3e5; color: #383d41; }
+        .category-tag.motorway-operator { background: #fde4d0; color: #6e3619; }
+        .category-tag.fuel-group { background: #e8e9f5; color: #4a4d80; }
         .category-tag.convenience { background: #fff3cd; color: #856404; }
         .category-tag.independent { background: #f5f6f7; color: var(--muted); }
-        .category-tag.uncategorised { background: #fff; color: var(--muted); border: 1px dashed var(--muted); }
+        .category-tag.uncategorised { background: #e2e3e5; color: #383d41; border: 1px dashed #adb1bd; }
         .status-msg {
             padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 1rem;
             font-size: 0.9rem; display: none;
