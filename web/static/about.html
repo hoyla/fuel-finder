@@ -143,10 +143,10 @@ Fuel Finder API (GOV.UK)
 
     <h3>Anomaly detection</h3>
 
-    <p>On insert, each price is checked against three rules. Suspicious prices are <strong>flagged, not filtered</strong> — the data is preserved but marked for review.</p>
+    <p>On insert, each price is checked against three rules. Suspicious prices are <strong>flagged as 'anomalous', but not ignored</strong>. On-site visualisations for average prices and trends over time exclude anomalous values to to avoid being skewed by obvious errors in the source data. However, the original reported values are preserved and are included in station price history tables and exports.</p>
 
     <table>
-        <thead><tr><th>Flag</th><th>Trigger</th></tr></thead>
+        <thead><tr><th>Flag</th><th>Anomaly rule</th></tr></thead>
         <tbody>
             <tr><td><code>price_below_floor</code></td><td>Price below 80p/litre</td></tr>
             <tr><td><code>price_above_ceiling</code></td><td>Price above 300p/litre</td></tr>
@@ -155,9 +155,11 @@ Fuel Finder API (GOV.UK)
         </tbody>
     </table>
 
+    <p>In practice the <code>large_price_jump</code> test can mean legitimate price reports are flagged when the previous price report was incorrect. If the price passes the first three tests, our tool should not automatically pass judgment on whether the old or the new value is correct. Such problems go away naturally from the dashboard when a station reports its prices accurately twice in a row.</p>
+
     <h3 id="outlier-methodology">Statistical outlier exclusion</h3>
 
-    <p>Anomaly flags catch the most obvious errors, but the GOV.UK source data is manually entered by fuel station operators and inevitably contains subtler mistakes — a station reporting 1.50 instead of 150.0 (pounds not pence), or a stale test price that slipped through. Even a few of these can skew averages noticeably.</p>
+    <p>Anomaly flags catch the most obvious errors, but the GOV.UK source data is manually entered by fuel station operators and inevitably contains subtler mistakes — for example, stations often misattribute B7 Standard Diesel and B7 Premium Diesel prices, or a stale or test value slips through. Even a few of these can skew averages noticeably.</p>
 
     <h4>Dashboard &amp; current snapshot (Tukey IQR)</h4>
 
@@ -198,7 +200,7 @@ Fuel Finder API (GOV.UK)
     <p>The API provides brand names inconsistently — <code>ESSO</code>, <code>Esso</code>, <code>esso</code> all appear for the same company. Three layers of normalisation clean this up:</p>
 
     <ol>
-        <li><strong>Brand aliases</strong> — bulk mapping of raw API strings to canonical names (e.g. <code>"TESCO"</code> → <code>"Tesco"</code>). Managed via the <a href="/#data/aliases">Data tab</a>.</li>
+        <li><strong>Brand aliases</strong> — bulk mapping of raw API strings to canonical names (e.g. <code>"TESCO"</code> → <code>"Tesco"</code>). Managed via the <a href="/#data/aliases">Data Cleanup tab</a>.</li>
         <li><strong>Station overrides</strong> — per-station corrections for edge cases where the API brand is wrong or the alias isn't granular enough.</li>
         <li><strong>Resolution order</strong> — <code>station_override &gt; brand_alias &gt; raw_brand_name</code>. Overrides always win.</li>
     </ol>
@@ -207,7 +209,9 @@ Fuel Finder API (GOV.UK)
 
     <h2>Forecourt categories</h2>
 
-    <p>Stations are classified into categories based on their <strong>canonical brand name</strong>, not the API's <code>is_supermarket_service_station</code> flag (which is unreliable — it flags BP, Texaco, and Maxol as supermarkets).</p>
+    <p>Stations are classified into categories based on their <strong>canonical brand name</strong> via a <a href="/#data/categories">lookup table</a>, with the exception of those flagged as <code>is_motorway_service_station</code> in the raw data. This flag always takes priority over our lookup.</p> 
+        
+    <p></p>We do not honour the <code>is_supermarket_service_station</code> flag from the raw data because it has proved to be too unreliable. For example BP, Texaco, and Maxol forecourts are frequently flagged as supermarkets.</p>
 
     <table>
         <thead><tr><th>Category</th><th>Examples</th><th>Description</th></tr></thead>
@@ -217,12 +221,12 @@ Fuel Finder API (GOV.UK)
             <tr><td><span class="category-tag motorway">Motorway Operator</span></td><td>Welcome Break, EG On The Move, Applegreen</td><td>Motorway service area operators</td></tr>
             <tr><td><span class="category-tag fuel-group">Fuel Group</span></td><td>Motor Fuel Group, Rontec, Harvest Energy</td><td>Fuel wholesalers / groups</td></tr>
             <tr><td><span class="category-tag convenience">Convenience</span></td><td>Spar, Circle K, Maxol</td><td>Convenience store forecourts</td></tr>
-            <tr><td><span class="category-tag independent">Independent</span></td><td>(any unmapped brand)</td><td>Independent operators, default</td></tr>
-            <tr><td><span class="category-tag motorway">Motorway</span></td><td>(any station with motorway flag)</td><td>Motorway flag always takes priority</td></tr>
+            <tr><td><span class="category-tag independent">Independent</span></td><td>(any unmapped brand)</td><td>Independent operators / default for uncategorised</td></tr>
+            <tr><td><span class="category-tag motorway">Motorway</span></td><td>(any station with motorway flag in the source data)</td><td>Motorway flag always takes priority</td></tr>
         </tbody>
     </table>
 
-    <div class="note info">Categories are managed on the <a href="/#data/categories">Data tab</a>. After changes, hit <strong>Refresh View</strong> to rebuild the snapshot.</div>
+    <div class="note info">Categories are managed on the <a href="/#data/categories">Data Cleanup tab</a>. After changes, hit <strong>Refresh View</strong> to rebuild the snapshot.</div>
 
     <h2>Regional mapping</h2>
 
@@ -274,7 +278,7 @@ Fuel Finder API (GOV.UK)
         <li>Authoritative coordinates, admin district, constituency, rural/urban (via <code>postcode_lookups</code>)</li>
     </ul>
 
-    <p>The view is refreshed after each scrape run and when you press <strong>Refresh View</strong> on the <a href="/#data/report">Data tab</a>. All dashboard, map, search and API queries read from this view for fast, consistent results.</p>
+    <p>The view is refreshed after each scrape run and when you press <strong>Refresh View</strong> on the <a href="/#data/report">Data Cleanup tab</a>. All dashboard, map, search and API queries read from this view for fast, consistent results.</p>
 
     <h2>Running on a schedule</h2>
 
