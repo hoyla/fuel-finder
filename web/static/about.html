@@ -228,6 +228,8 @@ Fuel Finder API (GOV.UK)
 
     <div class="note info">Categories are managed on the <a href="/#data/categories">Data Cleanup tab</a>. After changes, hit <strong>Refresh View</strong> to rebuild the snapshot.</div>
 
+    <p style="font-size:0.85rem;">See also <a href="#category-vs-flags">glossary: forecourt categories and the “Supermarket / Motorway” filters</a>.</p>
+
     <h2>Regional mapping</h2>
 
     <p>Each station's postcode is mapped to an ONS-style region using the first 1–2 letters of the postcode (the <em>postcode area</em>). For example, <code>SW1A</code> → <code>SW</code> → <strong>London</strong>, <code>M1</code> → <code>M</code> → <strong>North West</strong>.</p>
@@ -242,8 +244,8 @@ Fuel Finder API (GOV.UK)
         <li><strong>Authoritative coordinates</strong> — fixes ~85 stations where the Fuel Finder API reports incorrect lat/lng (e.g. sign errors placing stations in the North Sea)</li>
         <li><strong>Administrative geography</strong> — local authority district, county, ward, parish</li>
         <li><strong>Parliamentary constituency</strong> — for political analysis</li>
-        <li><strong>Rural/urban classification</strong> — ONS RUC 2021 categories (e.g. "Urban major conurbation", "Rural village in a sparse setting")</li>
-        <li><strong>Statistical areas</strong> — LSOA, MSOA, built-up area</li>
+        <li><strong>Rural/urban classification</strong> — <a href="https://www.ons.gov.uk/methodology/geography/geographicalproducts/ruralurbanclassifications/2021ruralurbanclassification">ONS RUC 2021</a> categories (e.g. "Urban major conurbation", "Rural village in a sparse setting")</li>
+        <li><strong>Statistical areas</strong> — <a href="https://www.ons.gov.uk/methodology/geography/ukgeographies/statisticalgeographies">LSOA, MSOA</a>, built-up area</li>
     </ul>
 
     <p>Postcodes that postcodes.io doesn't recognise are recorded (so they aren't retried) and flagged in the <a href="/#data/postcodes">Data tab</a> as potential data quality issues. Coordinates for these can be manually corrected.</p>
@@ -309,7 +311,7 @@ Fuel Finder API (GOV.UK)
         <dd>The unique identifier for a specific station in the Fuel Finder API — a short alphanumeric string (e.g. <code>A1B2C3</code>). It is stable across scrapes and is used as the primary key throughout the database. You need a node ID to add a station-level brand override, or to look up a single station's price history via the API.</dd>
     </dl>
 
-    <h3>Forecourt categories and the "Supermarket / Motorway" filters</h3>
+    <h3 id="category-vs-flags">Forecourt categories and the “Supermarket / Motorway” filters</h3>
 
     <p>There are <strong>two separate ways</strong> to filter by supermarket or motorway, and they mean different things:</p>
 
@@ -323,7 +325,7 @@ Fuel Finder API (GOV.UK)
 
     <h3>Brand normalisation report</h3>
 
-    <p>The normalisation report (Data tab → Report) shows how each raw brand string in the database has been resolved to a canonical name. The <strong>Method</strong> column and the filter dropdown use three terms:</p>
+    <p>The normalisation report (<a href="/#data/report">Data tab → Report</a>) shows how each raw brand string in the database has been resolved to a canonical name. The <strong>Method</strong> column and the filter dropdown use three terms:</p>
 
     <dl>
         <dt><strong>Aliased</strong></dt>
@@ -333,7 +335,7 @@ Fuel Finder API (GOV.UK)
         <dd>This specific station has a <em>station override</em> that sets its canonical brand directly, regardless of the alias table. Overrides are used for one-off corrections — a station whose API brand is wrong, or where the network-wide alias isn't granular enough. Overrides always take priority over aliases.</dd>
 
         <dt><strong>Unmapped</strong></dt>
-        <dd>The raw brand string has no alias and no override, <em>and</em> the brand has no entry in the category table. Consequently, it falls back to showing the raw string as its brand name and is classified as "Independent". Unmapped brands are worth reviewing — they may be new entrants to the API, typo variants, or obscure regional operators that need an alias adding.</dd>
+        <dd>The raw brand string has no alias and no override, <em>and</em> the brand has no entry in the category table. Consequently, it falls back to showing the raw string as its brand name and is classified as "Uncategorised". Unmapped brands are worth reviewing — they may be new entrants to the API, typo variants, or obscure regional operators that need an alias adding.</dd>
     </dl>
 
     <h3>Country filter: "Other / Unknown"</h3>
