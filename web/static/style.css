@@ -185,6 +185,7 @@
         .category-tag.fuel-group { background: #e2e3e5; color: #383d41; }
         .category-tag.convenience { background: #fff3cd; color: #856404; }
         .category-tag.independent { background: #f5f6f7; color: var(--muted); }
+        .category-tag.uncategorised { background: #fff; color: var(--muted); border: 1px dashed var(--muted); }
         .status-msg {
             padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 1rem;
             font-size: 0.9rem; display: none;

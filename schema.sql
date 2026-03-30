@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS fuel_type_labels (
 
 CREATE TABLE IF NOT EXISTS brand_categories (
     canonical_brand     TEXT PRIMARY KEY,
-    forecourt_type      TEXT NOT NULL  -- 'Supermarket', 'Major Oil', 'Motorway Operator', 'Independent'
+    forecourt_type      TEXT NOT NULL  -- 'Supermarket', 'Major Oil', 'Motorway Operator', 'Independent', etc.
 );
 
 -- Postcode geographic enrichment from postcodes.io.
