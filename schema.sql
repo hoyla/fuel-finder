@@ -170,7 +170,7 @@ SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
     ) AS brand_name,
     CASE
         WHEN s.is_motorway_service_station THEN 'Motorway'
-        ELSE COALESCE(bc.forecourt_type, 'Independent')
+        ELSE COALESCE(bc.forecourt_type, 'Uncategorised')
     END AS forecourt_type,
     s.city,
     s.county,
