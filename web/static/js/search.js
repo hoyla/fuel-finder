@@ -14,8 +14,8 @@ async function doSearch(offset = 0) {
     const body = document.getElementById('search-body');
     body.innerHTML = data.results.map(r => `
         <tr>
-            <td><input type="checkbox" class="search-row-cb" value="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" onchange="updateTrendButton()"></td>
-            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
+            <td><input type="checkbox" class="search-row-cb" value="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-raw-brand="${escHtml(r.raw_brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" data-category="${escHtml(r.forecourt_type || '')}" onchange="updateTrendButton()"></td>
+            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-raw-brand="${escHtml(r.raw_brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" data-category="${escHtml(r.forecourt_type || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
             <td>${r.brand_name || '—'}</td>
             <td>${categoryTag(r.forecourt_type)}</td>
             <td>${r.city || '—'}</td>
@@ -174,15 +174,24 @@ function initStationTrendFuels() {
     else sel.value = 'E10';
 }
 
-function openStationTrend(nodeId, name, brand, city, postcode) {
+function openStationTrend(nodeId, name, brand, city, postcode, category, rawBrand) {
     stationTrendState = { mode: 'single', nodeId, nodeIds: null, title: name };
     initStationTrendFuels();
     // Reset range to 30 days
     document.getElementById('st-range').value = '30';
     document.getElementById('st-granularity').value = 'auto';
     document.getElementById('station-trend-title').textContent = name;
-    const parts = [brand, city, postcode].filter(Boolean);
-    document.getElementById('station-trend-subtitle').textContent = parts.join(' · ') + ' · UK Fuel Finder node id: ' + nodeId;
+    const subtitleEl = document.getElementById('station-trend-subtitle');
+    const parts = [city, postcode].filter(Boolean);
+    const rawLabel = rawBrand || brand || '';
+    let subtitle = rawLabel + (parts.length ? ' · ' + parts.join(' · ') : '')
+        + ' · UK Fuel Finder node id: ' + nodeId;
+    let badges = '';
+    if (brand && rawBrand && brand !== rawBrand) {
+        badges += ' · <span style="font-size:0.8rem;background:var(--accent,#1d70b8);color:#fff;padding:0.1rem 0.45rem;border-radius:3px;">' + escHtml(brand) + '</span>';
+    }
+    if (category) badges += ' · ' + categoryTag(category);
+    subtitleEl.innerHTML = escHtml(subtitle) + badges;
     showStationTrendPanel();
     setStationTrendRange('30');
 }
@@ -195,7 +204,7 @@ function viewSelectedTrend() {
 
     if (ids.length === 1) {
         const cb = checked[0];
-        openStationTrend(cb.value, cb.dataset.name, cb.dataset.brand, cb.dataset.city, cb.dataset.postcode);
+        openStationTrend(cb.value, cb.dataset.name, cb.dataset.brand, cb.dataset.city, cb.dataset.postcode, cb.dataset.category, cb.dataset.rawBrand);
         return;
     }
 
@@ -483,8 +492,16 @@ async function loadPriceEditorRecords() {
     const records = resp.records;
     const station = resp.station;
     if (station) {
-        const parts = [station.brand_name, station.city, station.postcode].filter(Boolean);
-        document.getElementById('price-editor-subtitle').textContent = parts.join(' · ') + ' · UK Fuel Finder node id: ' + nodeId;
+        const rawLabel = station.raw_brand_name || station.brand_name || '';
+        const parts = [station.city, station.postcode].filter(Boolean);
+        let subtitle = rawLabel + (parts.length ? ' · ' + parts.join(' · ') : '')
+            + ' · UK Fuel Finder node id: ' + nodeId;
+        let badges = '';
+        if (station.brand_name && station.raw_brand_name && station.brand_name !== station.raw_brand_name) {
+            badges += ' · <span style="font-size:0.8rem;background:var(--accent,#1d70b8);color:#fff;padding:0.1rem 0.45rem;border-radius:3px;">' + escHtml(station.brand_name) + '</span>';
+        }
+        if (station.forecourt_type) badges += ' · ' + categoryTag(station.forecourt_type);
+        document.getElementById('price-editor-subtitle').innerHTML = escHtml(subtitle) + badges;
     }
     const body = document.getElementById('price-editor-body');
     if (!records.length) {
