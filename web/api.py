@@ -346,7 +346,7 @@ def station_price_history(
     if granularity in ('hourly', 'daily'):
         effective_granularity = granularity
     else:
-        effective_granularity = "hourly" if span_days <= 30 else "daily"
+        effective_granularity = "hourly"
 
     time_col = "date_trunc('hour', fp.observed_at)" if effective_granularity == 'hourly' else "DATE(fp.observed_at)"
 
@@ -365,10 +365,13 @@ def station_price_history(
         """, (node_id, fuel_type, *time_params))
         data = cur.fetchall()
 
-        # Also fetch station info
+        # Also fetch station info (from the materialised view which
+        # already resolves brand aliases, categories, etc.)
         cur.execute("""
-            SELECT s.trading_name, s.brand_name, s.city, s.postcode
-            FROM stations s WHERE s.node_id = %s
+            SELECT DISTINCT ON (node_id)
+                   trading_name, brand_name, raw_brand_name,
+                   city, postcode, forecourt_type
+            FROM current_prices WHERE node_id = %s
         """, (node_id,))
         station = cur.fetchone()
 
@@ -410,7 +413,7 @@ def price_history(
     days parameter (relative to now). If none are provided, defaults to 30 days.
 
     Granularity can be 'hourly' or 'daily'. If not specified, defaults to
-    hourly for ranges <= 30 days and daily for longer.
+    hourly for ranges under 30 days and daily for 30 days or longer.
     Excludes anomaly-flagged records. Applies a Hampel filter (rolling
     median ± 3×MAD) to smooth outlier averages without distorting trends.
     """
@@ -457,7 +460,7 @@ def price_history(
     if granularity in ('hourly', 'daily'):
         effective_granularity = granularity
     else:
-        effective_granularity = "hourly" if span_days <= 30 else "daily"
+        effective_granularity = "hourly" if span_days < 30 else "daily"
 
     if effective_granularity == 'hourly':
         time_col = "date_trunc('hour', fp.observed_at)"
@@ -911,7 +914,7 @@ def price_map(
     where = " AND ".join(conditions)
     with db.cursor() as cur:
         cur.execute(f"""
-            SELECT node_id, trading_name, brand_name, city, postcode,
+            SELECT node_id, trading_name, brand_name, raw_brand_name, city, postcode,
                    price, fuel_name, forecourt_type,
                    admin_district, rural_urban, parliamentary_constituency,
                    latitude, longitude,
@@ -1036,7 +1039,7 @@ def price_search(
 
     with db.cursor() as cur:
         cur.execute(f"""
-            SELECT node_id, trading_name, brand_name, city, county,
+            SELECT node_id, trading_name, brand_name, raw_brand_name, city, county,
                    postcode, region, price, fuel_name, fuel_category,
                    forecourt_type, admin_district, parliamentary_constituency,
                    rural_urban,
@@ -2108,8 +2111,10 @@ def station_price_records(
                 r["effective_flags"] = flags or None
 
         cur.execute("""
-            SELECT s.trading_name, s.brand_name, s.city, s.postcode
-            FROM stations s WHERE s.node_id = %s
+            SELECT DISTINCT ON (node_id)
+                   trading_name, brand_name, raw_brand_name,
+                   city, postcode, forecourt_type
+            FROM current_prices WHERE node_id = %s
         """, (node_id,))
         station = cur.fetchone()
 
