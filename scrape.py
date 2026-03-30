@@ -16,6 +16,7 @@ from db import (
     upsert_stations,
     insert_fuel_prices,
     refresh_current_prices,
+    refresh_daily_prices,
     get_last_scrape_timestamp,
 )
 
@@ -111,6 +112,10 @@ def run_scrape(mode="auto"):
         # Refresh the current_prices snapshot view
         refresh_current_prices(conn)
         log.info("Refreshed current_prices materialised view")
+
+        # Update daily price summaries
+        refresh_daily_prices(conn)
+        log.info("Updated daily_prices summaries")
 
         # Enrich any new postcodes via postcodes.io
         try:

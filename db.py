@@ -247,6 +247,36 @@ def refresh_current_prices(conn):
     conn.commit()
 
 
+def refresh_daily_prices(conn):
+    """Upsert today's daily_prices summaries from fuel_prices.
+
+    Re-aggregates today's data so it picks up any new scrape records.
+    Runs after each scrape and after price corrections.
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO daily_prices (node_id, fuel_type, price_date, avg_price, min_price, max_price, sample_count)
+            SELECT fp.node_id,
+                   fp.fuel_type,
+                   DATE(fp.observed_at),
+                   ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1),
+                   ROUND(MIN(COALESCE(pc.corrected_price, fp.price))::numeric, 1),
+                   ROUND(MAX(COALESCE(pc.corrected_price, fp.price))::numeric, 1),
+                   COUNT(*)
+            FROM fuel_prices fp
+            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+            WHERE fp.anomaly_flags IS NULL
+              AND DATE(fp.observed_at) >= CURRENT_DATE
+            GROUP BY fp.node_id, fp.fuel_type, DATE(fp.observed_at)
+            ON CONFLICT (node_id, fuel_type, price_date) DO UPDATE SET
+                avg_price = EXCLUDED.avg_price,
+                min_price = EXCLUDED.min_price,
+                max_price = EXCLUDED.max_price,
+                sample_count = EXCLUDED.sample_count
+        """)
+    conn.commit()
+
+
 def get_last_scrape_timestamp(conn):
     """Get the finished_at timestamp of the last successful scrape run."""
     with conn.cursor() as cur:

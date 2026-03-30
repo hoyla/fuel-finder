@@ -343,6 +343,20 @@ def station_price_history(
         time_filter = "fp.observed_at >= NOW() - make_interval(days => %s)"
         time_params = (effective_days,)
 
+    # Equivalent date-range filter for the daily_prices summary table
+    if range_start and range_end:
+        daily_time_filter = "dp.price_date >= %s AND dp.price_date <= %s"
+        daily_time_params = (range_start, range_end)
+    elif range_start:
+        daily_time_filter = "dp.price_date >= %s"
+        daily_time_params = (range_start,)
+    elif range_end:
+        daily_time_filter = "dp.price_date <= %s"
+        daily_time_params = (range_end,)
+    else:
+        daily_time_filter = "dp.price_date >= CURRENT_DATE - make_interval(days => %s)"
+        daily_time_params = (effective_days,)
+
     if granularity in ('hourly', 'daily'):
         effective_granularity = granularity
     else:
@@ -351,18 +365,29 @@ def station_price_history(
     time_col = "date_trunc('hour', fp.observed_at)" if effective_granularity == 'hourly' else "DATE(fp.observed_at)"
 
     with db.cursor() as cur:
-        cur.execute(f"""
-            SELECT {time_col} AS bucket,
-                   ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1) AS avg_price
-            FROM fuel_prices fp
-            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
-            WHERE fp.node_id = %s
-              AND fp.fuel_type = %s
-              AND {time_filter}
-              AND fp.anomaly_flags IS NULL
-            GROUP BY bucket
-            ORDER BY bucket
-        """, (node_id, fuel_type, *time_params))
+        if effective_granularity == 'daily':
+            cur.execute(f"""
+                SELECT dp.price_date AS bucket,
+                       dp.avg_price
+                FROM daily_prices dp
+                WHERE dp.node_id = %s
+                  AND dp.fuel_type = %s
+                  AND {daily_time_filter}
+                ORDER BY dp.price_date
+            """, (node_id, fuel_type, *daily_time_params))
+        else:
+            cur.execute(f"""
+                SELECT {time_col} AS bucket,
+                       ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1) AS avg_price
+                FROM fuel_prices fp
+                LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+                WHERE fp.node_id = %s
+                  AND fp.fuel_type = %s
+                  AND {time_filter}
+                  AND fp.anomaly_flags IS NULL
+                GROUP BY bucket
+                ORDER BY bucket
+            """, (node_id, fuel_type, *time_params))
         data = cur.fetchall()
 
         # Also fetch station info (from the materialised view which
@@ -455,6 +480,20 @@ def price_history(
         effective_days = min(days if days is not None else 30, max_days)
         time_filter = "fp.observed_at >= NOW() - make_interval(days => %s)"
         time_params = (effective_days,)
+
+    # Equivalent date-range filter for the daily_prices summary table
+    if range_start and range_end:
+        daily_time_filter = "dp.price_date >= %s AND dp.price_date <= %s"
+        daily_time_params = (range_start, range_end)
+    elif range_start:
+        daily_time_filter = "dp.price_date >= %s"
+        daily_time_params = (range_start,)
+    elif range_end:
+        daily_time_filter = "dp.price_date <= %s"
+        daily_time_params = (range_end,)
+    else:
+        daily_time_filter = "dp.price_date >= CURRENT_DATE - make_interval(days => %s)"
+        daily_time_params = (effective_days,)
 
     # Determine granularity
     if granularity in ('hourly', 'daily'):
@@ -578,21 +617,39 @@ def price_history(
         location_params = tuple(params_list)
 
     with db.cursor() as cur:
-        cur.execute(f"""
-            SELECT {time_col} AS bucket,
-                   ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1) AS avg_price,
-                   COUNT(DISTINCT fp.node_id) AS stations
-            FROM fuel_prices fp
-            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
-            {location_joins}
-            WHERE fp.fuel_type = %s
-              AND {time_filter}
-              {node_filter}
-              {location_filters}
-              AND fp.anomaly_flags IS NULL
-            GROUP BY bucket
-            ORDER BY bucket
-        """, (fuel_type, *time_params, *node_params, *location_params))
+        if effective_granularity == 'daily':
+            # Use pre-aggregated daily_prices table for daily queries
+            daily_location_joins = location_joins.replace("fp.node_id", "dp.node_id") if location_joins else ""
+            daily_node_filter = node_filter.replace("fp.node_id", "dp.node_id") if node_filter else ""
+            cur.execute(f"""
+                SELECT dp.price_date AS bucket,
+                       ROUND(AVG(dp.avg_price)::numeric, 1) AS avg_price,
+                       COUNT(DISTINCT dp.node_id) AS stations
+                FROM daily_prices dp
+                {daily_location_joins}
+                WHERE dp.fuel_type = %s
+                  AND {daily_time_filter}
+                  {daily_node_filter}
+                  {location_filters}
+                GROUP BY dp.price_date
+                ORDER BY dp.price_date
+            """, (fuel_type, *daily_time_params, *node_params, *location_params))
+        else:
+            cur.execute(f"""
+                SELECT {time_col} AS bucket,
+                       ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1) AS avg_price,
+                       COUNT(DISTINCT fp.node_id) AS stations
+                FROM fuel_prices fp
+                LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+                {location_joins}
+                WHERE fp.fuel_type = %s
+                  AND {time_filter}
+                  {node_filter}
+                  {location_filters}
+                  AND fp.anomaly_flags IS NULL
+                GROUP BY bucket
+                ORDER BY bucket
+            """, (fuel_type, *time_params, *node_params, *location_params))
         rows = cur.fetchall()
 
     # Apply Hampel filter to smooth outlier daily/hourly averages.
@@ -2182,6 +2239,34 @@ def _reevaluate_adjacent_anomalies(cur, fuel_price_id, effective_price):
                 (flags or None, next_row["id"]))
 
 
+def _refresh_daily_prices_for(cur, fuel_price_ids):
+    """Re-aggregate daily_prices rows affected by the given fuel_price records."""
+    if not fuel_price_ids:
+        return
+    cur.execute("""
+        INSERT INTO daily_prices (node_id, fuel_type, price_date,
+                                  avg_price, min_price, max_price, sample_count)
+        SELECT fp.node_id, fp.fuel_type, DATE(fp.observed_at),
+               ROUND(AVG(COALESCE(pc.corrected_price, fp.price))::numeric, 1),
+               ROUND(MIN(COALESCE(pc.corrected_price, fp.price))::numeric, 1),
+               ROUND(MAX(COALESCE(pc.corrected_price, fp.price))::numeric, 1),
+               COUNT(*)
+        FROM fuel_prices fp
+        LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+        WHERE fp.anomaly_flags IS NULL
+          AND (fp.node_id, fp.fuel_type, DATE(fp.observed_at)) IN (
+              SELECT node_id, fuel_type, DATE(observed_at)
+              FROM fuel_prices WHERE id = ANY(%s)
+          )
+        GROUP BY fp.node_id, fp.fuel_type, DATE(fp.observed_at)
+        ON CONFLICT (node_id, fuel_type, price_date) DO UPDATE SET
+            avg_price  = EXCLUDED.avg_price,
+            min_price  = EXCLUDED.min_price,
+            max_price  = EXCLUDED.max_price,
+            sample_count = EXCLUDED.sample_count
+    """, ([int(fid) for fid in fuel_price_ids],))
+
+
 @app.post("/api/corrections")
 def create_correction(
     body: PriceCorrectionBody,
@@ -2214,6 +2299,7 @@ def create_correction(
         _reevaluate_adjacent_anomalies(cur, body.fuel_price_id, body.corrected_price)
         db.commit()
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
+        _refresh_daily_prices_for(cur, [body.fuel_price_id])
         db.commit()
     return {"id": correction_id, "fuel_price_id": body.fuel_price_id, "original_price": original_price, "corrected_price": body.corrected_price}
 
@@ -2256,6 +2342,7 @@ def create_corrections_batch(
             results.append({"id": correction_id, "fuel_price_id": item.fuel_price_id, "corrected_price": item.corrected_price})
         db.commit()
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
+        _refresh_daily_prices_for(cur, [r["fuel_price_id"] for r in results])
         db.commit()
     return {"saved": len(results), "corrections": results}
 
@@ -2275,6 +2362,7 @@ def delete_correction(
         _reevaluate_adjacent_anomalies(cur, fuel_price_id, row["original_price"])
         db.commit()
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
+        _refresh_daily_prices_for(cur, [fuel_price_id])
         db.commit()
     return {"deleted": True, "fuel_price_id": fuel_price_id}
 
