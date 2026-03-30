@@ -307,6 +307,12 @@ class TestPricesByCategory:
         assert "Supermarket" in types
         assert "Major Oil" in types
 
+    def test_uncategorised_in_breakdown(self, client, has_data):
+        """Unmapped brands should appear as 'Uncategorised', not 'Independent'."""
+        data = client.get("/api/prices/by-category?fuel_type=E10").json()
+        types = [d["forecourt_type"] for d in data]
+        assert "Uncategorised" in types
+
     def test_sorted_by_price(self, client, has_data):
         data = client.get("/api/prices/by-category?fuel_type=E10").json()
         prices = [d["avg_price"] for d in data]
@@ -365,6 +371,15 @@ class TestAdminBrandCategories:
         })
         assert r.status_code == 400
 
+    def test_uncategorised_type_accepted(self, client):
+        """Uncategorised is a valid forecourt type for explicit assignment."""
+        r = client.post("/api/admin/brand-categories", json={
+            "canonical_brand": "__TEST_UNCAT__",
+            "forecourt_type": "Uncategorised",
+        })
+        assert r.status_code == 200
+        client.delete("/api/admin/brand-categories/__TEST_UNCAT__")
+
 
 class TestAdminStationOverrides:
     def test_list_returns_200(self, client):
@@ -418,6 +433,17 @@ class TestSearchCategory:
         data = client.get("/api/prices/search?fuel_type=E10&category=Supermarket&limit=10").json()
         for row in data["results"]:
             assert row["forecourt_type"] == "Supermarket"
+
+    def test_uncategorised_filter(self, client, has_data):
+        """Filtering by Uncategorised should return only unmapped brands."""
+        data = client.get("/api/prices/search?fuel_type=E10&category=Uncategorised&limit=10").json()
+        for row in data["results"]:
+            assert row["forecourt_type"] == "Uncategorised"
+
+    def test_multi_category_filter_with_uncategorised(self, client, has_data):
+        data = client.get("/api/prices/search?fuel_type=E10&category=Supermarket,Uncategorised&limit=20").json()
+        for row in data["results"]:
+            assert row["forecourt_type"] in ("Supermarket", "Uncategorised")
 
     def test_results_have_forecourt_type(self, client, has_data):
         data = client.get("/api/prices/search?fuel_type=E10&limit=5").json()
