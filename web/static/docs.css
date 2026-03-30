@@ -73,9 +73,11 @@ td { padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border); }
 .category-tag.supermarket { background: #d4edda; color: #155724; }
 .category-tag.major-oil { background: #cce5ff; color: #004085; }
 .category-tag.motorway { background: #f8d7da; color: #721c24; }
-.category-tag.fuel-group { background: #e2e3e5; color: #383d41; }
+.category-tag.motorway-operator { background: #fde4d0; color: #6e3619; }
+.category-tag.fuel-group { background: #e8e9f5; color: #4a4d80; }
 .category-tag.convenience { background: #fff3cd; color: #856404; }
 .category-tag.independent { background: #f5f6f7; color: var(--muted); }
+.category-tag.uncategorised { background: #e2e3e5; color: #383d41; border: 1px dashed #adb1bd; }
 
 .diagram {
     background: var(--card-bg); border: 1px solid var(--border);
