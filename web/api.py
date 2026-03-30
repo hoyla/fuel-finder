@@ -623,7 +623,7 @@ def price_history(
             daily_node_filter = node_filter.replace("fp.node_id", "dp.node_id") if node_filter else ""
             cur.execute(f"""
                 SELECT dp.price_date AS bucket,
-                       ROUND(AVG(dp.avg_price)::numeric, 1) AS avg_price,
+                       ROUND((SUM(dp.avg_price * dp.sample_count) / SUM(dp.sample_count))::numeric, 1) AS avg_price,
                        COUNT(DISTINCT dp.node_id) AS stations
                 FROM daily_prices dp
                 {daily_location_joins}
@@ -675,7 +675,7 @@ def price_history(
 
 @app.get("/api/prices/history/export")
 def price_history_export(
-    fuel_type: str = Query("E10"),
+    fuel_type: str = Query(...),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     days: Optional[int] = Query(None, ge=1, le=3650),
@@ -1126,7 +1126,7 @@ def price_search(
 
 @app.get("/api/prices/search/export")
 def price_search_export(
-    fuel_type: str = Query("E10"),
+    fuel_type: str = Query(...),
     postcode: Optional[str] = Query(None),
     station: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
