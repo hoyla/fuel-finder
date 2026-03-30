@@ -77,25 +77,16 @@ async function loadTrends() {
         ? 'Showing average per scrape window (data is fetched every 30 minutes).'
         : 'Showing daily averages.';
 
-    // Format labels: show time for hourly, date-only for daily
-    const labels = data.map(d => {
-        const dt = new Date(d.bucket);
-        if (hourly) {
-            return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-                 + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-        }
-        return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-    });
+    const chartData = data.map(d => ({ x: new Date(d.bucket), y: d.avg_price }));
 
     if (charts['chart-trend']) charts['chart-trend'].destroy();
     const ctx = document.getElementById('chart-trend').getContext('2d');
     charts['chart-trend'] = new Chart(ctx, {
         type: 'line',
         data: {
-            labels,
             datasets: [{
                 label: 'Avg pence/litre',
-                data: data.map(d => d.avg_price),
+                data: chartData,
                 borderColor: '#1d70b8',
                 backgroundColor: '#1d70b833',
                 fill: true, tension: 0.3,
@@ -108,15 +99,25 @@ async function loadTrends() {
         options: {
             responsive: true,
             scales: {
-                x: { ticks: { maxTicksAutoSkip: true, maxRotation: 45 } },
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: hourly ? 'hour' : 'day',
+                        tooltipFormat: hourly ? 'd MMM, HH:mm' : 'd MMM yyyy',
+                        displayFormats: { hour: 'd MMM HH:mm', day: 'd MMM' }
+                    },
+                    ticks: { maxRotation: 45 }
+                },
                 y: { beginAtZero: false }
             },
             plugins: {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        title: (items) => items[0].label,
-                        label: (item) => `${item.parsed.y}p · averaged from ${data[item.dataIndex].stations} stations`
+                        label: (item) => {
+                            const d = data[item.dataIndex];
+                            return `${item.parsed.y}p · averaged from ${d.stations} stations`;
+                        }
                     }
                 }
             }
