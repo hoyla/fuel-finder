@@ -330,11 +330,10 @@ async function loadStationTrend() {
         return url;
     }
 
-    // Show table view / override buttons only for single-station single-fuel views
-    document.getElementById('st-edit-btn').style.display =
-        isSingle && !allFuels ? '' : 'none';
+    // Show table view / override buttons for single-station views
+    document.getElementById('st-edit-btn').style.display = isSingle ? '' : 'none';
     document.getElementById('st-override-btn').style.display =
-        isSingle && !allFuels && canEdit() ? '' : 'none';
+        isSingle && canEdit() ? '' : 'none';
 
     if (allFuels) {
         const { datasets, granularity } = await fetchAllFuelTrends(buildUrl);
