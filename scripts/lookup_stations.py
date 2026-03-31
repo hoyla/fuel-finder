@@ -14,7 +14,7 @@ import json
 import sys
 import urllib.request
 
-API_BASE = "https://staging-fuel.hoy.la"
+API_BASE = "https://fuel.hoy.la"
 BATCH_SIZE = 200  # stay within readonly tier limit
 
 
