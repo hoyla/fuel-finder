@@ -67,6 +67,7 @@ function buildSearchUrl(limit, offset) {
     const supermarket = document.getElementById('search-supermarket').checked;
     const motorway = document.getElementById('search-motorway').checked;
     const excludeOutliers = document.getElementById('search-exclude-outliers').checked;
+    const nodeId = document.getElementById('search-node-id').value.trim();
     const category = getSelectedCategories();
     const district = document.getElementById('search-district').value;
     const constituency = document.getElementById('search-constituency').value;
@@ -86,6 +87,7 @@ function buildSearchUrl(limit, offset) {
     if (supermarket) url += '&supermarket_only=true';
     if (motorway) url += '&motorway_only=true';
     if (excludeOutliers) url += '&exclude_outliers=true';
+    if (nodeId) url += `&node_id=${encodeURIComponent(nodeId)}`;
     if (category) url += `&category=${encodeURIComponent(category)}`;
     if (district) url += `&district=${encodeURIComponent(district)}`;
     if (constituency) url += `&constituency=${encodeURIComponent(constituency)}`;

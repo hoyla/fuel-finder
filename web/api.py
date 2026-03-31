@@ -1004,6 +1004,7 @@ def price_search(
     rural_urban: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
+    node_id: Optional[str] = Query(None),
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
@@ -1022,6 +1023,9 @@ def price_search(
     if fuel_type:
         conditions.append("fuel_type = %s")
         params.append(fuel_type)
+    if node_id:
+        conditions.append("node_id = %s")
+        params.append(node_id.strip())
 
     if postcode:
         conditions.append("UPPER(postcode) LIKE %s")
@@ -1142,6 +1146,7 @@ def price_search_export(
     rural_urban: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
+    node_id: Optional[str] = Query(None),
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
@@ -1159,6 +1164,9 @@ def price_search_export(
 
     conditions = ["fp.fuel_type = %s"]
     params: list = [fuel_type]
+    if node_id:
+        conditions.append("fp.node_id = %s")
+        params.append(node_id.strip())
 
     if postcode:
         conditions.append("UPPER(s.postcode) LIKE %s")
