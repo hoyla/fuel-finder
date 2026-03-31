@@ -303,6 +303,81 @@ Streamed to handle large result sets.
 
 **Response:** CSV or JSON file download with columns: `node_id`, `trading_name`, `raw_brand`, `brand`, `fuel_type`, `fuel_name`, `price`, `observed_at`, `anomaly_flags`, `postcode`, `city`, `county`, `country`, `region`, `admin_district`, `parliamentary_constituency`, `rural_urban`, `forecourt_type`, `latitude`, `longitude`, `is_motorway_service_station`, `is_supermarket_service_station`.
 
+### `POST /api/stations/lookup`
+
+Batch lookup for station/location data by node ID, including postcode enrichment fields.
+Useful when you already have a large list of node IDs and only need location metadata.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `node_ids` | array[string] | — | Required JSON body field. Ordered list of station node IDs |
+
+**Authentication:** requires any authenticated role (`readonly`, `editor`, `admin`).
+
+**Caps:**
+- `readonly`: max 200 IDs per request
+- `editor`/`admin`: max 5000 IDs per request
+
+**Request body:**
+```json
+{
+  "node_ids": ["node-a", "node-b", "node-c"]
+}
+```
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "node_id": "node-a",
+      "found": true,
+      "trading_name": "Example Service Station",
+      "raw_brand": "TESCO PFS",
+      "brand": "Tesco",
+      "forecourt_type": "Supermarket",
+      "postcode": "LS11 5TZ",
+      "city": "Leeds",
+      "county": "West Yorkshire",
+      "country": "England",
+      "region": "Yorkshire and The Humber",
+      "admin_district": "Leeds",
+      "parliamentary_constituency": "Leeds South",
+      "rural_urban": "Urban city and town",
+      "latitude": 53.775,
+      "longitude": -1.545,
+      "is_motorway_service_station": false,
+      "is_supermarket_service_station": true
+    },
+    {
+      "node_id": "unknown-id",
+      "found": false,
+      "trading_name": null,
+      "raw_brand": null,
+      "brand": null,
+      "forecourt_type": null,
+      "postcode": null,
+      "city": null,
+      "county": null,
+      "country": null,
+      "region": null,
+      "admin_district": null,
+      "parliamentary_constituency": null,
+      "rural_urban": null,
+      "latitude": null,
+      "longitude": null,
+      "is_motorway_service_station": null,
+      "is_supermarket_service_station": null
+    }
+  ],
+  "requested": 2,
+  "found": 1,
+  "missing": ["unknown-id"]
+}
+```
+
+Response order matches the `node_ids` request order.
+
 ### `GET /api/anomalies`
 
 Recent price records flagged by anomaly detection, with previous price context. Records that have already been corrected are excluded.

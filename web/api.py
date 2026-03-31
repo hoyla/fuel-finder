@@ -122,6 +122,9 @@ class PostcodeCoordsBody(BaseModel):
     latitude: float
     longitude: float
 
+class StationLookupBody(BaseModel):
+    node_ids: list[str]
+
 
 # ---------------------------------------------------------------------------
 # API routes
@@ -1356,6 +1359,70 @@ def price_search_export(
             media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="fuel-search-all-history.csv"'},
         )
+
+
+@app.post("/api/stations/lookup")
+def stations_lookup(
+    body: StationLookupBody,
+    db=Depends(get_db),
+    role: str = Depends(resolve_role),
+    _auth=Depends(require_auth),
+):
+    """Lookup station/location fields for a list of node IDs."""
+    node_ids = [n.strip() for n in body.node_ids if n and n.strip()]
+    if not node_ids:
+        raise HTTPException(status_code=400, detail="node_ids must include at least one ID")
+
+    max_ids = 200 if role == "readonly" else 5000
+    if len(node_ids) > max_ids:
+        raise HTTPException(status_code=400, detail=f"node_ids exceeds maximum of {max_ids} for role {role}")
+
+    with db.cursor() as cur:
+        cur.execute("""
+            WITH requested AS (
+                SELECT *
+                FROM unnest(%s::text[]) WITH ORDINALITY AS t(node_id, ord)
+            )
+            SELECT r.node_id,
+                   (s.node_id IS NOT NULL) AS found,
+                   s.trading_name,
+                   s.brand_name AS raw_brand,
+                   COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name) AS brand,
+                   bc.forecourt_type,
+                   s.postcode,
+                   s.city,
+                   s.county,
+                   COALESCE(pl.country, s.country) AS country,
+                   COALESCE(pl.ons_region, pr.region) AS region,
+                   pl.admin_district,
+                   pl.parliamentary_constituency,
+                   pl.rural_urban,
+                   s.latitude,
+                   s.longitude,
+                   s.is_motorway_service_station,
+                   s.is_supermarket_service_station
+            FROM requested r
+            LEFT JOIN stations s ON s.node_id = r.node_id
+            LEFT JOIN station_brand_overrides so ON so.node_id = s.node_id
+            LEFT JOIN brand_aliases ba ON ba.raw_brand_name = s.brand_name
+            LEFT JOIN brand_categories bc
+                ON bc.canonical_brand = COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name)
+            LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
+            LEFT JOIN postcode_regions pr ON pr.postcode_area = (
+                CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{2}$'
+                     THEN LEFT(s.postcode, 2) ELSE LEFT(s.postcode, 1) END
+            )
+            ORDER BY r.ord
+        """, (node_ids,))
+        rows = cur.fetchall()
+
+    missing = [row["node_id"] for row in rows if not row["found"]]
+    return {
+        "results": rows,
+        "requested": len(node_ids),
+        "found": len(rows) - len(missing),
+        "missing": missing,
+    }
 
 
 _ANOMALY_SORT_COLS = {
