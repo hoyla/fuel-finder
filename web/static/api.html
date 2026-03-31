@@ -264,6 +264,22 @@
     </div>
 
     <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/stations/lookup</div>
+        <div class="desc">Batch lookup for station/location fields by node ID, including postcode enrichment data. Useful when you already have a list of node IDs and only need location metadata.</div>
+        <table>
+            <thead><tr><th>Body field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>node_ids</code></td><td>array[string]</td><td>Yes</td><td>Ordered list of station node IDs</td></tr>
+            </tbody>
+        </table>
+        <p>Access: any authenticated role. Caps: readonly max 200 IDs; editor/admin max 5000 IDs.</p>
+        <pre>{
+  "node_ids": ["node-a", "node-b", "node-c"]
+}</pre>
+        <p>Returns: <code>{ results: [...], requested, found, missing }</code>. Result order matches the request order. Missing IDs are returned with <code>found: false</code> and null location fields.</p>
+    </div>
+
+    <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/anomalies</div>
         <div class="desc">Price records flagged by anomaly detection, with previous price context. Records that have already been corrected are excluded.</div>
         <table>

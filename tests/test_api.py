@@ -176,6 +176,58 @@ class TestSearch:
             assert ids1 != ids2
 
 
+class TestStationsLookup:
+    def test_returns_200_with_known_node_ids(self, client, has_data):
+        seed = client.get("/api/prices/search?fuel_type=E10&limit=2").json()
+        node_ids = [r["node_id"] for r in seed["results"]]
+
+        r = client.post("/api/stations/lookup", json={"node_ids": node_ids})
+        assert r.status_code == 200
+
+        data = r.json()
+        assert data["requested"] == len(node_ids)
+        assert len(data["results"]) == len(node_ids)
+        assert data["found"] == len(node_ids)
+        assert data["missing"] == []
+
+    def test_has_postcode_enrichment_fields(self, client, has_data):
+        seed = client.get("/api/prices/search?fuel_type=E10&limit=1").json()
+        node_id = seed["results"][0]["node_id"]
+
+        r = client.post("/api/stations/lookup", json={"node_ids": [node_id]})
+        assert r.status_code == 200
+
+        row = r.json()["results"][0]
+        for field in (
+            "node_id",
+            "found",
+            "trading_name",
+            "postcode",
+            "country",
+            "region",
+            "admin_district",
+            "parliamentary_constituency",
+            "rural_urban",
+            "latitude",
+            "longitude",
+        ):
+            assert field in row
+
+    def test_includes_missing_node_ids(self, client, has_data):
+        seed = client.get("/api/prices/search?fuel_type=E10&limit=1").json()
+        real_id = seed["results"][0]["node_id"]
+        missing_id = "__NOT_A_REAL_NODE_ID__"
+
+        r = client.post("/api/stations/lookup", json={"node_ids": [real_id, missing_id]})
+        assert r.status_code == 200
+
+        data = r.json()
+        assert data["requested"] == 2
+        assert data["found"] == 1
+        assert data["missing"] == [missing_id]
+        assert data["results"][1]["found"] is False
+
+
 class TestFuelTypes:
     def test_returns_200(self, client):
         r = client.get("/api/fuel-types")
