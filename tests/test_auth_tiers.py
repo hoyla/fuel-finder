@@ -350,6 +350,22 @@ class TestReadonlyCaps:
         r = editor_client.get(f"/api/prices/station/{node_id}/history?fuel_type=E10&days=365")
         assert r.status_code == 200
 
+    def test_stations_lookup_node_ids_capped_for_readonly(self, readonly_client, has_data):
+        """Readonly stations lookup rejects payloads over 200 node IDs."""
+        r = readonly_client.get("/api/prices/search?fuel_type=E10&limit=1")
+        node_id = r.json()["results"][0]["node_id"]
+        payload = {"node_ids": [node_id] * 201}
+        r = readonly_client.post("/api/stations/lookup", json=payload)
+        assert r.status_code == 400
+
+    def test_stations_lookup_node_ids_uncapped_for_editor(self, editor_client, has_data):
+        """Editor can request over 200 node IDs in stations lookup."""
+        r = editor_client.get("/api/prices/search?fuel_type=E10&limit=1")
+        node_id = r.json()["results"][0]["node_id"]
+        payload = {"node_ids": [node_id] * 201}
+        r = editor_client.post("/api/stations/lookup", json=payload)
+        assert r.status_code == 200
+
 
 # ===================================================================
 # Read-only access to read endpoints
@@ -384,6 +400,12 @@ class TestReadonlyCanRead:
 
     def test_anomalies(self, readonly_client, has_data):
         assert readonly_client.get("/api/anomalies?fuel_type=E10").status_code == 200
+
+    def test_stations_lookup(self, readonly_client, has_data):
+        seed = readonly_client.get("/api/prices/search?fuel_type=E10&limit=1").json()
+        node_id = seed["results"][0]["node_id"]
+        r = readonly_client.post("/api/stations/lookup", json={"node_ids": [node_id]})
+        assert r.status_code == 200
 
 
 # ===================================================================
