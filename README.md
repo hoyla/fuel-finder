@@ -249,6 +249,10 @@ fuel-finder-scraper/
 
 This project sources all UK fuel price data from the [GOV.UK Fuel Finder API](https://www.developer.fuel-finder.service.gov.uk/). The API provides live snapshot pricing at ~7,500 fuel stations across the UK. We are grateful for this public data source and our use follows the [GOV.UK Fuel Finder developer guidelines](https://www.developer.fuel-finder.service.gov.uk/dev-guideline), including rate limiting, efficient polling, and safeguards on data redistribution. For full details, see the [Scraper](web/static/about.html#the-scraper) and [API usage guidelines](web/static/about.html#api-usage-guidelines) sections on the About page.
 
+### fuelcosts.co.uk
+
+We are grateful to [fuelcosts.co.uk](https://fuelcosts.co.uk) for providing an archive of data published by the UK Fuel Finder from February 7 2026 to March 26 2026. 
+
 ### Postcodes.io
 
 Postcode enrichment is provided via [postcodes.io](https://postcodes.io), a free and open API for UK postcode data. This enrichment adds accurate coordinates (fixing ~85 stations with incorrect data), administrative geography, parliamentary constituency, rural/urban classification, and statistical areas to our database.
