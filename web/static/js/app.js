@@ -2,6 +2,7 @@
 // App bootstrap — ties everything together
 // ---------------------------------------------------------------------------
 async function startApp() {
+    initTomSelects();
     await fetchUserRole();
     await loadFuelTypes();
     await loadRegions();
@@ -22,9 +23,5 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.multi-select').forEach(ms => {
-        ms.querySelectorAll('input[type=checkbox]').forEach(cb => {
-            cb.addEventListener('change', () => updateMultiSelectDisplay(ms.id));
-        });
-    });
+    initTomSelects();
 });
