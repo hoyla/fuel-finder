@@ -14,9 +14,7 @@ env:
   AWS_REGION: eu-north-1
   ECR_REPOSITORY: fuel-finder
   ECS_CLUSTER: fuel-finder
-  ECS_SERVICE_STAGING: fuel-finder-staging
   ECS_SERVICE_PROD: fuel-finder-prod
-  TASK_DEF_STAGING: .aws/task-definition-staging.json
   TASK_DEF_PROD: .aws/task-definition-prod.json
 
 jobs:
@@ -92,22 +90,22 @@ jobs:
           docker compose down
 
       - name: Save image for ECR push
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           IMAGE_NAME=$(docker compose config --images | grep web | head -1)
           docker save "$IMAGE_NAME" | gzip > /tmp/fuel-finder-web.tar.gz
 
       - name: Upload image artifact
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: docker-image
           path: /tmp/fuel-finder-web.tar.gz
           retention-days: 1
 
-  # ── 3. Push to ECR (pushes only, not PRs) ──────────────────────────
+  # ── 3. Push to ECR (main branch only) ──────────────────────────────
   push-ecr:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: docker
     timeout-minutes: 10
@@ -149,40 +147,7 @@ jobs:
           docker push "$IMAGE:latest"
           echo "image=$IMAGE:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
-  # ── 4. Deploy to STAGING (non-main branches) ──────────────────────
-  deploy-staging:
-    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
-    runs-on: ubuntu-latest
-    needs: push-ecr
-    timeout-minutes: 10
-    environment: staging
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Render task definition
-        id: render
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ${{ env.TASK_DEF_STAGING }}
-          container-name: app
-          image: ${{ needs.push-ecr.outputs.image }}
-
-      - name: Deploy to staging
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-        with:
-          task-definition: ${{ steps.render.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE_STAGING }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
-
-  # ── 5. Deploy to PRODUCTION (main branch only) ────────────────────
+  # ── 4. Deploy to PRODUCTION (main branch only) ────────────────────
   deploy-prod:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
