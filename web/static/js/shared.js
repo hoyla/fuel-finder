@@ -591,14 +591,9 @@ async function loadRegions() {
     });
     // Populate multi-selects for search and trends
     ['search-region-ms', 'trend-region-ms'].forEach(msId => {
-        const opts = document.querySelector('#' + msId + ' .multi-select-options');
-        if (!opts) return;
-        opts.innerHTML = regions.map(r =>
-            `<label><input type="checkbox" value="${r}"> ${r}</label>`
-        ).join('');
-        opts.querySelectorAll('input[type=checkbox]').forEach(cb => {
-            cb.addEventListener('change', () => updateMultiSelectDisplay(msId));
-        });
+        const ts = tomSelects[msId];
+        if (!ts) return;
+        regions.forEach(r => ts.addOption({ value: r, text: r }));
     });
 }
 
@@ -623,31 +618,37 @@ async function loadConstituencies() {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-select helpers
+// Multi-select helpers (Tom Select)
 // ---------------------------------------------------------------------------
+const tomSelects = {};
+
+function initTomSelects() {
+    document.querySelectorAll('select[multiple]').forEach(sel => {
+        if (tomSelects[sel.id]) return;
+        tomSelects[sel.id] = new TomSelect('#' + sel.id, {
+            plugins: ['remove_button'],
+            placeholder: sel.getAttribute('placeholder') || 'All',
+            hidePlaceholder: false,
+        });
+    });
+}
+
 function getMultiSelectValues(msId) {
-    const checked = document.querySelectorAll('#' + msId + ' input[type=checkbox]:checked');
-    return Array.from(checked).map(cb => cb.value).join(',');
+    const ts = tomSelects[msId];
+    if (!ts) return '';
+    return ts.getValue().join(',');
 }
 function updateMultiSelectDisplay(msId) {
-    const ms = document.getElementById(msId);
-    if (!ms) return;
-    const checked = ms.querySelectorAll('input[type=checkbox]:checked');
-    const display = ms.querySelector('.multi-select-display');
-    if (checked.length === 0) display.textContent = 'All';
-    else if (checked.length <= 2) display.textContent = Array.from(checked).map(cb => cb.value.replace(/:.*/, '')).join(', ');
-    else display.textContent = checked.length + ' selected';
+    // no-op — Tom Select manages its own display
 }
 function resetMultiSelect(msId) {
-    document.querySelectorAll('#' + msId + ' input[type=checkbox]').forEach(cb => cb.checked = false);
-    updateMultiSelectDisplay(msId);
+    const ts = tomSelects[msId];
+    if (ts) ts.clear();
 }
 function setMultiSelectValues(msId, csv) {
-    const vals = csv.split(',');
-    document.querySelectorAll('#' + msId + ' input[type=checkbox]').forEach(cb => {
-        cb.checked = vals.includes(cb.value);
-    });
-    updateMultiSelectDisplay(msId);
+    const ts = tomSelects[msId];
+    if (!ts) return;
+    ts.setValue(csv.split(','));
 }
 function getSelectedCategories() { return getMultiSelectValues('search-category-ms'); }
 

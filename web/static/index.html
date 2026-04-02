@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.5.2/dist/css/tom-select.css">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -181,43 +182,34 @@
             </div>
             <div class="control">
                 <label title="From postcodes.io lookup where available, falling back to the GOV.UK API 'country' field">Country</label>
-                <div class="multi-select" id="trend-country-ms">
-                    <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
-                    <div class="multi-select-options">
-                        <label><input type="checkbox" value="England"> England</label>
-                        <label><input type="checkbox" value="Scotland"> Scotland</label>
-                        <label><input type="checkbox" value="Wales"> Wales</label>
-                        <label><input type="checkbox" value="Northern Ireland"> Northern Ireland</label>
-                        <label><input type="checkbox" value="Other/Unknown"> Other/Unknown</label>
-                    </div>
-                </div>
+                <select id="trend-country-ms" multiple placeholder="All">
+                    <option value="England">England</option>
+                    <option value="Scotland">Scotland</option>
+                    <option value="Wales">Wales</option>
+                    <option value="Northern Ireland">Northern Ireland</option>
+                    <option value="Other/Unknown">Other/Unknown</option>
+                </select>
             </div>
             <div class="control">
                 <label title="From postcodes.io lookup where available, falling back to our postcode_regions seed table">Region</label>
-                <div class="multi-select" id="trend-region-ms">
-                    <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
-                    <div class="multi-select-options"></div>
-                </div>
+                <select id="trend-region-ms" multiple placeholder="All"></select>
             </div>
             <div class="control">
                 <label title="Rural/urban classification from postcodes.io lookup">Rural / Urban</label>
-                <div class="multi-select" id="trend-rural-urban-ms">
-                    <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
-                    <div class="multi-select-options">
-                        <label><input type="checkbox" value="Urban: Nearer to a major town or city"> Urban: Near city</label>
-                        <label><input type="checkbox" value="Urban: Further from a major town or city"> Urban: Far from city</label>
-                        <label><input type="checkbox" value="Smaller rural: Nearer to a major town or city"> Smaller rural: Near city</label>
-                        <label><input type="checkbox" value="Smaller rural: Further from a major town or city"> Smaller rural: Far from city</label>
-                        <label><input type="checkbox" value="Larger rural: Nearer to a major town or city"> Larger rural: Near city</label>
-                        <label><input type="checkbox" value="Larger rural: Further from a major town or city"> Larger rural: Far from city</label>
-                        <label><input type="checkbox" value="Large Urban Areas"> Large Urban Areas</label>
-                        <label><input type="checkbox" value="Other Urban Areas"> Other Urban Areas</label>
-                        <label><input type="checkbox" value="Accessible Small Towns"> Accessible Small Towns</label>
-                        <label><input type="checkbox" value="Remote Small Towns"> Remote Small Towns</label>
-                        <label><input type="checkbox" value="Accessible Rural"> Accessible Rural</label>
-                        <label><input type="checkbox" value="Remote Rural"> Remote Rural</label>
-                    </div>
-                </div>
+                <select id="trend-rural-urban-ms" multiple placeholder="All">
+                    <option value="Urban: Nearer to a major town or city">Urban: Near city</option>
+                    <option value="Urban: Further from a major town or city">Urban: Far from city</option>
+                    <option value="Smaller rural: Nearer to a major town or city">Smaller rural: Near city</option>
+                    <option value="Smaller rural: Further from a major town or city">Smaller rural: Far from city</option>
+                    <option value="Larger rural: Nearer to a major town or city">Larger rural: Near city</option>
+                    <option value="Larger rural: Further from a major town or city">Larger rural: Far from city</option>
+                    <option value="Large Urban Areas">Large Urban Areas</option>
+                    <option value="Other Urban Areas">Other Urban Areas</option>
+                    <option value="Accessible Small Towns">Accessible Small Towns</option>
+                    <option value="Remote Small Towns">Remote Small Towns</option>
+                    <option value="Accessible Rural">Accessible Rural</option>
+                    <option value="Remote Rural">Remote Rural</option>
+                </select>
             </div>
             </div>
             <div class="filter-group">
@@ -300,19 +292,16 @@
                 </div>
                 <div class="control">
                     <label title="Forecourt type derived from our brand_categories table, based on the normalised brand name">Category</label>
-                    <div class="multi-select" id="search-category-ms">
-                        <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
-                        <div class="multi-select-options">
-                            <label><input type="checkbox" value="Supermarket"> Supermarket</label>
-                            <label><input type="checkbox" value="Major Oil"> Major Oil</label>
-                            <label><input type="checkbox" value="Motorway Operator"> Motorway Operator</label>
-                            <label><input type="checkbox" value="Fuel Group"> Fuel Group</label>
-                            <label><input type="checkbox" value="Convenience"> Convenience</label>
-                            <label><input type="checkbox" value="Independent"> Independent</label>
-                            <label><input type="checkbox" value="Uncategorised"> Uncategorised</label>
-                            <label><input type="checkbox" value="Motorway"> Motorway</label>
-                        </div>
-                    </div>
+                    <select id="search-category-ms" multiple placeholder="All">
+                        <option value="Supermarket">Supermarket</option>
+                        <option value="Major Oil">Major Oil</option>
+                        <option value="Motorway Operator">Motorway Operator</option>
+                        <option value="Fuel Group">Fuel Group</option>
+                        <option value="Convenience">Convenience</option>
+                        <option value="Independent">Independent</option>
+                        <option value="Uncategorised">Uncategorised</option>
+                        <option value="Motorway">Motorway</option>
+                    </select>
                 </div>
                 <div class="control" style="display: flex; gap: 0.75rem; align-items: end; padding-bottom: 0.5rem;">
                     <label title="From the 'is_supermarket_service_station' flag in the GOV.UK API"><input type="checkbox" id="search-supermarket"> Supermarket only</label>
@@ -327,43 +316,34 @@
             <div class="filter-group">
                 <div class="control">
                     <label title="From postcodes.io lookup where available, falling back to the GOV.UK API 'country' field">Country</label>
-                    <div class="multi-select" id="search-country-ms">
-                        <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
-                        <div class="multi-select-options">
-                            <label><input type="checkbox" value="England"> England</label>
-                            <label><input type="checkbox" value="Scotland"> Scotland</label>
-                            <label><input type="checkbox" value="Wales"> Wales</label>
-                            <label><input type="checkbox" value="Northern Ireland"> Northern Ireland</label>
-                            <label><input type="checkbox" value="Other/Unknown"> Other/Unknown</label>
-                        </div>
-                    </div>
+                    <select id="search-country-ms" multiple placeholder="All">
+                        <option value="England">England</option>
+                        <option value="Scotland">Scotland</option>
+                        <option value="Wales">Wales</option>
+                        <option value="Northern Ireland">Northern Ireland</option>
+                        <option value="Other/Unknown">Other/Unknown</option>
+                    </select>
                 </div>
                 <div class="control">
                     <label title="From postcodes.io lookup where available, falling back to our postcode_regions seed table">Region</label>
-                    <div class="multi-select" id="search-region-ms">
-                        <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
-                        <div class="multi-select-options"></div>
-                    </div>
+                    <select id="search-region-ms" multiple placeholder="All"></select>
                 </div>
                 <div class="control">
                     <label title="Rural/urban classification from postcodes.io lookup">Rural / Urban</label>
-                    <div class="multi-select" id="search-rural-urban-ms">
-                        <div class="multi-select-display" onclick="this.parentElement.classList.toggle('open')">All</div>
-                        <div class="multi-select-options">
-                            <label><input type="checkbox" value="Urban: Nearer to a major town or city"> Urban: Near city</label>
-                            <label><input type="checkbox" value="Urban: Further from a major town or city"> Urban: Far from city</label>
-                            <label><input type="checkbox" value="Smaller rural: Nearer to a major town or city"> Smaller rural: Near city</label>
-                            <label><input type="checkbox" value="Smaller rural: Further from a major town or city"> Smaller rural: Far from city</label>
-                            <label><input type="checkbox" value="Larger rural: Nearer to a major town or city"> Larger rural: Near city</label>
-                            <label><input type="checkbox" value="Larger rural: Further from a major town or city"> Larger rural: Far from city</label>
-                            <label><input type="checkbox" value="Large Urban Areas"> Large Urban Areas</label>
-                            <label><input type="checkbox" value="Other Urban Areas"> Other Urban Areas</label>
-                            <label><input type="checkbox" value="Accessible Small Towns"> Accessible Small Towns</label>
-                            <label><input type="checkbox" value="Remote Small Towns"> Remote Small Towns</label>
-                            <label><input type="checkbox" value="Accessible Rural"> Accessible Rural</label>
-                            <label><input type="checkbox" value="Remote Rural"> Remote Rural</label>
-                        </div>
-                    </div>
+                    <select id="search-rural-urban-ms" multiple placeholder="All">
+                        <option value="Urban: Nearer to a major town or city">Urban: Near city</option>
+                        <option value="Urban: Further from a major town or city">Urban: Far from city</option>
+                        <option value="Smaller rural: Nearer to a major town or city">Smaller rural: Near city</option>
+                        <option value="Smaller rural: Further from a major town or city">Smaller rural: Far from city</option>
+                        <option value="Larger rural: Nearer to a major town or city">Larger rural: Near city</option>
+                        <option value="Larger rural: Further from a major town or city">Larger rural: Far from city</option>
+                        <option value="Large Urban Areas">Large Urban Areas</option>
+                        <option value="Other Urban Areas">Other Urban Areas</option>
+                        <option value="Accessible Small Towns">Accessible Small Towns</option>
+                        <option value="Remote Small Towns">Remote Small Towns</option>
+                        <option value="Accessible Rural">Accessible Rural</option>
+                        <option value="Remote Rural">Remote Rural</option>
+                    </select>
                 </div>
                 <div class="control">
                     <label title="From the 'city' field in the GOV.UK Fuel Finder API">City</label>
@@ -854,6 +834,7 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.5.2/dist/js/tom-select.complete.min.js"></script>
 <script src="/static/js/shared.js"></script>
 <script src="/static/js/router.js"></script>
 <script src="/static/js/dashboard.js"></script>
