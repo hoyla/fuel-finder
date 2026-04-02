@@ -46,7 +46,7 @@
 
     <p>The GOV.UK API only serves <strong>live snapshots</strong>: current prices at the time of the request. There is no way to retrieve yesterday's prices or see how prices have changed over time. By scraping regularly and storing every price change, we build a time-series dataset that enables trend analysis, regional comparisons, and anomaly detection.</p>
 
-    <h2>Data source</h2>
+    <h2 id="data-source">Data source</h2>
 
     <p>The Fuel Finder API is a government service that aggregates fuel prices reported by petrol station operators. It covers approximately <strong>7,500 stations</strong> across England, Wales, Scotland and Northern Ireland, reporting prices for up to six fuel types.</p>
 
@@ -62,7 +62,7 @@
         </tbody>
     </table>
 
-    <h2>The scraper</h2>
+    <h2 id="the-scraper">The scraper</h2>
 
     <p>We use an API key granted by gov.uk to check <a href="https://www.developer.fuel-finder.service.gov.uk/public-api">developer.fuel-finder.service.gov.uk/public-api</a> for updates to prices at UK fuel stations.</p>
 
@@ -135,7 +135,7 @@ Fuel Finder API (GOV.UK)
         <p>Checks the database for the most recent successful scrape. If one exists, runs incremental; otherwise runs a full scrape. This is the default — set it up on a schedule and forget about it.</p>
     </div>
 
-    <h2>How prices are stored</h2>
+    <h2 id="how-prices-are-stored">How prices are stored</h2>
 
     <p>The <code>fuel_prices</code> table is <strong>append-only</strong>, but with deduplication. When a scrape runs:</p>
 
@@ -202,7 +202,7 @@ Fuel Finder API (GOV.UK)
         are computed on the fly and do not alter stored data.
     </div>
 
-    <h2>Brand normalisation</h2>
+    <h2 id="brand-normalisation">Brand normalisation</h2>
 
     <p>The API provides brand names inconsistently — <code>ESSO</code>, <code>Esso</code>, <code>esso</code> all appear for the same company. Three layers of normalisation clean this up:</p>
 
@@ -214,7 +214,7 @@ Fuel Finder API (GOV.UK)
 
     <p>Raw brand values are <strong>never modified</strong> in the database. Normalisation is applied in the materialised view, so any change can be reversed.</p>
 
-    <h2>Forecourt categories</h2>
+    <h2 id="forecourt-categories">Forecourt categories</h2>
 
     <p>Stations are classified into categories based on their <strong>canonical brand name</strong> via a <a href="/#data/categories">lookup table</a>, with the exception of those flagged as <code>is_motorway_service_station</code> in the raw data. This flag always takes priority over our lookup.</p> 
         
@@ -238,13 +238,13 @@ Fuel Finder API (GOV.UK)
 
     <p style="font-size:0.85rem;">See also <a href="#category-vs-flags">glossary: forecourt categories and the “Supermarket / Motorway” filters</a>.</p>
 
-    <h2>Regional mapping</h2>
+    <h2 id="regional-mapping">Regional mapping</h2>
 
     <p>Each station's postcode is mapped to an ONS-style region using the first 1–2 letters of the postcode (the <em>postcode area</em>). For example, <code>SW1A</code> → <code>SW</code> → <strong>London</strong>, <code>M1</code> → <code>M</code> → <strong>North West</strong>.</p>
 
     <p>This enables regional price comparisons (e.g. "London is 3p/litre more expensive than the North East") without requiring geocoding.</p>
 
-    <h2>Postcodes.io enrichment</h2>
+    <h2 id="postcodes-enrichment">Postcodes.io enrichment</h2>
 
     <p>Each unique station postcode is looked up via <a href="https://postcodes.io">postcodes.io</a>, a free and open API for UK postcode data. The results are cached in a <code>postcode_lookups</code> table, providing:</p>
 
@@ -305,7 +305,7 @@ Fuel Finder API (GOV.UK)
         Contains NRS data © Crown copyright and database right 2026.
     </p>
 
-    <h2>The materialised view</h2>
+    <h2 id="materialised-view">The materialised view</h2>
 
     <p><code>current_prices</code> is a PostgreSQL materialised view that provides the <strong>latest price per station per fuel type</strong>. It joins together:</p>
 
@@ -332,8 +332,7 @@ Fuel Finder API (GOV.UK)
 
     <p>Raw JSON responses from each scrape are optionally backed up to S3 for audit and replay purposes.</p>
 
-    <hr style="margin: 2rem 0;">
-    <h2>Glossary</h2>
+    <h2 id="glossary">Glossary</h2>
 
     <p>Terms used throughout the dashboard that may not be immediately obvious.</p>
 
@@ -383,8 +382,7 @@ Fuel Finder API (GOV.UK)
 
     <p>"Other / Unknown" covers stations where the country cannot be determined — typically because the postcode wasn't recognised by postcodes.io and the API's own country string was blank, misspelled, or didn't match a known value. There are usually only a handful of these at any time; they often correspond to stations with postcode data quality issues.</p>
 
-    <hr style="margin: 2rem 0;">
-    <h2>Contact</h2>
+    <h2 id="contact">Contact</h2>
     <p>To report problems, request API keys or ask questions, contact Luke Hoyland at <a href="mailto:luke@hoy.la">luke@hoy.la</a>.</p>
     <p>Source code is available on <a href="https://github.com/hoyla/fuel-finder" target="_blank" rel="noopener">GitHub</a>.</p>
 
