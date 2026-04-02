@@ -385,13 +385,21 @@ async function loadDashboardCharts() {
 
     // Rural/Urban chart
     const ruData = await apiFetch(`/prices/by-rural-urban?fuel_type=${encodeURIComponent(fuelCode)}`);
-    const ruColours = ruData.map(r => {
-        if (!r.unified_label) return '#999';
-        const lc = r.unified_label.toLowerCase();
-        if (lc.includes('urban')) return '#1d70b8';
-        if (lc.includes('remote')) return '#d4351c';
-        return '#00703c';
-    });
+    const ruColourMap = {
+        'Urban (Eng & Wales)': '#d4351c',
+        'Urban (Scot)':        '#e8756a',
+        'Small towns (Scot)':  '#1d70b8',
+        'Rural (Eng & Wales)': '#00703c',
+        'Rural (Scot)':        '#4da67a',
+    };
+    const ruTooltipMap = {
+        'Urban (Eng & Wales)': 'ONS RUC: Urban nearer to & further from a major town or city',
+        'Urban (Scot)':        'SG: Large Urban Areas & Other Urban Areas',
+        'Small towns (Scot)':  'SG: Accessible Small Towns & Remote Small Towns',
+        'Rural (Eng & Wales)': 'ONS RUC: Smaller rural & Larger rural, nearer to & further from a major town or city',
+        'Rural (Scot)':        'SG: Accessible Rural & Remote Rural',
+    };
+    const ruColours = ruData.map(r => ruColourMap[r.unified_label] || '#999');
     if (charts['chart-rural-urban']) charts['chart-rural-urban'].destroy();
     const ruCtx = document.getElementById('chart-rural-urban').getContext('2d');
     const ruValues = ruData.map(r => r.avg_price);
@@ -411,7 +419,17 @@ async function loadDashboardCharts() {
         options: {
             indexAxis: 'y', responsive: true,
             aspectRatio: 1.8,
-            plugins: { legend: { display: false } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: (ctx) => {
+                            const label = ruData[ctx.dataIndex]?.unified_label;
+                            return ruTooltipMap[label] || '';
+                        }
+                    }
+                }
+            },
             scales: { x: { min: Math.floor(Math.min(...ruValues) - ruPad) } }
         }
     });
@@ -441,7 +459,7 @@ async function loadDashboardCharts() {
         b => ({ fuel_type: fuelCode, brand: b.brand_name, exclude_outliers: true }));
 
     addChartClickHandler('chart-rural-urban', ruData,
-        r => ({ fuel_type: fuelCode, rural_urban: r.rural_urban_values[0], exclude_outliers: true }));
+        r => ({ fuel_type: fuelCode, rural_urban: r.rural_urban_values.join(','), exclude_outliers: true }));
 
     addChartClickHandler('chart-district-expensive', distExpensive,
         d => ({ fuel_type: fuelCode, district: d.admin_district, exclude_outliers: true }));

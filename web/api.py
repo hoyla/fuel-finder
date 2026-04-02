@@ -1608,15 +1608,13 @@ def prices_by_rural_urban(
                 SELECT price, rural_urban,
                     CASE
                         -- England/Wales ONS RUC
-                        WHEN rural_urban LIKE 'Urban:%%' THEN 'Urban'
-                        WHEN rural_urban LIKE 'Smaller rural:%%' THEN 'Rural (smaller)'
-                        WHEN rural_urban LIKE 'Larger rural:%%' THEN 'Rural (larger)'
+                        WHEN rural_urban LIKE 'Urban:%%' THEN 'Urban (Eng & Wales)'
+                        WHEN rural_urban LIKE 'Smaller rural:%%' THEN 'Rural (Eng & Wales)'
+                        WHEN rural_urban LIKE 'Larger rural:%%' THEN 'Rural (Eng & Wales)'
                         -- Scotland
-                        WHEN rural_urban IN ('Large Urban Areas', 'Other Urban Areas') THEN 'Urban'
-                        WHEN rural_urban = 'Accessible Small Towns' THEN 'Small towns'
-                        WHEN rural_urban = 'Remote Small Towns' THEN 'Remote small towns'
-                        WHEN rural_urban = 'Accessible Rural' THEN 'Rural (accessible)'
-                        WHEN rural_urban = 'Remote Rural' THEN 'Remote rural'
+                        WHEN rural_urban IN ('Large Urban Areas', 'Other Urban Areas') THEN 'Urban (Scot)'
+                        WHEN rural_urban IN ('Accessible Small Towns', 'Remote Small Towns') THEN 'Small towns (Scot)'
+                        WHEN rural_urban IN ('Accessible Rural', 'Remote Rural') THEN 'Rural (Scot)'
                         ELSE rural_urban
                     END AS unified_label
                 FROM current_prices
