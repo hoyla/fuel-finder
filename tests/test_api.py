@@ -446,6 +446,43 @@ class TestAdminStationOverrides:
         })
         assert r.status_code == 404
 
+    def test_batch_invalid_stations_rejected(self, client):
+        r = client.post("/api/admin/station-overrides/batch", json={
+            "canonical_brand": "Test",
+            "node_ids": ["NONEXISTENT_1", "NONEXISTENT_2"],
+        })
+        assert r.status_code == 404
+
+    def test_batch_empty_node_ids_rejected(self, client):
+        r = client.post("/api/admin/station-overrides/batch", json={
+            "canonical_brand": "Test",
+            "node_ids": [],
+        })
+        assert r.status_code == 400
+
+    def test_batch_upsert_and_cleanup(self, client, has_data):
+        """Batch override real stations, verify, then clean up."""
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        with conn.cursor() as cur:
+            cur.execute("SELECT node_id FROM stations LIMIT 3")
+            node_ids = [r[0] for r in cur.fetchall()]
+        conn.close()
+        if len(node_ids) < 2:
+            pytest.skip("Need at least 2 stations for batch test")
+
+        r = client.post("/api/admin/station-overrides/batch", json={
+            "canonical_brand": "__BATCH_TEST__",
+            "node_ids": node_ids,
+            "notes": "integration test",
+        })
+        assert r.status_code == 200
+        assert r.json()["saved"] == len(node_ids)
+        assert r.json()["canonical_brand"] == "__BATCH_TEST__"
+
+        # Clean up
+        for nid in node_ids:
+            client.delete(f"/api/admin/station-overrides/{nid}")
+
 
 class TestNormalisationReport:
     def test_returns_200(self, client, has_data):
