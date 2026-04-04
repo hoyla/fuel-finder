@@ -572,9 +572,12 @@ Per-station brand overrides for edge cases.
 |---|---|
 | `GET /api/admin/station-overrides` | List all overrides |
 | `POST /api/admin/station-overrides` | Create/update override |
+| `POST /api/admin/station-overrides/batch` | Batch create/update overrides (max 500) |
 | `DELETE /api/admin/station-overrides/{node_id}` | Delete override |
 
 **POST body:** `{ "node_id": "abc123...", "canonical_brand": "Shell", "notes": "..." }`
+
+**Batch POST body:** `{ "canonical_brand": "Shell", "node_ids": ["abc123", "def456"], "notes": "..." }`
 
 ### Normalisation report
 
