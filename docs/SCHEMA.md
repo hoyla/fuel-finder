@@ -102,6 +102,32 @@ Maps UK postcode area prefixes (1-2 letters) to ONS-style regions. Used for regi
 | `region_group` | `TEXT` | Broader grouping: North, Midlands, South, London, Wales, Scotland, Northern Ireland |
 | `country` | `TEXT` | Derived from region: England, Scotland, Wales, Northern Ireland. Added in migration 016 |
 
+### `postcode_lookups`
+
+Caches rich geographic and administrative data per postcode from postcodes.io. Provides authoritative coordinates, local authority, parliamentary constituency, rural/urban classification, and statistical area codes. Populated by `enrich_postcodes.py`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `postcode` | `TEXT PK` | Full postcode |
+| `pc_latitude` | `DOUBLE PRECISION` | Authoritative latitude (replaces API-reported) |
+| `pc_longitude` | `DOUBLE PRECISION` | Authoritative longitude |
+| `admin_district` | `TEXT` | e.g. "Torfaen", "Camden" |
+| `admin_county` | `TEXT` | e.g. "Hampshire" (NULL for unitaries) |
+| `admin_ward` | `TEXT` | e.g. "Pontypool Fawr" |
+| `parish` | `TEXT` | e.g. "Pontymoile" |
+| `parliamentary_constituency` | `TEXT` | e.g. "Torfaen" |
+| `ons_region` | `TEXT` | England only; NULL for Scotland/Wales/NI |
+| `country` | `TEXT` | e.g. "England", "Wales", "Scotland" |
+| `rural_urban` | `TEXT` | e.g. "Urban city and town" |
+| `rural_urban_code` | `TEXT` | e.g. "C1" (2011) or "UN1" (2021) |
+| `lsoa` | `TEXT` | Lower Super Output Area name |
+| `msoa` | `TEXT` | Middle Super Output Area name |
+| `built_up_area` | `TEXT` | e.g. "Pontypool" |
+| `quality` | `INTEGER` | Postcodes.io quality indicator (1=best, 9=worst) |
+| `looked_up_at` | `TIMESTAMPTZ` | When the lookup was performed |
+
+**Indexes:** `(admin_district)`, `(parliamentary_constituency)`, `(rural_urban)`, `(country)`
+
 ### `fuel_type_labels`
 
 Maps API fuel type codes to human-friendly names and categories. Seeded from `seed_fuel_types.sql`.

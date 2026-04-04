@@ -6,7 +6,7 @@ UK fuel price tracker. Scrapes the GOV.UK Fuel Finder API, stores price changes 
 
 ## Architecture
 
-- **web/api.py** — all FastAPI endpoints (~40+), psycopg2 connection pool
+- **web/api.py** — all FastAPI endpoints (50+), psycopg2 connection pool
 - **web/auth.py** — authentication & authorisation (Cognito JWT, API key, no-auth fallback)
 - **web/static/index.html** — HTML shell + tab structure for the SPA
 - **web/static/style.css** — all CSS
@@ -14,7 +14,7 @@ UK fuel price tracker. Scrapes the GOV.UK Fuel Finder API, stores price changes 
 - **web/static/api.html** — on-site API reference
 - **web/static/about.html** — methodology page
 - **scrape.py** — scraper orchestrator (runs on Lambda)
-- **migrate.py** — numbered SQL migration runner (migrations/ directory, currently 001–016)
+- **migrate.py** — numbered SQL migration runner (migrations/ directory, currently 001–018)
 - **docker-compose.yml** — postgres + web containers for local dev
 
 ## Three-tier auth model
