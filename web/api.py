@@ -1152,6 +1152,7 @@ def price_search_export(
     region: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
     node_id: Optional[str] = Query(None),
+    node_ids: Optional[str] = Query(None),
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
@@ -1169,7 +1170,13 @@ def price_search_export(
 
     conditions = ["fp.fuel_type = %s"]
     params: list = [fuel_type]
-    if node_id:
+    if node_ids:
+        ids = [n.strip() for n in node_ids.split(",") if n.strip()]
+        if ids:
+            placeholders = ", ".join(["%s"] * len(ids))
+            conditions.append(f"fp.node_id IN ({placeholders})")
+            params.extend(ids)
+    elif node_id:
         conditions.append("fp.node_id = %s")
         params.append(node_id.strip())
 

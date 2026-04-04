@@ -307,10 +307,10 @@
                 <div class="control" style="display: flex; gap: 0.75rem; align-items: end; padding-bottom: 0.5rem;">
                     <label title="From the 'is_supermarket_service_station' flag in the GOV.UK API"><input type="checkbox" id="search-supermarket"> Supermarket only</label>
                     <label title="From the 'is_motorway_service_station' flag in the GOV.UK API"><input type="checkbox" id="search-motorway"> Motorway only</label>
-                    <div class="control" style="margin-left: 0.5rem;">
-                        <label title="The unique node ID for a station in the GOV.UK Fuel Finder API">Station node ID</label>
-                        <input id="search-node-id" placeholder="e.g. 12345" style="width: 8rem;" />
-                    </div>
+                </div>
+                <div class="control">
+                    <label title="The unique node ID for a station in the GOV.UK Fuel Finder API">Station node ID</label>
+                    <input id="search-node-id" placeholder="e.g. 12345" style="width: 16rem;" />
                 </div>
             </div>
             <!-- Location -->
@@ -369,10 +369,14 @@
                 <button class="primary" id="search-view-trend-btn" onclick="viewSelectedTrend()" disabled style="background:#00703c;">📈 View trend for selected</button>
                 <button class="primary" id="search-view-all-trend-btn" onclick="viewAllResultsTrend()" disabled style="background:#00703c;">📈 View trend for all results</button>
                 <div class="download-btns" id="search-download-btns">
+                    <span class="dl-scope-radios" title="Download selection or all search results">
+                        <label><input type="radio" name="search-dl-scope" value="all" checked onchange="syncSearchDownloadState()"> All</label>
+                        <label><input type="radio" name="search-dl-scope" value="selected" onchange="syncSearchDownloadState()"> Selected</label>
+                    </span>
                     <span style="font-size:0.8rem;color:var(--muted);">Current:</span>
                     <button onclick="downloadSearchData('csv')" disabled id="search-dl-csv">⬇ CSV</button>
                     <button onclick="downloadSearchData('json')" disabled id="search-dl-json">⬇ JSON</button>
-                    <span style="font-size:0.8rem;color:var(--muted);margin-left:0.5rem;">All historical:</span>
+                    <span class="dl-history-label" style="font-size:0.8rem;color:var(--muted);margin-left:0.5rem;">Full history:</span>
                     <button onclick="downloadSearchHistoryData('csv')" disabled id="search-hist-dl-csv">⬇ CSV</button>
                     <button onclick="downloadSearchHistoryData('json')" disabled id="search-hist-dl-json">⬇ JSON</button>
                 </div>

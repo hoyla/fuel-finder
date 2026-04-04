@@ -46,13 +46,7 @@ async function doSearch(offset = 0) {
         <button ${offset + 50 >= data.total ? 'disabled' : ''} onclick="doSearch(${offset + 50})">Next →</button>
     `;
 
-    const allFuelsSearch = !document.getElementById('search-fuel').value;
-    document.getElementById('search-dl-csv').disabled = !data.total;
-    document.getElementById('search-dl-json').disabled = !data.total;
-    document.getElementById('search-hist-dl-csv').disabled = !data.total || allFuelsSearch;
-    document.getElementById('search-hist-dl-json').disabled = !data.total || allFuelsSearch;
-    document.getElementById('search-hist-dl-csv').title = allFuelsSearch ? 'Select a single fuel type to export historical data' : '';
-    document.getElementById('search-hist-dl-json').title = allFuelsSearch ? 'Select a single fuel type to export historical data' : '';
+    syncSearchDownloadState();
     _syncSortIndicators('search-body', searchSort, SEARCH_SORT_KEYS);
 }
 
@@ -97,13 +91,43 @@ function buildSearchUrl(limit, offset) {
     return url;
 }
 
+function getSearchDlScope() {
+    const radio = document.querySelector('input[name="search-dl-scope"]:checked');
+    return radio ? radio.value : 'all';
+}
+
+function getCheckedNodeIds() {
+    return Array.from(document.querySelectorAll('.search-row-cb:checked')).map(cb => cb.value);
+}
+
+function syncSearchDownloadState() {
+    const hasResults = searchState.total > 0;
+    const allFuelsSearch = !document.getElementById('search-fuel').value;
+    const scope = getSearchDlScope();
+    const selectedIds = getCheckedNodeIds();
+    const hasSelection = selectedIds.length > 0;
+    const blocked = scope === 'selected' && !hasSelection;
+
+    document.getElementById('search-dl-csv').disabled = !hasResults || blocked;
+    document.getElementById('search-dl-json').disabled = !hasResults || blocked;
+    document.getElementById('search-hist-dl-csv').disabled = !hasResults || allFuelsSearch || blocked;
+    document.getElementById('search-hist-dl-json').disabled = !hasResults || allFuelsSearch || blocked;
+    document.getElementById('search-hist-dl-csv').title = allFuelsSearch ? 'Select a single fuel type to export historical data' : '';
+    document.getElementById('search-hist-dl-json').title = allFuelsSearch ? 'Select a single fuel type to export historical data' : '';
+}
+
 async function downloadSearchData(fmt) {
     const btn = document.getElementById('search-dl-' + fmt);
     btn.disabled = true;
     btn.textContent = '⏳ ' + fmt.toUpperCase();
     try {
         const data = await apiFetch(buildSearchUrl(10000, 0));
-        downloadFile(data.results, 'fuel-search-results', fmt);
+        let rows = data.results;
+        if (getSearchDlScope() === 'selected') {
+            const ids = new Set(getCheckedNodeIds());
+            rows = rows.filter(r => ids.has(r.node_id));
+        }
+        downloadFile(rows, 'fuel-search-results', fmt);
     } finally {
         btn.disabled = false;
         btn.textContent = '⬇ ' + fmt.toUpperCase();
@@ -114,6 +138,10 @@ function downloadSearchHistoryData(fmt) {
     let url = buildSearchUrl(10000, 0)
         .replace('/prices/search?', '/prices/search/export?')
         .replace(/&limit=\d+/, '').replace(/&offset=\d+/, '');
+    if (getSearchDlScope() === 'selected') {
+        const ids = getCheckedNodeIds();
+        if (ids.length) url += '&node_ids=' + encodeURIComponent(ids.join(','));
+    }
     url += '&format=' + fmt;
     fetchExport(API + url, ['fuel-search-all-history'], fmt, document.getElementById('search-hist-dl-' + fmt));
 }
@@ -143,6 +171,7 @@ function updateTrendButton() {
         btn.disabled = false;
         btn.textContent = `📈 View trend for ${count} stations`;
     }
+    syncSearchDownloadState();
 }
 
 function showStationTrendPanel() {
