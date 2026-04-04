@@ -95,8 +95,8 @@ aws secretsmanager create-secret \
 ```bash
 mkdir -p package
 pip install requests psycopg2-binary boto3 -t package/
-cp api_client.py db.py scrape.py lambda_handler.py schema.sql \
-   seed_brand_aliases.sql seed_postcode_regions.sql seed_fuel_types.sql package/
+cp api_client.py db.py scrape.py lambda_handler.py schema.sql package/
+cp -r migrations/ package/
 cd package && zip -r ../fuel-finder-scraper.zip . && cd ..
 ```
 

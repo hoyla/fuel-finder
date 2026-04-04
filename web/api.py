@@ -118,6 +118,11 @@ class PriceCorrectionBody(BaseModel):
 class BatchCorrectionsBody(BaseModel):
     corrections: list[PriceCorrectionBody]
 
+class BatchStationOverridesBody(BaseModel):
+    canonical_brand: str
+    node_ids: list[str]
+    notes: Optional[str] = None
+
 class PostcodeCoordsBody(BaseModel):
     latitude: float
     longitude: float
@@ -1791,6 +1796,38 @@ def delete_station_override(node_id: str, db=Depends(get_db), _auth=Depends(requ
         if not cur.fetchone():
             raise HTTPException(404, "Override not found")
         return {"deleted": node_id}
+
+
+@app.post("/api/admin/station-overrides/batch")
+def batch_station_overrides(body: "BatchStationOverridesBody", db=Depends(get_db), _auth=Depends(require_editor)):
+    """Create or update brand overrides for multiple stations in one transaction."""
+    canonical = body.canonical_brand.strip()
+    node_ids = [n.strip() for n in body.node_ids if n.strip()]
+    notes = (body.notes or "").strip() or None
+    if not canonical:
+        raise HTTPException(400, "canonical_brand required")
+    if not node_ids:
+        raise HTTPException(400, "node_ids must not be empty")
+    if len(node_ids) > 500:
+        raise HTTPException(400, "Maximum 500 overrides per batch")
+    with db.cursor() as cur:
+        cur.execute("SELECT node_id FROM stations WHERE node_id = ANY(%s)", (node_ids,))
+        found = {r["node_id"] for r in cur.fetchall()}
+        missing = [n for n in node_ids if n not in found]
+        if missing:
+            raise HTTPException(404, f"Stations not found: {', '.join(missing[:20])}")
+        from psycopg2.extras import execute_values
+        execute_values(
+            cur,
+            """INSERT INTO station_brand_overrides (node_id, canonical_brand, notes)
+               VALUES %s
+               ON CONFLICT (node_id) DO UPDATE
+                   SET canonical_brand = EXCLUDED.canonical_brand,
+                       notes = EXCLUDED.notes""",
+            [(n, canonical, notes) for n in node_ids],
+        )
+        db.commit()
+    return {"saved": len(node_ids), "canonical_brand": canonical}
 
 
 @app.get("/api/admin/normalisation-report")

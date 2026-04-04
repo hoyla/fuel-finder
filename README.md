@@ -197,7 +197,9 @@ fuel-finder-scraper/
 │   ├── 013_price_corrections.sql
 │   ├── 014_current_prices_corrections.sql
 │   ├── 015_trim_brand_names.sql
-│   └── 016_normalise_geography.sql
+│   ├── 016_normalise_geography.sql
+│   ├── 017_uncategorised_fallback.sql
+│   └── 018_daily_prices.sql
 ├── seed_brand_aliases.sql    # Legacy seed file (superseded by migrations)
 ├── seed_postcode_regions.sql # Legacy seed file (superseded by migrations)
 ├── seed_fuel_types.sql       # Legacy seed file (superseded by migrations)

@@ -425,6 +425,12 @@
         <div class="method-path"><span class="method delete">DEL</span> /api/admin/station-overrides/{node_id}</div>
         <div class="desc">Delete a station override.</div>
     </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/station-overrides/batch</div>
+        <div class="desc">Create or update overrides for multiple stations in one transaction. Max 500 per request.</div>
+        <pre>{ "canonical_brand": "Tesco", "node_ids": ["abc123", "def456", "ghi789"], "notes": "Bulk reclassification" }</pre>
+        <p>Returns: <code>{ "saved": 3, "canonical_brand": "Tesco" }</code></p>
+    </div>
 
     <h3>Normalisation report</h3>
 
