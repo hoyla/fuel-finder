@@ -127,3 +127,5 @@ CREATE INDEX idx_current_prices_brand_lower
     ON current_prices (lower(brand_name) text_pattern_ops);
 CREATE INDEX idx_current_prices_country
     ON current_prices (country, fuel_type);
+
+REFRESH MATERIALIZED VIEW current_prices;
