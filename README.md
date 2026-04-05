@@ -91,6 +91,7 @@ docker compose run --rm scraper python scrape.py incremental
 │  fuel_prices (raw)  │
 │  brand_aliases      │──▶ normalisation
 │  station_overrides  │
+│  postcode_overrides │──▶ per-station postcode fixes
 │  brand_categories   │──▶ forecourt type classification
 │  postcode_regions   │──▶ regional grouping
 │  postcode_lookups   │──▶ postcodes.io enrichment
@@ -139,6 +140,7 @@ docker compose run --rm scraper python scrape.py incremental
 - **Numbered migrations**: Schema changes go through `migrations/NNN_name.sql` files, tracked in `schema_migrations`. No external tools — `migrate.py` handles discovery, ordering, and idempotent application.
 - **Postcodes.io enrichment**: Each unique postcode is looked up via the free [postcodes.io](https://postcodes.io) bulk API. Results are cached in `postcode_lookups` and provide authoritative lat/lng (fixing ~85 stations with bad API coordinates), admin district, parliamentary constituency, rural/urban classification, LSOA and MSOA. Failed lookups are recorded (NULL coords + timestamp) so they aren't retried.
 - **Coordinate correction**: Stations with coordinates outside the UK (lat 49–61, lon -9–2) are excluded from the map. Unrecognised postcodes are surfaced in the Data tab with a "Fix coords" button for manual correction (e.g. sign errors in the source data).
+- **Postcode overrides**: Per-station postcode corrections for mistyped or expired postcodes. The corrected postcode is used for geographic enrichment (`COALESCE(override, station_postcode)`) while the original is preserved. Saving an override triggers a postcodes.io lookup to populate full enrichment data.
 
 ## Web UI
 
@@ -150,7 +152,7 @@ The project includes a web dashboard at http://localhost:8080 (started via Docke
 - **Trends** — average price line chart with hourly granularity for ≤30 days and daily for longer ranges, filterable by region, country, and rural/urban classification; CSV/JSON download (editor+)
 - **Search** — query builder with postcode, brand, city, price range, category, local authority, constituency, country, and rural/urban filters; CSV/JSON download (editor+); click station names to view individual price trends; "View trend for selected/all results" for aggregate trend charting
 - **Anomalies** — anomaly-flagged price records and statistical outliers excluded from current-snapshot averages (with IQR bounds for transparency); price correction tool (editor+)
-- **Data** — normalisation report, brand aliases, brand categories, station overrides, postcode issues (stations with unrecognised postcodes + coordinate fix tool), and materialised view refresh (editor+)
+- **Data** — normalisation report, brand aliases, brand categories, station overrides, postcode issues (stations with unrecognised postcodes + coordinate fix tool), postcode overrides (per-station postcode corrections with postcodes.io enrichment), and materialised view refresh (editor+)
 - **Logs** — scrape run history and price correction audit trail
 - **Users** — Cognito user management (admin only)
 
@@ -199,7 +201,8 @@ fuel-finder-scraper/
 │   ├── 015_trim_brand_names.sql
 │   ├── 016_normalise_geography.sql
 │   ├── 017_uncategorised_fallback.sql
-│   └── 018_daily_prices.sql
+│   ├── 018_daily_prices.sql
+│   └── 019_postcode_overrides.sql
 ├── seed_brand_aliases.sql    # Legacy seed file (superseded by migrations)
 ├── seed_postcode_regions.sql # Legacy seed file (superseded by migrations)
 ├── seed_fuel_types.sql       # Legacy seed file (superseded by migrations)
