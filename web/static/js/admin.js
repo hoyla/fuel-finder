@@ -276,14 +276,13 @@ function _bindServerSort(tbodyId, keys, sortState, reloadFn) {
 // ---------------------------------------------------------------------------
 // Data / Admin tab
 // ---------------------------------------------------------------------------
-const dataSections = ['report', 'aliases', 'categories', 'overrides', 'postcodes', 'postcode-overrides'];
+const dataSections = ['report', 'aliases', 'categories', 'overrides', 'postcodes'];
 const DATA_SECTION_SUMMARIES = {
     report: 'Shows how each raw brand is normalised (alias and override resolution), plus final brand/category classification and station counts.',
     aliases: 'Maps raw source brand strings to canonical brand names so reporting and filtering stay consistent across spelling variations.',
     categories: 'Assigns each canonical brand to a forecourt type used throughout dashboard and filter breakdowns.',
-    overrides: 'Applies per-station canonical brand fixes when one location needs a specific correction beyond global alias rules.',
+    overrides: 'Per-station corrections: brand overrides, postcode fixes, and coordinate adjustments. All keyed by station node ID.',
     postcodes: 'Highlights stations with postcode lookup gaps or suspect coordinates so you can patch location quality and rerun view refresh.',
-    'postcode-overrides': 'Per-station postcode corrections for mistyped or expired postcodes. Overrides trigger a postcodes.io lookup for full geographic enrichment.',
 };
 
 function updateDataSectionSummary(active) {
@@ -302,9 +301,8 @@ function switchDataSection() {
     if (active === 'report') loadReport();
     else if (active === 'aliases') loadAliases();
     else if (active === 'categories') loadCategories();
-    else if (active === 'overrides') loadOverrides();
+    else if (active === 'overrides') { loadOverrides(); loadPostcodeOverrides(); }
     else if (active === 'postcodes') loadPostcodeIssues();
-    else if (active === 'postcode-overrides') loadPostcodeOverrides();
 }
 
 // --- Log section switcher ---
@@ -503,6 +501,54 @@ async function deleteCategory(brand) {
 }
 
 // --- Station Overrides ---
+
+function renderStationCard(s) {
+    const card = document.getElementById('override-station-card');
+    if (!s || !s.found) {
+        card.style.display = 'none';
+        return;
+    }
+    const coordsHtml = (s.latitude != null && s.longitude != null)
+        ? `<a href="https://www.google.com/maps?q=${s.latitude},${s.longitude}" target="_blank" rel="noopener">${escHtml(s.latitude + ', ' + s.longitude)}</a>`
+        : '—';
+    const rows = [
+        ['Name', s.trading_name],
+        ['Raw brand', s.raw_brand],
+        ['Resolved brand', s.brand + (s.forecourt_type ? ` (${s.forecourt_type})` : '')],
+        ['Postcode', s.postcode],
+        ['Location', [s.city, s.admin_district, s.region, s.country].filter(Boolean).join(', ')],
+    ];
+    if (s.is_motorway_service_station) rows.push(['Flags', 'Motorway service station']);
+    if (s.is_supermarket_service_station) rows.push(['Flags', 'Supermarket service station']);
+    card.innerHTML = rows.map(([k, v]) =>
+        `<strong>${escHtml(k)}:</strong> ${escHtml(v || '—')}`
+    ).join('<br>') + `<br><strong>Coordinates:</strong> ${coordsHtml}`;
+    card.style.display = '';
+}
+
+async function lookupStationForOverride() {
+    const nodeId = document.getElementById('override-node').value.trim();
+    if (!nodeId) return alert('Enter a station node ID first.');
+    const btn = document.getElementById('override-lookup-btn');
+    btn.textContent = 'Looking up…';
+    btn.disabled = true;
+    try {
+        const data = await apiPost('/stations/lookup', { node_ids: [nodeId] });
+        const station = data.results && data.results[0];
+        if (!station || !station.found) {
+            alert('Station not found: ' + nodeId);
+            document.getElementById('override-station-card').style.display = 'none';
+        } else {
+            renderStationCard(station);
+        }
+    } catch (e) {
+        alert('Lookup failed: ' + e.message);
+    } finally {
+        btn.textContent = 'Look up station';
+        btn.disabled = false;
+    }
+}
+
 async function loadOverrides() {
     const data = await apiFetch('/admin/station-overrides');
     const body = document.getElementById('override-body');
@@ -512,7 +558,7 @@ async function loadOverrides() {
     }
     body.innerHTML = data.map(r => `
         <tr>
-            <td style="font-family:monospace;font-size:0.8rem">${escHtml(r.node_id)}</td>
+            <td style="font-family:monospace;font-size:0.8rem;word-break:break-all;max-width:7rem">${escHtml(r.node_id)}</td>
             <td>${escHtml(r.trading_name)}</td>
             <td>${escHtml(r.raw_brand_name)}</td>
             <td><strong>${escHtml(r.canonical_brand)}</strong></td>
@@ -663,7 +709,56 @@ async function fixPostcodeCoords(postcode, apiLat, apiLon) {
     }
 }
 
+// --- Coordinate fix from overrides form ---
+async function saveCoordFix() {
+    const postcode = document.getElementById('coord-fix-postcode').value.trim();
+    const lat = parseFloat(document.getElementById('coord-fix-lat').value.trim());
+    const lon = parseFloat(document.getElementById('coord-fix-lon').value.trim());
+    if (!postcode) return alert('Postcode is required.');
+    if (isNaN(lat) || isNaN(lon)) return alert('Valid latitude and longitude are required.');
+    try {
+        const r = await fetch(API + '/admin/postcode-lookups/' + encodeURIComponent(postcode), {
+            method: 'PATCH',
+            headers: {...authHeaders(), 'Content-Type': 'application/json'},
+            body: JSON.stringify({latitude: lat, longitude: lon}),
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        alert('Coordinates updated for ' + postcode);
+        document.getElementById('coord-fix-postcode').value = '';
+        document.getElementById('coord-fix-lat').value = '';
+        document.getElementById('coord-fix-lon').value = '';
+        await apiPost('/admin/refresh-view', {});
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
 // --- Postcode Overrides ---
+async function savePostcodeOverride() {
+    const nodeId = document.getElementById('override-node').value.trim();
+    const postcode = document.getElementById('pc-override-postcode').value.trim();
+    const notes = document.getElementById('pc-override-notes').value.trim() || null;
+    if (!nodeId || !postcode) return alert('Station node ID and corrected postcode are required.');
+    try {
+        const result = await apiPost('/admin/postcode-overrides', {
+            node_id: nodeId,
+            corrected_postcode: postcode,
+            notes,
+        });
+        let msg = 'Override saved.';
+        if (result.lookup_status === 'enriched') msg += ' Postcode recognised — full enrichment stored.';
+        else if (result.lookup_status === 'not_recognised') msg += ' Warning: postcodes.io did not recognise this postcode.';
+        else if (result.lookup_status === 'lookup_failed') msg += ' Warning: postcodes.io lookup failed (override still saved).';
+        alert(msg);
+        document.getElementById('pc-override-postcode').value = '';
+        document.getElementById('pc-override-notes').value = '';
+        await apiPost('/admin/refresh-view', {});
+        loadPostcodeOverrides();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
 async function loadPostcodeOverrides() {
     const body = document.getElementById('postcode-overrides-body');
     body.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';

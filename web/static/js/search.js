@@ -14,8 +14,8 @@ async function doSearch(offset = 0) {
     const body = document.getElementById('search-body');
     body.innerHTML = data.results.map(r => `
         <tr>
-            <td><input type="checkbox" class="search-row-cb" value="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-raw-brand="${escHtml(r.raw_brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" data-category="${escHtml(r.forecourt_type || '')}" onchange="updateTrendButton()"></td>
-            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-raw-brand="${escHtml(r.raw_brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" data-category="${escHtml(r.forecourt_type || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
+            <td><input type="checkbox" class="search-row-cb" value="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-raw-brand="${escHtml(r.raw_brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" data-category="${escHtml(r.forecourt_type || '')}" data-lat="${r.latitude || ''}" data-lon="${r.longitude || ''}" data-motorway="${r.is_motorway_service_station || ''}" data-supermarket="${r.is_supermarket_service_station || ''}" data-region="${escHtml(r.region || '')}" data-district="${escHtml(r.admin_district || '')}" onchange="updateTrendButton()"></td>
+            <td><a href="#" class="station-link" data-node="${escHtml(r.node_id)}" data-name="${escHtml(r.trading_name)}" data-brand="${escHtml(r.brand_name || '')}" data-raw-brand="${escHtml(r.raw_brand_name || '')}" data-city="${escHtml(r.city || '')}" data-postcode="${escHtml(r.postcode || '')}" data-category="${escHtml(r.forecourt_type || '')}" data-lat="${r.latitude || ''}" data-lon="${r.longitude || ''}" data-motorway="${r.is_motorway_service_station || ''}" data-supermarket="${r.is_supermarket_service_station || ''}" data-region="${escHtml(r.region || '')}" data-district="${escHtml(r.admin_district || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(r.trading_name)}</a></td>
             <td>${r.brand_name || '—'}</td>
             <td>${categoryTag(r.forecourt_type)}</td>
             <td>${r.city || '—'}</td>
@@ -185,20 +185,15 @@ function closeStationTrend() {
     history.back();
 }
 
-function goToOverrideBrand() {
-    document.getElementById('override-node').value = stationTrendState.nodeId;
+function goToOverrideStation() {
+    const st = stationTrendState;
+    document.getElementById('override-node').value = st.nodeId;
+    // Pre-populate the station card from data we already have
+    lookupStationForOverride();
     switchTab('data');
     document.getElementById('data-section').value = 'overrides';
     switchDataSection();
     history.replaceState({ panel: 'data', section: 'overrides' }, '', '#data/overrides');
-}
-
-function goToFixLocation() {
-    fixPostcode(
-        stationTrendState.nodeId,
-        stationTrendState.postcode || '',
-        stationTrendState.title
-    );
 }
 
 function initStationTrendFuels() {
@@ -219,15 +214,38 @@ function initStationTrendFuels() {
     sel.value = searchFuel; // empty string = "All fuel types"
 }
 
-function openStationTrend(nodeId, name, brand, city, postcode, category, rawBrand) {
-    stationTrendState = { mode: 'single', nodeId, nodeIds: null, title: name, postcode };
+function openStationTrend(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district) {
+    stationTrendState = { mode: 'single', nodeId, nodeIds: null, title: name, postcode, lat, lon };
     initStationTrendFuels();
     // Reset range to 30 days
     document.getElementById('st-range').value = '30';
     document.getElementById('st-granularity').value = 'auto';
     document.getElementById('station-trend-title').textContent = name;
+
+    // If key detail fields are missing, fetch them via lookup then re-render subtitle
+    if (!lat && !lon && !region && !district) {
+        renderStationSubtitle(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district);
+        apiPost('/stations/lookup', { node_ids: [nodeId] }).then(data => {
+            const s = data.results && data.results[0];
+            if (s && s.found) {
+                stationTrendState.lat = s.latitude;
+                stationTrendState.lon = s.longitude;
+                renderStationSubtitle(nodeId, s.trading_name || name, s.brand || brand, s.city || city, s.postcode || postcode, s.forecourt_type || category, s.raw_brand || rawBrand, s.latitude, s.longitude, s.is_motorway_service_station, s.is_supermarket_service_station, s.region, s.admin_district);
+            }
+        }).catch(() => {});
+    } else {
+        renderStationSubtitle(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district);
+    }
+
+    showStationTrendPanel();
+    setStationTrendRange('30');
+}
+
+function renderStationSubtitle(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district) {
     const subtitleEl = document.getElementById('station-trend-subtitle');
     const parts = [city, postcode].filter(Boolean);
+    if (district && district !== city) parts.push(district);
+    if (region) parts.push(region);
     const rawLabel = rawBrand || brand || '';
     let subtitle = rawLabel + (parts.length ? ' · ' + parts.join(' · ') : '')
         + ' · UK Fuel Finder node id: ' + nodeId;
@@ -236,9 +254,16 @@ function openStationTrend(nodeId, name, brand, city, postcode, category, rawBran
         badges += ' · <span style="font-size:0.8rem;background:var(--accent,#1d70b8);color:#fff;padding:0.1rem 0.45rem;border-radius:3px;">' + escHtml(brand) + '</span>';
     }
     if (category) badges += ' · ' + categoryTag(category);
+    if (motorway === 'true' || motorway === true) {
+        badges += ' · <span style="font-size:0.8rem;background:#912b88;color:#fff;padding:0.1rem 0.45rem;border-radius:3px;" title="is_motorway_service_station flag set in GOV.UK Fuel Finder source data">Motorway</span>';
+    }
+    if (supermarket === 'true' || supermarket === true) {
+        badges += ' · <span style="font-size:0.8rem;background:#00703c;color:#fff;padding:0.1rem 0.45rem;border-radius:3px;" title="is_supermarket_service_station flag set in GOV.UK Fuel Finder source data (unreliable — some non-supermarkets are flagged)">Supermarket</span>';
+    }
+    if (lat && lon) {
+        badges += ` · <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" rel="noopener" style="font-size:0.8rem;color:var(--muted);text-decoration:none;" title="${lat}, ${lon}">📍 Coordinates</a>`;
+    }
     subtitleEl.innerHTML = escHtml(subtitle) + badges;
-    showStationTrendPanel();
-    setStationTrendRange('30');
 }
 
 function viewSelectedTrend() {
@@ -249,7 +274,7 @@ function viewSelectedTrend() {
 
     if (ids.length === 1) {
         const cb = checked[0];
-        openStationTrend(cb.value, cb.dataset.name, cb.dataset.brand, cb.dataset.city, cb.dataset.postcode, cb.dataset.category, cb.dataset.rawBrand);
+        openStationTrend(cb.value, cb.dataset.name, cb.dataset.brand, cb.dataset.city, cb.dataset.postcode, cb.dataset.category, cb.dataset.rawBrand, cb.dataset.lat, cb.dataset.lon, cb.dataset.motorway, cb.dataset.supermarket, cb.dataset.region, cb.dataset.district);
         return;
     }
 
@@ -372,8 +397,6 @@ async function loadStationTrend() {
     // Show table view / override buttons for single-station views
     document.getElementById('st-edit-btn').style.display = isSingle ? '' : 'none';
     document.getElementById('st-override-btn').style.display =
-        isSingle && canEdit() ? '' : 'none';
-    document.getElementById('st-fix-location-btn').style.display =
         isSingle && canEdit() ? '' : 'none';
 
     if (allFuels) {

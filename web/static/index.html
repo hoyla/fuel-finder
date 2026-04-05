@@ -444,10 +444,9 @@
             </div>
             <button class="primary" onclick="loadStationTrend()">Update</button>
             <button class="primary" id="st-edit-btn" onclick="openPriceEditor(stationTrendState.nodeId, stationTrendState.title, 'station-trend')" style="background:#505a5f;display:none;">All price records</button>
-            <button class="primary" id="st-override-btn" onclick="goToOverrideBrand()" style="background:#f47738;display:none;">Override brand</button>
-            <button class="primary" id="st-fix-location-btn" onclick="goToFixLocation()" style="background:#f47738;display:none;">Fix location</button>
+            <button class="primary" id="st-override-btn" onclick="goToOverrideStation()" style="background:#f47738;display:none;">Override station details</button>
             <div class="download-btns">
-                <span style="font-size:0.8rem;color:var(--muted);">Raw data for the selected filters:</span>
+                <span style="font-size:0.8rem;color:var(--muted);">Raw data for the<br>selected filters:</span>
                 <button onclick="downloadStationTrendData('csv')" disabled id="st-dl-csv">⬇ CSV</button>
                 <button onclick="downloadStationTrendData('json')" disabled id="st-dl-json">⬇ JSON</button>
             </div>
@@ -656,7 +655,6 @@
                     <option value="categories">Brand Categories</option>
                     <option value="overrides">Station Overrides</option>
                     <option value="postcodes">Postcode Issues</option>
-                    <option value="postcode-overrides">Postcode Overrides</option>
                 </select>
             </div>
             <p id="data-section-summary" class="data-section-summary"></p>
@@ -775,13 +773,75 @@
             </div>
         </div>
 
-        <!-- Postcode Overrides -->
-        <div id="data-postcode-overrides" style="display:none;">
-            <p style="color: var(--text-light); margin-bottom: 1rem;">
-                Per-station postcode corrections. The corrected postcode is used for
-                geographic enrichment (region, constituency, etc.) while the original
-                is preserved.
-            </p>
+        <!-- Station Overrides (brand, postcode, coordinates) -->
+        <div id="data-overrides" style="display:none;">
+            <div class="controls" style="margin-bottom: 0.5rem;">
+                <div class="control">
+                    <label>Station node ID</label>
+                    <input id="override-node" placeholder="e.g. abc123" />
+                </div>
+                <button class="primary" id="override-lookup-btn" onclick="lookupStationForOverride()" style="background:#505a5f;">Look up station</button>
+            </div>
+
+            <div id="override-station-card" style="display:none;background:var(--bg-alt,#f3f2f1);border-radius:6px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.6;"></div>
+
+            <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem;color:var(--text);">Brand override</h4>
+            <div class="controls">
+                <div class="control">
+                    <label>Canonical brand</label>
+                    <input id="override-brand" placeholder="e.g. Shell" />
+                </div>
+                <div class="control">
+                    <label>Notes</label>
+                    <input id="override-notes" placeholder="reason for override" />
+                </div>
+                <button class="primary" onclick="saveOverride()">Save brand</button>
+            </div>
+
+            <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem;color:var(--text);">Postcode override</h4>
+            <div class="controls">
+                <div class="control">
+                    <label>Corrected postcode</label>
+                    <input id="pc-override-postcode" placeholder="e.g. SW1A 1AA" />
+                </div>
+                <div class="control">
+                    <label>Notes</label>
+                    <input id="pc-override-notes" placeholder="reason for override" />
+                </div>
+                <button class="primary" onclick="savePostcodeOverride()">Save postcode</button>
+            </div>
+
+            <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem;color:var(--text);">Coordinate fix <small style="color:var(--muted);font-weight:normal;">(applies to all stations sharing this postcode)</small></h4>
+            <div class="controls">
+                <div class="control">
+                    <label>Postcode</label>
+                    <input id="coord-fix-postcode" placeholder="e.g. SW1A 1AA" />
+                </div>
+                <div class="control">
+                    <label>Latitude</label>
+                    <input id="coord-fix-lat" placeholder="e.g. 51.5" />
+                </div>
+                <div class="control">
+                    <label>Longitude</label>
+                    <input id="coord-fix-lon" placeholder="e.g. -0.1" />
+                </div>
+                <button class="primary" onclick="saveCoordFix()">Save coordinates</button>
+            </div>
+
+            <h4 style="font-size:0.9rem;margin:1.5rem 0 0.5rem;color:var(--text);">Brand overrides</h4>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Node ID</th><th>Station</th><th>Raw Brand</th>
+                            <th>→ Override Brand</th><th>Notes</th><th>Created</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="override-body"></tbody>
+                </table>
+            </div>
+
+            <h4 style="font-size:0.9rem;margin:1.5rem 0 0.5rem;color:var(--text);">Postcode overrides</h4>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -792,36 +852,6 @@
                         </tr>
                     </thead>
                     <tbody id="postcode-overrides-body"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Station Overrides -->
-        <div id="data-overrides" style="display:none;">
-            <div class="controls">
-                <div class="control">
-                    <label>Station node ID</label>
-                    <input id="override-node" placeholder="e.g. abc123" />
-                </div>
-                <div class="control">
-                    <label>Canonical brand</label>
-                    <input id="override-brand" placeholder="e.g. Shell" />
-                </div>
-                <div class="control">
-                    <label>Notes (optional)</label>
-                    <input id="override-notes" placeholder="reason for override" />
-                </div>
-                <button class="primary" onclick="saveOverride()">Add / Update</button>
-            </div>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Node ID</th><th>Station</th><th>Raw Brand</th>
-                            <th>→ Override Brand</th><th>Notes</th><th>Created</th><th></th>
-                        </tr>
-                    </thead>
-                    <tbody id="override-body"></tbody>
                 </table>
             </div>
         </div>
