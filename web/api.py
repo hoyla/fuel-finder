@@ -13,6 +13,7 @@ import statistics
 
 import boto3
 import psycopg2
+import requests
 from psycopg2.extras import RealDictCursor
 from psycopg2.pool import SimpleConnectionPool
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -126,6 +127,11 @@ class BatchStationOverridesBody(BaseModel):
 class PostcodeCoordsBody(BaseModel):
     latitude: float
     longitude: float
+
+class PostcodeOverrideBody(BaseModel):
+    node_id: str
+    corrected_postcode: str
+    notes: Optional[str] = None
 
 class StationLookupBody(BaseModel):
     node_ids: list[str]
@@ -1152,6 +1158,7 @@ def price_search_export(
     region: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
     node_id: Optional[str] = Query(None),
+    node_ids: Optional[str] = Query(None),
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
@@ -1169,7 +1176,13 @@ def price_search_export(
 
     conditions = ["fp.fuel_type = %s"]
     params: list = [fuel_type]
-    if node_id:
+    if node_ids:
+        ids = [n.strip() for n in node_ids.split(",") if n.strip()]
+        if ids:
+            placeholders = ", ".join(["%s"] * len(ids))
+            conditions.append(f"fp.node_id IN ({placeholders})")
+            params.extend(ids)
+    elif node_id:
         conditions.append("fp.node_id = %s")
         params.append(node_id.strip())
 
@@ -1900,6 +1913,7 @@ def postcode_issues(
 
     These may indicate bad source data (typos, missing spaces, invalid
     prefixes) and often correlate with wrong coordinates in the API.
+    Includes override status when a corrected postcode has been set.
     """
     with db.cursor() as cur:
         cur.execute("""
@@ -1919,13 +1933,17 @@ def postcode_issues(
                    CASE
                        WHEN pl.pc_latitude IS NOT NULL AND pl.admin_district IS NULL
                        THEN pl.pc_longitude
-                   END AS fixed_longitude
+                   END AS fixed_longitude,
+                   spo.corrected_postcode,
+                   spo.notes AS override_notes
             FROM stations s
             LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
+            LEFT JOIN station_postcode_overrides spo ON spo.node_id = s.node_id
             WHERE pl.postcode IS NULL
                OR pl.pc_latitude IS NULL
                OR (pl.pc_latitude IS NOT NULL AND pl.admin_district IS NULL)
             ORDER BY
+                CASE WHEN spo.corrected_postcode IS NOT NULL THEN 1 ELSE 0 END,
                 CASE WHEN s.latitude IS NOT NULL AND
                     (s.latitude < 49 OR s.latitude > 61 OR
                      s.longitude < -8 OR s.longitude > 2)
@@ -1935,6 +1953,179 @@ def postcode_issues(
                 s.postcode
         """)
         return cur.fetchall()
+
+
+POSTCODES_IO_URL = "https://api.postcodes.io/postcodes"
+
+
+def _lookup_postcode(postcode: str) -> dict | None:
+    """Look up a single postcode via postcodes.io.
+
+    Returns the parsed fields dict on success, or None if the postcode
+    is not recognised.  Raises on network errors so the caller can
+    decide how to handle them.
+    """
+    resp = requests.get(f"{POSTCODES_IO_URL}/{requests.utils.quote(postcode)}", timeout=10)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    r = resp.json().get("result")
+    if r is None:
+        return None
+    codes = r.get("codes", {})
+    return {
+        "postcode": postcode,
+        "pc_latitude": r.get("latitude"),
+        "pc_longitude": r.get("longitude"),
+        "admin_district": r.get("admin_district"),
+        "admin_county": r.get("admin_county"),
+        "admin_ward": r.get("admin_ward"),
+        "parish": r.get("parish"),
+        "parliamentary_constituency": (
+            r.get("parliamentary_constituency_2024")
+            or r.get("parliamentary_constituency")
+        ),
+        "ons_region": r.get("region"),
+        "country": r.get("country"),
+        "rural_urban": r.get("ruc21") or r.get("ruc11"),
+        "rural_urban_code": codes.get("ruc21") or codes.get("ruc11"),
+        "lsoa": r.get("lsoa") or r.get("lsoa21") or r.get("lsoa11"),
+        "msoa": r.get("msoa") or r.get("msoa21") or r.get("msoa11"),
+        "built_up_area": r.get("bua"),
+        "quality": r.get("quality"),
+    }
+
+
+def _upsert_postcode_lookup(cur, data: dict):
+    """Insert or update a postcode_lookups row from a parsed lookup dict."""
+    cur.execute("""
+        INSERT INTO postcode_lookups (
+            postcode, pc_latitude, pc_longitude,
+            admin_district, admin_county, admin_ward, parish,
+            parliamentary_constituency,
+            ons_region, country, rural_urban, rural_urban_code,
+            lsoa, msoa, built_up_area, quality
+        ) VALUES (
+            %(postcode)s, %(pc_latitude)s, %(pc_longitude)s,
+            %(admin_district)s, %(admin_county)s, %(admin_ward)s, %(parish)s,
+            %(parliamentary_constituency)s,
+            %(ons_region)s, %(country)s, %(rural_urban)s, %(rural_urban_code)s,
+            %(lsoa)s, %(msoa)s, %(built_up_area)s, %(quality)s
+        )
+        ON CONFLICT (postcode) DO UPDATE SET
+            pc_latitude = EXCLUDED.pc_latitude,
+            pc_longitude = EXCLUDED.pc_longitude,
+            admin_district = EXCLUDED.admin_district,
+            admin_county = EXCLUDED.admin_county,
+            admin_ward = EXCLUDED.admin_ward,
+            parish = EXCLUDED.parish,
+            parliamentary_constituency = EXCLUDED.parliamentary_constituency,
+            ons_region = EXCLUDED.ons_region,
+            country = EXCLUDED.country,
+            rural_urban = EXCLUDED.rural_urban,
+            rural_urban_code = EXCLUDED.rural_urban_code,
+            lsoa = EXCLUDED.lsoa,
+            msoa = EXCLUDED.msoa,
+            built_up_area = EXCLUDED.built_up_area,
+            quality = EXCLUDED.quality,
+            looked_up_at = NOW()
+    """, data)
+
+
+@app.get("/api/admin/postcode-overrides")
+def list_postcode_overrides(db=Depends(get_db), _auth=Depends(require_auth)):
+    """All per-station postcode overrides."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT spo.node_id, s.trading_name, s.brand_name,
+                   spo.original_postcode, spo.corrected_postcode,
+                   spo.notes, spo.created_at,
+                   pl.admin_district IS NOT NULL AS lookup_succeeded
+            FROM station_postcode_overrides spo
+            JOIN stations s ON s.node_id = spo.node_id
+            LEFT JOIN postcode_lookups pl ON pl.postcode = spo.corrected_postcode
+                AND pl.admin_district IS NOT NULL
+            ORDER BY spo.created_at DESC
+        """)
+        return cur.fetchall()
+
+
+@app.post("/api/admin/postcode-overrides")
+def upsert_postcode_override(
+    body: PostcodeOverrideBody,
+    db=Depends(get_db),
+    _auth=Depends(require_editor),
+):
+    """Create or update a per-station postcode override.
+
+    Stores the override, then looks up the corrected postcode via
+    postcodes.io to populate postcode_lookups with full enrichment
+    data.  The override is saved even if the lookup fails.
+    """
+    node_id = body.node_id.strip()
+    corrected = body.corrected_postcode.upper().strip()
+    notes = (body.notes or "").strip() or None
+    if not node_id or not corrected:
+        raise HTTPException(400, "node_id and corrected_postcode required")
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT node_id, postcode FROM stations WHERE node_id = %s",
+            (node_id,),
+        )
+        station = cur.fetchone()
+        if not station:
+            raise HTTPException(404, f"Station {node_id} not found")
+        original = station["postcode"] or ""
+        cur.execute("""
+            INSERT INTO station_postcode_overrides
+                (node_id, original_postcode, corrected_postcode, notes)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (node_id) DO UPDATE
+                SET corrected_postcode = EXCLUDED.corrected_postcode,
+                    notes = EXCLUDED.notes
+            RETURNING node_id, original_postcode, corrected_postcode, notes
+        """, (node_id, original, corrected, notes))
+        row = cur.fetchone()
+
+        # Look up the corrected postcode via postcodes.io
+        lookup_status = "not_attempted"
+        try:
+            data = _lookup_postcode(corrected)
+            if data:
+                _upsert_postcode_lookup(cur, data)
+                lookup_status = "enriched"
+            else:
+                # Record that we tried so it won't be retried by enrich_postcodes
+                cur.execute("""
+                    INSERT INTO postcode_lookups (postcode)
+                    VALUES (%s)
+                    ON CONFLICT (postcode) DO UPDATE SET looked_up_at = NOW()
+                """, (corrected,))
+                lookup_status = "not_recognised"
+        except requests.RequestException:
+            lookup_status = "lookup_failed"
+
+        db.commit()
+
+    return {**dict(row), "lookup_status": lookup_status}
+
+
+@app.delete("/api/admin/postcode-overrides/{node_id}")
+def delete_postcode_override(
+    node_id: str,
+    db=Depends(get_db),
+    _auth=Depends(require_editor),
+):
+    """Remove a per-station postcode override."""
+    with db.cursor() as cur:
+        cur.execute(
+            "DELETE FROM station_postcode_overrides WHERE node_id = %s RETURNING node_id",
+            (node_id,),
+        )
+        db.commit()
+        if not cur.fetchone():
+            raise HTTPException(404, "Override not found")
+        return {"deleted": node_id}
 
 
 @app.patch("/api/admin/postcode-lookups/{postcode}")

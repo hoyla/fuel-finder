@@ -276,13 +276,14 @@ function _bindServerSort(tbodyId, keys, sortState, reloadFn) {
 // ---------------------------------------------------------------------------
 // Data / Admin tab
 // ---------------------------------------------------------------------------
-const dataSections = ['report', 'aliases', 'categories', 'overrides', 'postcodes'];
+const dataSections = ['report', 'aliases', 'categories', 'overrides', 'postcodes', 'postcode-overrides'];
 const DATA_SECTION_SUMMARIES = {
     report: 'Shows how each raw brand is normalised (alias and override resolution), plus final brand/category classification and station counts.',
     aliases: 'Maps raw source brand strings to canonical brand names so reporting and filtering stay consistent across spelling variations.',
     categories: 'Assigns each canonical brand to a forecourt type used throughout dashboard and filter breakdowns.',
     overrides: 'Applies per-station canonical brand fixes when one location needs a specific correction beyond global alias rules.',
     postcodes: 'Highlights stations with postcode lookup gaps or suspect coordinates so you can patch location quality and rerun view refresh.',
+    'postcode-overrides': 'Per-station postcode corrections for mistyped or expired postcodes. Overrides trigger a postcodes.io lookup for full geographic enrichment.',
 };
 
 function updateDataSectionSummary(active) {
@@ -303,6 +304,7 @@ function switchDataSection() {
     else if (active === 'categories') loadCategories();
     else if (active === 'overrides') loadOverrides();
     else if (active === 'postcodes') loadPostcodeIssues();
+    else if (active === 'postcode-overrides') loadPostcodeOverrides();
 }
 
 // --- Log section switcher ---
@@ -573,9 +575,16 @@ async function loadPostcodeIssues() {
                 ? `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" rel="noopener">${lon}</a>`
                 : '';
             let status = '';
-            if (s.fixed_latitude != null) {
-                status = `<span title="Manually set to ${s.fixed_latitude}, ${s.fixed_longitude}" style="color:var(--green,#00703c)">✓ Fixed</span>`
+            if (s.corrected_postcode) {
+                status = `<span style="color:var(--green,#00703c)">✓ Postcode → ${escHtml(s.corrected_postcode)}</span>`;
+            } else if (s.fixed_latitude != null) {
+                status = `<span title="Manually set to ${s.fixed_latitude}, ${s.fixed_longitude}" style="color:var(--green,#00703c)">✓ Coords fixed</span>`
                     + `<br><small><a href="https://www.google.com/maps?q=${s.fixed_latitude},${s.fixed_longitude}" target="_blank" rel="noopener">${s.fixed_latitude}, ${s.fixed_longitude}</a></small>`;
+            }
+            const actions = [];
+            if (canEdit() && s.postcode && !s.corrected_postcode) {
+                actions.push(`<button class="small" data-action="fix-postcode" data-node="${escHtml(s.node_id)}" data-postcode="${escHtml(s.postcode)}" data-name="${escHtml(s.trading_name || '')}">Fix postcode</button>`);
+                actions.push(`<button class="small" data-action="fix-coords" data-postcode="${escHtml(s.postcode)}" data-lat="${s.api_latitude}" data-lon="${s.api_longitude}">Fix coords</button>`);
             }
             return `<tr${s.coords_outside_uk ? ' style="background:var(--bg-warn,#fff3cd)"' : ''}>
             <td><code>${escHtml(s.postcode || '(empty)')}</code></td>
@@ -586,11 +595,50 @@ async function loadPostcodeIssues() {
             <td>${gmapsLon(s.api_latitude, s.api_longitude)}</td>
             <td>${s.coords_outside_uk ? '⚠ Yes' : ''}</td>
             <td>${status}</td>
-            <td>${canEdit() && s.postcode ? `<button class="small" onclick="fixPostcodeCoords('${s.postcode}', ${s.api_latitude}, ${s.api_longitude})">Fix coords</button>` : ''}</td>
+            <td>${actions.join(' ')}</td>
         </tr>`;
         }).join('') : '<tr><td colspan="9">No postcode issues found.</td></tr>';
     } catch (e) {
         body.innerHTML = `<tr><td colspan="9">Error: ${e.message}</td></tr>`;
+    }
+}
+
+document.addEventListener('click', e => {
+    const fixPc = e.target.closest('[data-action="fix-postcode"]');
+    if (fixPc) {
+        fixPostcode(fixPc.dataset.node, fixPc.dataset.postcode, fixPc.dataset.name);
+        return;
+    }
+    const fixCoords = e.target.closest('[data-action="fix-coords"]');
+    if (fixCoords) {
+        fixPostcodeCoords(fixCoords.dataset.postcode,
+            parseFloat(fixCoords.dataset.lat), parseFloat(fixCoords.dataset.lon));
+        return;
+    }
+});
+
+async function fixPostcode(nodeId, currentPostcode, stationName) {
+    const corrected = prompt(
+        `Correct postcode for ${stationName || nodeId} (currently ${currentPostcode}):`,
+        currentPostcode
+    );
+    if (corrected === null || corrected.trim() === '') return;
+    const notes = prompt('Notes (optional):');
+    try {
+        const result = await apiPost('/admin/postcode-overrides', {
+            node_id: nodeId,
+            corrected_postcode: corrected.trim(),
+            notes: notes || null,
+        });
+        let msg = 'Override saved.';
+        if (result.lookup_status === 'enriched') msg += ' Postcode recognised — full enrichment stored.';
+        else if (result.lookup_status === 'not_recognised') msg += ' Warning: postcodes.io did not recognise this postcode.';
+        else if (result.lookup_status === 'lookup_failed') msg += ' Warning: postcodes.io lookup failed (override still saved).';
+        alert(msg);
+        await apiPost('/admin/refresh-view', {});
+        loadPostcodeIssues();
+    } catch (e) {
+        alert('Error: ' + e.message);
     }
 }
 
@@ -614,6 +662,43 @@ async function fixPostcodeCoords(postcode, apiLat, apiLon) {
         alert('Error: ' + e.message);
     }
 }
+
+// --- Postcode Overrides ---
+async function loadPostcodeOverrides() {
+    const body = document.getElementById('postcode-overrides-body');
+    body.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
+    try {
+        const rows = await apiFetch('/admin/postcode-overrides');
+        body.innerHTML = rows.length ? rows.map(r => `
+            <tr>
+                <td>${escHtml(r.trading_name)}</td>
+                <td>${escHtml(r.brand_name)}</td>
+                <td><code>${escHtml(r.original_postcode)}</code></td>
+                <td><code>${escHtml(r.corrected_postcode)}</code></td>
+                <td>${escHtml(r.notes) || '<span style="color:var(--muted)">—</span>'}</td>
+                <td>${r.lookup_succeeded ? '<span style="color:var(--green,#00703c)">✓ Enriched</span>' : '<span style="color:var(--red,#d4351c)">✗ Not found</span>'}</td>
+                <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</td>
+                ${canEdit() ? `<td><button class="btn-delete" data-action="delete-pc-override" data-node="${escHtml(r.node_id)}">Delete</button></td>` : ''}
+            </tr>
+        `).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">No postcode overrides defined</td></tr>';
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="8">Error: ${e.message}</td></tr>`;
+    }
+}
+
+document.addEventListener('click', async e => {
+    const del = e.target.closest('[data-action="delete-pc-override"]');
+    if (!del) return;
+    const nodeId = del.dataset.node;
+    if (!confirm(`Delete postcode override for station ${nodeId}?`)) return;
+    try {
+        await apiDelete(`/admin/postcode-overrides/${encodeURIComponent(nodeId)}`);
+        await apiPost('/admin/refresh-view', {});
+        loadPostcodeOverrides();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+});
 
 // ---------------------------------------------------------------------------
 // User management

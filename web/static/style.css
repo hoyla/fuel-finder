@@ -254,6 +254,14 @@
         }
         .download-btns button:hover { background: var(--bg); color: var(--text); }
         .download-btns button:disabled { opacity: 0.4; cursor: default; }
+        .dl-scope-radios {
+            display: inline-flex; gap: 0.15rem; font-size: 0.8rem; color: var(--muted);
+            border: 1px solid var(--border); border-radius: 5px; padding: 0.2rem 0.5rem;
+            align-items: center; white-space: nowrap;
+        }
+        .dl-scope-radios label { cursor: pointer; display: inline-flex; align-items: center; gap: 0.15rem; }
+        .dl-scope-radios input[type="radio"] { margin: 0; }
+        .dl-history-label { white-space: normal; line-height: 1.2; }
         /* Let the station-trend helper text wrap before the whole controls row wraps */
         #panel-station-trend .download-btns {
             display: flex;
