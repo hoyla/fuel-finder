@@ -268,7 +268,7 @@
             align-items: center;
             justify-content: flex-end;
             gap: 0.4rem;
-            flex: 1 1 22rem;
+            flex: 1 1 14rem;
             min-width: 0;
         }
         #panel-station-trend .download-btns > span {

@@ -87,7 +87,7 @@ async function loadMapPrices() {
             radius: 5, fillColor: priceColour(d.price), color: '#333',
             weight: 0.5, fillOpacity: 0.85, price: d.price,
         }).bindPopup(`
-            <strong><a href="#" class="station-link" data-node="${escHtml(d.node_id)}" data-name="${escHtml(d.trading_name)}" data-brand="${escHtml(d.brand_name || '')}" data-raw-brand="${escHtml(d.raw_brand_name || '')}" data-city="${escHtml(d.city || '')}" data-postcode="${escHtml(d.postcode || '')}" data-category="${escHtml(d.forecourt_type || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(d.trading_name)}</a></strong><br>
+            <strong><a href="#" class="station-link" data-node="${escHtml(d.node_id)}" data-name="${escHtml(d.trading_name)}" data-brand="${escHtml(d.brand_name || '')}" data-raw-brand="${escHtml(d.raw_brand_name || '')}" data-city="${escHtml(d.city || '')}" data-postcode="${escHtml(d.postcode || '')}" data-category="${escHtml(d.forecourt_type || '')}" data-lat="${d.latitude || ''}" data-lon="${d.longitude || ''}" data-motorway="${d.is_motorway_service_station || ''}" data-supermarket="${d.is_supermarket_service_station || ''}" data-region="" data-district="${escHtml(d.admin_district || '')}" style="color:var(--accent);text-decoration:none;">${escHtml(d.trading_name)}</a></strong><br>
             ${escHtml(d.brand_name) || ''} · ${escHtml(d.forecourt_type) || 'Uncategorised'}<br>
             ${escHtml(d.city)} ${escHtml(d.postcode)}<br>
             ${d.admin_district ? escHtml(d.admin_district) + '<br>' : ''}

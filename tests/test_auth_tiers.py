@@ -252,6 +252,16 @@ class TestEditorGate:
         })
         assert r.status_code == 403
 
+    def test_postcode_override_create_blocked_for_readonly(self, readonly_client):
+        r = readonly_client.post("/api/admin/postcode-overrides", json={
+            "node_id": "FAKE", "corrected_postcode": "SW1A 1AA",
+        })
+        assert r.status_code == 403
+
+    def test_postcode_override_delete_blocked_for_readonly(self, readonly_client):
+        r = readonly_client.delete("/api/admin/postcode-overrides/FAKE")
+        assert r.status_code == 403
+
     def test_refresh_view_blocked_for_readonly(self, readonly_client):
         r = readonly_client.post("/api/admin/refresh-view", json={})
         assert r.status_code == 403
@@ -397,6 +407,9 @@ class TestReadonlyCanRead:
 
     def test_regions(self, readonly_client, has_data):
         assert readonly_client.get("/api/regions").status_code == 200
+
+    def test_postcode_overrides_list(self, readonly_client, has_data):
+        assert readonly_client.get("/api/admin/postcode-overrides").status_code == 200
 
     def test_anomalies(self, readonly_client, has_data):
         assert readonly_client.get("/api/anomalies?fuel_type=E10").status_code == 200

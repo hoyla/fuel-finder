@@ -337,6 +337,7 @@ Useful when you already have a large list of node IDs and only need location met
       "brand": "Tesco",
       "forecourt_type": "Supermarket",
       "postcode": "LS11 5TZ",
+      "original_postcode": "LS11 5TZ",
       "city": "Leeds",
       "county": "West Yorkshire",
       "country": "England",
@@ -357,6 +358,7 @@ Useful when you already have a large list of node IDs and only need location met
       "brand": null,
       "forecourt_type": null,
       "postcode": null,
+      "original_postcode": null,
       "city": null,
       "county": null,
       "country": null,
@@ -599,9 +601,9 @@ Shows how each brand resolves through the normalisation pipeline.
 
 `GET /api/admin/postcode-issues`
 
-Stations whose postcodes were not recognised by postcodes.io — may indicate bad source data.
+Stations whose postcodes were not recognised by postcodes.io — may indicate bad source data. Includes override status when a corrected postcode has been set.
 
-**Response:** Array of `{ node_id, trading_name, brand_name, postcode, api_latitude, api_longitude, city, county, coords_outside_uk, fixed_latitude, fixed_longitude }`
+**Response:** Array of `{ node_id, trading_name, brand_name, postcode, api_latitude, api_longitude, city, county, coords_outside_uk, fixed_latitude, fixed_longitude, corrected_postcode, override_notes }`
 
 ### Postcode coordinate fix
 
@@ -612,6 +614,44 @@ Manually set coordinates for a postcode that postcodes.io didn't recognise.
 **Body:** `{ "latitude": 51.5, "longitude": -0.1 }`
 
 **Response:** `{ "postcode": "SW1A 1AA", "latitude": 51.5, "longitude": -0.1 }`
+
+### Retry failed postcode lookups
+
+`POST /api/admin/postcode-lookups/retry-failed`
+
+Re-checks all postcodes that previously failed lookup (where `pc_latitude IS NULL`) against postcodes.io in batches of 100. Updates `looked_up_at` on all retried postcodes. Requires editor or admin role.
+
+**Body:** `{}` (empty)
+
+**Response:** `{ "retried": 12, "resolved": 3, "still_failed": 9 }`
+
+### Postcode issues stats
+
+`GET /api/admin/postcode-issues/stats`
+
+Returns the count of currently-failed postcode lookups and the timestamp of the most recent lookup attempt among them.
+
+**Response:** `{ "failed_count": 12, "last_checked_at": "2026-04-05T14:30:00Z" }`
+
+### Postcode overrides
+
+Per-station postcode corrections for stations with mistyped or expired postcodes. The corrected postcode is used for geographic enrichment (region, constituency, district, etc.) while the original is preserved. On save, the corrected postcode is looked up via postcodes.io for full enrichment.
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/admin/postcode-overrides` | List all overrides |
+| `POST /api/admin/postcode-overrides` | Create/update override |
+| `DELETE /api/admin/postcode-overrides/{node_id}` | Delete override |
+
+**GET response:** Array of `{ node_id, trading_name, brand_name, original_postcode, corrected_postcode, notes, created_at, lookup_succeeded }`
+
+**POST body:** `{ "node_id": "abc123...", "corrected_postcode": "SW1A 1AA", "notes": "Typo in source data" }`
+
+**POST response:** `{ "node_id": "...", "original_postcode": "...", "corrected_postcode": "SW1A 1AA", "notes": "...", "lookup_status": "enriched" }`
+
+`lookup_status`: `"enriched"` (postcode recognised, full enrichment stored), `"not_recognised"` (postcodes.io didn't recognise it), or `"lookup_failed"` (network error, override still saved).
+
+`GET /api/admin/postcode-overrides` requires any authenticated role. `POST` and `DELETE` require editor or admin.
 
 ### User management (Cognito)
 

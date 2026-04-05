@@ -196,13 +196,25 @@ Manual overrides for misreported prices. Original data in `fuel_prices` is never
 
 **Indexes:** `(fuel_price_id)` unique, `(corrected_at DESC)` for audit trail
 
+### `station_postcode_overrides`
+
+Per-station postcode corrections. When an override exists, the corrected postcode is used for `postcode_lookups` joins in the `current_prices` view, giving proper geographic enrichment. Original postcodes in `stations` are never modified.
+
+| Column | Type | Notes |
+|---|---|---|
+| `node_id` | `TEXT PK FK → stations` | |
+| `original_postcode` | `TEXT NOT NULL` | Postcode from `stations` at time of override |
+| `corrected_postcode` | `TEXT NOT NULL` | Replacement postcode for enrichment |
+| `notes` | `TEXT` | Why this override exists |
+| `created_at` | `TIMESTAMPTZ` | |
+
 ## Materialised View
 
 ### `current_prices`
 
 The **current price snapshot** — one row per (station, fuel_type), always the most recently observed price regardless of age. Refreshed after each scrape run.
 
-Joins station info, resolves canonical brand names via `station_override > brand_alias > raw_brand_name`, classifies forecourt type via `brand_categories`, includes region via postcode area lookup, and applies price corrections via `COALESCE(correction, original)`.
+Joins station info, resolves canonical brand names via `station_override > brand_alias > raw_brand_name`, classifies forecourt type via `brand_categories`, includes region via postcode area lookup, applies price corrections via `COALESCE(correction, original)`, and applies postcode overrides via `COALESCE(postcode_override, station_postcode)` for geographic enrichment.
 
 | Column | Source | Notes |
 |---|---|---|
@@ -221,7 +233,7 @@ Joins station info, resolves canonical brand names via `station_override > brand
 | `city` | `stations` | |
 | `county` | `stations` | |
 | `country` | Resolved | Fallback chain: postcodes.io country → `postcode_regions.country` → `'Other/Unknown'` |
-| `postcode` | `stations` | |
+| `postcode` | Resolved | `COALESCE(postcode_override, station_postcode)` — overrides applied transparently |
 | `region` | `postcode_regions` | e.g. London, North West, Scotland |
 | `region_group` | `postcode_regions` | e.g. North, South, Midlands, London |
 | `latitude` | `stations` | |

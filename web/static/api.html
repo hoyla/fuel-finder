@@ -276,7 +276,7 @@
         <pre>{
   "node_ids": ["node-a", "node-b", "node-c"]
 }</pre>
-        <p>Returns: <code>{ results: [...], requested, found, missing }</code>. Result order matches the request order. Missing IDs are returned with <code>found: false</code> and null location fields.</p>
+        <p>Returns: <code>{ results: [...], requested, found, missing }</code>. Result order matches the request order. Missing IDs are returned with <code>found: false</code> and null location fields. Each result includes <code>postcode</code> (corrected if overridden) and <code>original_postcode</code> (from source data).</p>
     </div>
 
     <div class="endpoint">
@@ -452,14 +452,45 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/admin/postcode-issues</div>
-        <div class="desc">Stations whose postcodes were not recognised by postcodes.io.</div>
-        <p>Returns: <code>[ { node_id, trading_name, brand_name, postcode, api_latitude, api_longitude, city, county, coords_outside_uk, fixed_latitude, fixed_longitude } ]</code></p>
+        <div class="desc">Stations whose postcodes were not recognised by postcodes.io. Includes override status when a corrected postcode has been set.</div>
+        <p>Returns: <code>[ { node_id, trading_name, brand_name, postcode, api_latitude, api_longitude, city, county, coords_outside_uk, fixed_latitude, fixed_longitude, corrected_postcode, override_notes } ]</code></p>
     </div>
     <div class="endpoint">
         <div class="method-path"><span class="method patch">PATCH</span> /api/admin/postcode-lookups/{postcode}</div>
         <div class="desc">Manually set coordinates for a postcode that postcodes.io didn't recognise.</div>
         <pre>{ "latitude": 51.5, "longitude": -0.1 }</pre>
         <p>Returns: <code>{ postcode, latitude, longitude }</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/postcode-lookups/retry-failed</div>
+        <div class="desc">Re-check all previously unrecognised postcodes against postcodes.io (batched). Updates <code>looked_up_at</code> on all retried postcodes. Requires editor or admin.</div>
+        <pre>{}</pre>
+        <p>Returns: <code>{ retried, resolved, still_failed }</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/postcode-issues/stats</div>
+        <div class="desc">Count of currently-failed postcode lookups and timestamp of the most recent lookup attempt among them.</div>
+        <p>Returns: <code>{ failed_count, last_checked_at }</code></p>
+    </div>
+
+    <h3>Postcode overrides</h3>
+    <p>Per-station postcode corrections for stations with mistyped or expired postcodes. The corrected postcode is used for geographic enrichment (region, constituency, district, etc.) while the original is preserved. On save, the corrected postcode is looked up via postcodes.io for full enrichment. <strong>Requires editor or admin role for mutations.</strong></p>
+
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/postcode-overrides</div>
+        <div class="desc">List all per-station postcode overrides.</div>
+        <p>Returns: <code>[ { node_id, trading_name, brand_name, original_postcode, corrected_postcode, notes, created_at, lookup_succeeded } ]</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/postcode-overrides</div>
+        <div class="desc">Create or update a postcode override. Upserts on <code>node_id</code>. Triggers a postcodes.io lookup for the corrected postcode.</div>
+        <pre>{ "node_id": "abc123...", "corrected_postcode": "SW1A 1AA", "notes": "Typo in source data" }</pre>
+        <p>Returns: <code>{ node_id, original_postcode, corrected_postcode, notes, lookup_status }</code></p>
+        <p><code>lookup_status</code>: <code>"enriched"</code> (postcode recognised, full enrichment stored), <code>"not_recognised"</code> (postcodes.io didn't recognise it), or <code>"lookup_failed"</code> (network error, override still saved).</p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method delete">DEL</span> /api/admin/postcode-overrides/{node_id}</div>
+        <div class="desc">Delete a postcode override (reverts to original postcode).</div>
     </div>
 
     <h3>User management (Cognito)</h3>
