@@ -405,7 +405,10 @@
             <button onclick="closeStationTrend()" style="background:none;border:1px solid var(--border);border-radius:5px;padding:0.35rem 0.75rem;cursor:pointer;font-size:0.85rem;color:var(--muted);">← Back to search</button>
         </div>
         <div id="station-trend-header" style="margin-bottom: 1rem;">
-            <h2 id="station-trend-title" style="font-size:1.2rem;margin-bottom:0.25rem;"></h2>
+            <div style="display:flex;align-items:baseline;gap:0.75rem;margin-bottom:0.25rem;">
+                <h2 id="station-trend-title" style="font-size:1.2rem;margin:0;"></h2>
+                <span id="station-trend-node-id" style="font-size:0.8rem;color:var(--muted);"></span>
+            </div>
             <p id="station-trend-subtitle" style="font-size:0.9rem;color:var(--muted);"></p>
         </div>
         <div class="controls">
@@ -759,6 +762,26 @@
                 These may indicate typos or invalid postcodes in the source data.
                 Stations with coordinates outside the UK are shown first.
             </p>
+            <p id="postcode-issues-stats" style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem;"></p>
+            <div style="margin-bottom:1rem;">
+                <button class="primary" id="btn-retry-lookups" onclick="retryFailedLookups()" style="background:#505a5f;font-size:0.8rem;padding:0.3rem 0.75rem;">Retry failed lookups</button>
+            </div>
+            <h4 style="font-size:0.9rem;margin:0 0 0.5rem;color:var(--text);">Coordinate fix</h4>
+            <div class="controls" style="margin-bottom:1.5rem;">
+                <div class="control">
+                    <label>Postcode</label>
+                    <input id="coord-fix-postcode" placeholder="e.g. SW1A 1AA" />
+                </div>
+                <div class="control">
+                    <label>Latitude</label>
+                    <input id="coord-fix-lat" placeholder="e.g. 51.5" />
+                </div>
+                <div class="control">
+                    <label>Longitude</label>
+                    <input id="coord-fix-lon" placeholder="e.g. -0.1" />
+                </div>
+                <button class="primary" onclick="saveCoordFix()">Save coordinates</button>
+            </div>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -785,47 +808,35 @@
 
             <div id="override-station-card" style="display:none;background:var(--bg-alt,#f3f2f1);border-radius:6px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.6;"></div>
 
-            <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem;color:var(--text);">Brand override</h4>
-            <div class="controls">
-                <div class="control">
-                    <label>Canonical brand</label>
-                    <input id="override-brand" placeholder="e.g. Shell" />
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1rem;">
+                <div>
+                    <h4 style="font-size:0.9rem;margin:0.5rem 0;color:var(--text);">Brand override</h4>
+                    <div class="controls">
+                        <div class="control">
+                            <label>Canonical brand</label>
+                            <input id="override-brand" placeholder="e.g. Shell" />
+                        </div>
+                        <div class="control">
+                            <label>Notes</label>
+                            <input id="override-notes" placeholder="reason for override" />
+                        </div>
+                        <button class="primary" onclick="saveOverride()">Save brand</button>
+                    </div>
                 </div>
-                <div class="control">
-                    <label>Notes</label>
-                    <input id="override-notes" placeholder="reason for override" />
+                <div>
+                    <h4 style="font-size:0.9rem;margin:0.5rem 0;color:var(--text);">Postcode override</h4>
+                    <div class="controls">
+                        <div class="control">
+                            <label>Corrected postcode</label>
+                            <input id="pc-override-postcode" placeholder="e.g. SW1A 1AA" />
+                        </div>
+                        <div class="control">
+                            <label>Notes</label>
+                            <input id="pc-override-notes" placeholder="reason for override" />
+                        </div>
+                        <button class="primary" onclick="savePostcodeOverride()">Save postcode</button>
+                    </div>
                 </div>
-                <button class="primary" onclick="saveOverride()">Save brand</button>
-            </div>
-
-            <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem;color:var(--text);">Postcode override</h4>
-            <div class="controls">
-                <div class="control">
-                    <label>Corrected postcode</label>
-                    <input id="pc-override-postcode" placeholder="e.g. SW1A 1AA" />
-                </div>
-                <div class="control">
-                    <label>Notes</label>
-                    <input id="pc-override-notes" placeholder="reason for override" />
-                </div>
-                <button class="primary" onclick="savePostcodeOverride()">Save postcode</button>
-            </div>
-
-            <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem;color:var(--text);">Coordinate fix <small style="color:var(--muted);font-weight:normal;">(applies to all stations sharing this postcode)</small></h4>
-            <div class="controls">
-                <div class="control">
-                    <label>Postcode</label>
-                    <input id="coord-fix-postcode" placeholder="e.g. SW1A 1AA" />
-                </div>
-                <div class="control">
-                    <label>Latitude</label>
-                    <input id="coord-fix-lat" placeholder="e.g. 51.5" />
-                </div>
-                <div class="control">
-                    <label>Longitude</label>
-                    <input id="coord-fix-lon" placeholder="e.g. -0.1" />
-                </div>
-                <button class="primary" onclick="saveCoordFix()">Save coordinates</button>
             </div>
 
             <h4 style="font-size:0.9rem;margin:1.5rem 0 0.5rem;color:var(--text);">Brand overrides</h4>

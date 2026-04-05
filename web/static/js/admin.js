@@ -515,7 +515,9 @@ function renderStationCard(s) {
         ['Name', s.trading_name],
         ['Raw brand', s.raw_brand],
         ['Resolved brand', s.brand + (s.forecourt_type ? ` (${s.forecourt_type})` : '')],
-        ['Postcode', s.postcode],
+        ['Postcode', s.original_postcode && s.original_postcode !== s.postcode
+            ? s.postcode + ' (corrected from ' + s.original_postcode + ')'
+            : s.postcode],
         ['Location', [s.city, s.admin_district, s.region, s.country].filter(Boolean).join(', ')],
     ];
     if (s.is_motorway_service_station) rows.push(['Flags', 'Motorway service station']);
@@ -607,9 +609,24 @@ async function refreshView() {
     }
 }
 
+async function loadPostcodeIssuesStats() {
+    const el = document.getElementById('postcode-issues-stats');
+    try {
+        const s = await apiFetch('/admin/postcode-issues/stats');
+        let text = `${s.failed_count} unrecognised postcode${s.failed_count !== 1 ? 's' : ''}`;
+        if (s.last_checked_at) {
+            text += ` · Last re-checked: ${new Date(s.last_checked_at).toLocaleDateString()}`;
+        }
+        el.textContent = text;
+    } catch (e) {
+        el.textContent = '';
+    }
+}
+
 async function loadPostcodeIssues() {
     const body = document.getElementById('postcode-issues-body');
     body.innerHTML = '<tr><td colspan="9">Loading…</td></tr>';
+    loadPostcodeIssuesStats();
     try {
         const r = await fetch(API + '/admin/postcode-issues', { headers: authHeaders() });
         const rows = await r.json();
@@ -728,8 +745,30 @@ async function saveCoordFix() {
         document.getElementById('coord-fix-lat').value = '';
         document.getElementById('coord-fix-lon').value = '';
         await apiPost('/admin/refresh-view', {});
+        loadPostcodeIssues();
     } catch (e) {
         alert('Error: ' + e.message);
+    }
+}
+
+async function retryFailedLookups() {
+    const btn = document.getElementById('btn-retry-lookups');
+    btn.textContent = 'Retrying…';
+    btn.disabled = true;
+    try {
+        const result = await apiPost('/admin/postcode-lookups/retry-failed', {});
+        let msg = `Retried ${result.retried} postcodes: ${result.resolved} resolved, ${result.still_failed} still failed.`;
+        if (result.resolved > 0) {
+            await apiPost('/admin/refresh-view', {});
+            msg += ' View refreshed.';
+        }
+        alert(msg);
+        loadPostcodeIssues();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.textContent = 'Retry failed lookups';
+        btn.disabled = false;
     }
 }
 

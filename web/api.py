@@ -1415,7 +1415,8 @@ def stations_lookup(
                    s.brand_name AS raw_brand,
                    COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name) AS brand,
                    bc.forecourt_type,
-                   s.postcode,
+                   COALESCE(spo.corrected_postcode, s.postcode) AS postcode,
+                   s.postcode AS original_postcode,
                    s.city,
                    s.county,
                    COALESCE(pl.country, s.country) AS country,
@@ -1430,10 +1431,11 @@ def stations_lookup(
             FROM requested r
             LEFT JOIN stations s ON s.node_id = r.node_id
             LEFT JOIN station_brand_overrides so ON so.node_id = s.node_id
+            LEFT JOIN station_postcode_overrides spo ON spo.node_id = s.node_id
             LEFT JOIN brand_aliases ba ON ba.raw_brand_name = s.brand_name
             LEFT JOIN brand_categories bc
                 ON bc.canonical_brand = COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name)
-            LEFT JOIN postcode_lookups pl ON pl.postcode = s.postcode
+            LEFT JOIN postcode_lookups pl ON pl.postcode = COALESCE(spo.corrected_postcode, s.postcode)
             LEFT JOIN postcode_regions pr ON pr.postcode_area = (
                 CASE WHEN LEFT(s.postcode, 2) ~ '^[A-Z]{2}$'
                      THEN LEFT(s.postcode, 2) ELSE LEFT(s.postcode, 1) END
@@ -1955,6 +1957,19 @@ def postcode_issues(
         return cur.fetchall()
 
 
+@app.get("/api/admin/postcode-issues/stats")
+def postcode_issues_stats(db=Depends(get_db), _auth=Depends(require_auth)):
+    """Count of failed postcode lookups and timestamp of last retry."""
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT COUNT(*) AS failed_count,
+                   MAX(looked_up_at) AS last_checked_at
+            FROM postcode_lookups
+            WHERE pc_latitude IS NULL
+        """)
+        return cur.fetchone()
+
+
 POSTCODES_IO_URL = "https://api.postcodes.io/postcodes"
 
 
@@ -2153,6 +2168,79 @@ def update_postcode_coords(
         """, (postcode.upper().strip(), body.latitude, body.longitude))
         db.commit()
     return {"postcode": postcode, "latitude": body.latitude, "longitude": body.longitude}
+
+
+@app.post("/api/admin/postcode-lookups/retry-failed")
+def retry_failed_lookups(db=Depends(get_db), _auth=Depends(require_editor)):
+    """Re-lookup postcodes that previously failed (pc_latitude IS NULL).
+
+    Calls postcodes.io bulk endpoint in batches of 100.  Returns counts
+    of resolved, still-failed, and total retried postcodes.
+    """
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT postcode FROM postcode_lookups WHERE pc_latitude IS NULL"
+        )
+        postcodes = [row["postcode"] for row in cur.fetchall()]
+
+    if not postcodes:
+        return {"retried": 0, "resolved": 0, "still_failed": 0}
+
+    resolved = 0
+    still_failed = 0
+
+    for i in range(0, len(postcodes), 100):
+        batch = postcodes[i : i + 100]
+        try:
+            resp = requests.post(
+                POSTCODES_IO_URL,
+                json={"postcodes": batch},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("result", [])
+        except Exception:
+            still_failed += len(batch)
+            continue
+
+        with db.cursor() as cur:
+            for item in results:
+                pc = item.get("query")
+                r = item.get("result")
+                if r and r.get("latitude") is not None:
+                    codes = r.get("codes", {})
+                    data = {
+                        "postcode": pc,
+                        "pc_latitude": r.get("latitude"),
+                        "pc_longitude": r.get("longitude"),
+                        "admin_district": r.get("admin_district"),
+                        "admin_county": r.get("admin_county"),
+                        "admin_ward": r.get("admin_ward"),
+                        "parish": r.get("parish"),
+                        "parliamentary_constituency": (
+                            r.get("parliamentary_constituency_2024")
+                            or r.get("parliamentary_constituency")
+                        ),
+                        "ons_region": r.get("region"),
+                        "country": r.get("country"),
+                        "rural_urban": r.get("ruc21") or r.get("ruc11"),
+                        "rural_urban_code": codes.get("ruc21") or codes.get("ruc11"),
+                        "lsoa": r.get("lsoa") or r.get("lsoa21") or r.get("lsoa11"),
+                        "msoa": r.get("msoa") or r.get("msoa21") or r.get("msoa11"),
+                        "built_up_area": r.get("bua"),
+                        "quality": r.get("quality"),
+                    }
+                    _upsert_postcode_lookup(cur, data)
+                    resolved += 1
+                else:
+                    cur.execute(
+                        "UPDATE postcode_lookups SET looked_up_at = NOW() WHERE postcode = %s",
+                        (pc,),
+                    )
+                    still_failed += 1
+            db.commit()
+
+    return {"retried": len(postcodes), "resolved": resolved, "still_failed": still_failed}
 
 
 @app.post("/api/admin/refresh-view")

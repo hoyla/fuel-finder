@@ -221,6 +221,7 @@ function openStationTrend(nodeId, name, brand, city, postcode, category, rawBran
     document.getElementById('st-range').value = '30';
     document.getElementById('st-granularity').value = 'auto';
     document.getElementById('station-trend-title').textContent = name;
+    document.getElementById('station-trend-node-id').textContent = nodeId;
 
     // If key detail fields are missing, fetch them via lookup then re-render subtitle
     if (!lat && !lon && !region && !district) {
@@ -230,7 +231,7 @@ function openStationTrend(nodeId, name, brand, city, postcode, category, rawBran
             if (s && s.found) {
                 stationTrendState.lat = s.latitude;
                 stationTrendState.lon = s.longitude;
-                renderStationSubtitle(nodeId, s.trading_name || name, s.brand || brand, s.city || city, s.postcode || postcode, s.forecourt_type || category, s.raw_brand || rawBrand, s.latitude, s.longitude, s.is_motorway_service_station, s.is_supermarket_service_station, s.region, s.admin_district);
+                renderStationSubtitle(nodeId, s.trading_name || name, s.brand || brand, s.city || city, s.postcode || postcode, s.forecourt_type || category, s.raw_brand || rawBrand, s.latitude, s.longitude, s.is_motorway_service_station, s.is_supermarket_service_station, s.region, s.admin_district, s.original_postcode);
             }
         }).catch(() => {});
     } else {
@@ -241,14 +242,17 @@ function openStationTrend(nodeId, name, brand, city, postcode, category, rawBran
     setStationTrendRange('30');
 }
 
-function renderStationSubtitle(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district) {
+function renderStationSubtitle(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district, originalPostcode) {
     const subtitleEl = document.getElementById('station-trend-subtitle');
-    const parts = [city, postcode].filter(Boolean);
+    let postcodeLabel = postcode;
+    if (originalPostcode && postcode && originalPostcode !== postcode) {
+        postcodeLabel = postcode + ' (corrected from ' + originalPostcode + ')';
+    }
+    const parts = [city, postcodeLabel].filter(Boolean);
     if (district && district !== city) parts.push(district);
     if (region) parts.push(region);
     const rawLabel = rawBrand || brand || '';
-    let subtitle = rawLabel + (parts.length ? ' · ' + parts.join(' · ') : '')
-        + ' · UK Fuel Finder node id: ' + nodeId;
+    let subtitle = rawLabel + (parts.length ? ' · ' + parts.join(' · ') : '');
     let badges = '';
     if (brand && rawBrand && brand !== rawBrand) {
         badges += ' · <span style="font-size:0.8rem;background:var(--accent,#1d70b8);color:#fff;padding:0.1rem 0.45rem;border-radius:3px;">' + escHtml(brand) + '</span>';
