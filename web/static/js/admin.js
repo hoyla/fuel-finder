@@ -452,16 +452,18 @@ async function saveAlias() {
         await apiPost('/admin/brand-aliases', { raw_brand_name: raw, canonical_brand: canonical });
         document.getElementById('alias-raw').value = '';
         document.getElementById('alias-canonical').value = '';
+        showToast('Alias saved');
         loadAliases();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function deleteAlias(raw) {
     if (!confirm(`Delete alias "${raw}"?`)) return;
     try {
         await apiDelete(`/admin/brand-aliases/${encodeURIComponent(raw)}`);
+        showToast('Alias deleted');
         loadAliases();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 // --- Brand Categories ---
@@ -488,16 +490,18 @@ async function saveCategory() {
     try {
         await apiPost('/admin/brand-categories', { canonical_brand: brand, forecourt_type: type });
         document.getElementById('cat-brand').value = '';
+        showToast('Category saved');
         loadCategories();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function deleteCategory(brand) {
     if (!confirm(`Delete category for "${brand}"? It will default to Uncategorised.`)) return;
     try {
         await apiDelete(`/admin/brand-categories/${encodeURIComponent(brand)}`);
+        showToast('Category deleted');
         loadCategories();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 // --- Station Overrides ---
@@ -581,16 +585,18 @@ async function saveOverride() {
         document.getElementById('override-node').value = '';
         document.getElementById('override-brand').value = '';
         document.getElementById('override-notes').value = '';
+        showToast('Override saved');
         loadOverrides();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function deleteOverride(nodeId) {
     if (!confirm(`Delete override for station ${nodeId}?`)) return;
     try {
         await apiDelete(`/admin/station-overrides/${encodeURIComponent(nodeId)}`);
+        showToast('Override deleted');
         loadOverrides();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 // --- Refresh materialised view ---
@@ -600,12 +606,13 @@ async function refreshView() {
     btn.disabled = true;
     try {
         await apiPost('/admin/refresh-view', {});
-        btn.textContent = '✓ Refreshed';
-        setTimeout(() => { btn.textContent = 'Refresh View'; btn.disabled = false; }, 2000);
+        btn.textContent = 'Refresh View';
+        btn.disabled = false;
+        showToast('View refreshed');
     } catch (e) {
         btn.textContent = 'Refresh View';
         btn.disabled = false;
-        alert('Error refreshing view: ' + e.message);
+        showToast('Error refreshing view: ' + e.message, 'error');
     }
 }
 
@@ -671,9 +678,7 @@ document.addEventListener('click', e => {
     if (copyId) {
         e.preventDefault();
         navigator.clipboard.writeText(copyId.dataset.id).then(() => {
-            const orig = copyId.textContent;
-            copyId.textContent = 'Copied!';
-            setTimeout(() => { copyId.textContent = orig; }, 1500);
+            showToast('Copied to clipboard');
         });
         return;
     }
@@ -707,11 +712,11 @@ async function fixPostcode(nodeId, currentPostcode, stationName) {
         if (result.lookup_status === 'enriched') msg += ' Postcode recognised — full enrichment stored.';
         else if (result.lookup_status === 'not_recognised') msg += ' Warning: postcodes.io did not recognise this postcode.';
         else if (result.lookup_status === 'lookup_failed') msg += ' Warning: postcodes.io lookup failed (override still saved).';
-        alert(msg);
+        showToast(msg, result.lookup_status === 'enriched' ? 'success' : 'error', 4000);
         await apiPost('/admin/refresh-view', {});
         loadPostcodeIssues();
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     }
 }
 
@@ -729,10 +734,11 @@ async function fixPostcodeCoords(postcode, apiLat, apiLon) {
             body: JSON.stringify({latitude: pLat, longitude: pLon}),
         });
         if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        showToast('Coordinates updated');
         await apiPost('/admin/refresh-view', {});
         loadPostcodeIssues();
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     }
 }
 
@@ -750,14 +756,14 @@ async function saveCoordFix() {
             body: JSON.stringify({latitude: lat, longitude: lon}),
         });
         if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-        alert('Coordinates updated for ' + postcode);
+        showToast('Coordinates updated for ' + postcode);
         document.getElementById('coord-fix-postcode').value = '';
         document.getElementById('coord-fix-lat').value = '';
         document.getElementById('coord-fix-lon').value = '';
         await apiPost('/admin/refresh-view', {});
         loadPostcodeIssues();
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     }
 }
 
@@ -772,10 +778,10 @@ async function retryFailedLookups() {
             await apiPost('/admin/refresh-view', {});
             msg += ' View refreshed.';
         }
-        alert(msg);
+        showToast(msg, result.still_failed > 0 ? 'error' : 'success', 4000);
         loadPostcodeIssues();
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     } finally {
         btn.textContent = 'Retry failed lookups';
         btn.disabled = false;
@@ -798,13 +804,13 @@ async function savePostcodeOverride() {
         if (result.lookup_status === 'enriched') msg += ' Postcode recognised — full enrichment stored.';
         else if (result.lookup_status === 'not_recognised') msg += ' Warning: postcodes.io did not recognise this postcode.';
         else if (result.lookup_status === 'lookup_failed') msg += ' Warning: postcodes.io lookup failed (override still saved).';
-        alert(msg);
+        showToast(msg, result.lookup_status === 'enriched' ? 'success' : 'error', 4000);
         document.getElementById('pc-override-postcode').value = '';
         document.getElementById('pc-override-notes').value = '';
         await apiPost('/admin/refresh-view', {});
         loadPostcodeOverrides();
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     }
 }
 
@@ -837,10 +843,11 @@ document.addEventListener('click', async e => {
     if (!confirm(`Delete postcode override for station ${nodeId}?`)) return;
     try {
         await apiDelete(`/admin/postcode-overrides/${encodeURIComponent(nodeId)}`);
+        showToast('Postcode override deleted');
         await apiPost('/admin/refresh-view', {});
         loadPostcodeOverrides();
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     }
 });
 
@@ -908,8 +915,9 @@ async function setUserRole(username, newRole) {
         if (newRole === 'admin' || newRole === 'editor') {
             await apiPost(`/admin/users/${encodeURIComponent(username)}/groups/${encodeURIComponent(newRole)}`, {});
         }
+        showToast('Role updated');
         await loadUsers();
-    } catch (e) { alert(e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function toggleGroup(username, group, add) {
@@ -923,8 +931,9 @@ async function toggleGroup(username, group, add) {
 async function toggleUser(username, enable) {
     try {
         await apiPost(`/admin/users/${encodeURIComponent(username)}/${enable ? 'enable' : 'disable'}`, {});
+        showToast(enable ? 'User enabled' : 'User disabled');
         await loadUsers();
-    } catch (e) { alert(e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function deleteUser(username, email) {
@@ -932,6 +941,7 @@ async function deleteUser(username, email) {
     try {
         const r = await fetch(API + `/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE', headers: authHeaders() });
         if (!r.ok) throw new Error(`API error: ${r.status}`);
+        showToast('User deleted');
         await loadUsers();
-    } catch (e) { alert(e.message); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
