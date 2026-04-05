@@ -712,7 +712,7 @@ async function fixPostcode(nodeId, currentPostcode, stationName) {
         if (result.lookup_status === 'enriched') msg += ' Postcode recognised — full enrichment stored.';
         else if (result.lookup_status === 'not_recognised') msg += ' Warning: postcodes.io did not recognise this postcode.';
         else if (result.lookup_status === 'lookup_failed') msg += ' Warning: postcodes.io lookup failed (override still saved).';
-        showToast(msg, result.lookup_status === 'enriched' ? 'success' : 'error', 5000);
+        showToast(msg, result.lookup_status === 'enriched' ? 'success' : 'error', 4000);
         await apiPost('/admin/refresh-view', {});
         loadPostcodeIssues();
     } catch (e) {
@@ -778,7 +778,7 @@ async function retryFailedLookups() {
             await apiPost('/admin/refresh-view', {});
             msg += ' View refreshed.';
         }
-        showToast(msg, result.still_failed > 0 ? 'error' : 'success', 5000);
+        showToast(msg, result.still_failed > 0 ? 'error' : 'success', 4000);
         loadPostcodeIssues();
     } catch (e) {
         showToast('Error: ' + e.message, 'error');
@@ -804,7 +804,7 @@ async function savePostcodeOverride() {
         if (result.lookup_status === 'enriched') msg += ' Postcode recognised — full enrichment stored.';
         else if (result.lookup_status === 'not_recognised') msg += ' Warning: postcodes.io did not recognise this postcode.';
         else if (result.lookup_status === 'lookup_failed') msg += ' Warning: postcodes.io lookup failed (override still saved).';
-        showToast(msg, result.lookup_status === 'enriched' ? 'success' : 'error', 5000);
+        showToast(msg, result.lookup_status === 'enriched' ? 'success' : 'error', 4000);
         document.getElementById('pc-override-postcode').value = '';
         document.getElementById('pc-override-notes').value = '';
         await apiPost('/admin/refresh-view', {});

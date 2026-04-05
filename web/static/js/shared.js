@@ -655,7 +655,7 @@ function getSelectedCategories() { return getMultiSelectValues('search-category-
 // ---------------------------------------------------------------------------
 // Toast notifications
 // ---------------------------------------------------------------------------
-function showToast(message, type = 'success', duration = 3000) {
+function showToast(message, type = 'success', duration = 2000) {
     let container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
