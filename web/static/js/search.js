@@ -193,6 +193,14 @@ function goToOverrideBrand() {
     history.replaceState({ panel: 'data', section: 'overrides' }, '', '#data/overrides');
 }
 
+function goToFixLocation() {
+    fixPostcode(
+        stationTrendState.nodeId,
+        stationTrendState.postcode || '',
+        stationTrendState.title
+    );
+}
+
 function initStationTrendFuels() {
     const sel = document.getElementById('st-fuel');
     if (!sel.options.length) {
@@ -212,7 +220,7 @@ function initStationTrendFuels() {
 }
 
 function openStationTrend(nodeId, name, brand, city, postcode, category, rawBrand) {
-    stationTrendState = { mode: 'single', nodeId, nodeIds: null, title: name };
+    stationTrendState = { mode: 'single', nodeId, nodeIds: null, title: name, postcode };
     initStationTrendFuels();
     // Reset range to 30 days
     document.getElementById('st-range').value = '30';
@@ -364,6 +372,8 @@ async function loadStationTrend() {
     // Show table view / override buttons for single-station views
     document.getElementById('st-edit-btn').style.display = isSingle ? '' : 'none';
     document.getElementById('st-override-btn').style.display =
+        isSingle && canEdit() ? '' : 'none';
+    document.getElementById('st-fix-location-btn').style.display =
         isSingle && canEdit() ? '' : 'none';
 
     if (allFuels) {
