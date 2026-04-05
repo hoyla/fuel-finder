@@ -484,6 +484,55 @@ class TestAdminStationOverrides:
             client.delete(f"/api/admin/station-overrides/{nid}")
 
 
+class TestAdminPostcodeOverrides:
+    def test_list_returns_200(self, client):
+        r = client.get("/api/admin/postcode-overrides")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_invalid_station_rejected(self, client):
+        r = client.post("/api/admin/postcode-overrides", json={
+            "node_id": "NONEXISTENT_NODE_ID_999",
+            "corrected_postcode": "SW1A 1AA",
+        })
+        assert r.status_code == 404
+
+    def test_upsert_and_delete(self, client, has_data):
+        """Create a postcode override for a real station, verify, then delete."""
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        with conn.cursor() as cur:
+            cur.execute("SELECT node_id, postcode FROM stations WHERE postcode IS NOT NULL LIMIT 1")
+            row = cur.fetchone()
+        conn.close()
+        if not row:
+            pytest.skip("No stations with postcodes")
+        node_id, original = row
+
+        r = client.post("/api/admin/postcode-overrides", json={
+            "node_id": node_id,
+            "corrected_postcode": "SW1A 1AA",
+            "notes": "integration test",
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["node_id"] == node_id
+        assert data["corrected_postcode"] == "SW1A 1AA"
+        assert data["lookup_status"] in ("enriched", "not_recognised", "lookup_failed")
+
+        # Verify it appears in the list
+        rows = client.get("/api/admin/postcode-overrides").json()
+        assert any(o["node_id"] == node_id for o in rows)
+
+        # Delete
+        r = client.delete(f"/api/admin/postcode-overrides/{node_id}")
+        assert r.status_code == 200
+        assert r.json()["deleted"] == node_id
+
+    def test_delete_nonexistent_returns_404(self, client):
+        r = client.delete("/api/admin/postcode-overrides/NONEXISTENT_NODE_999")
+        assert r.status_code == 404
+
+
 class TestNormalisationReport:
     def test_returns_200(self, client, has_data):
         r = client.get("/api/admin/normalisation-report")
