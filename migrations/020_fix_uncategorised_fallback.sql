@@ -110,3 +110,20 @@ CREATE INDEX idx_current_prices_fuel_price
     ON current_prices (fuel_type, price);
 CREATE INDEX idx_current_prices_postcode
     ON current_prices (postcode);
+CREATE INDEX idx_current_prices_region
+    ON current_prices (region, fuel_type);
+CREATE INDEX idx_current_prices_forecourt_type
+    ON current_prices (forecourt_type, fuel_type);
+CREATE INDEX idx_current_prices_admin_district
+    ON current_prices (admin_district, fuel_type);
+CREATE INDEX idx_current_prices_constituency
+    ON current_prices (parliamentary_constituency, fuel_type);
+CREATE INDEX idx_current_prices_rural_urban
+    ON current_prices (rural_urban, fuel_type);
+CREATE INDEX idx_current_prices_outlier
+    ON current_prices (fuel_type, price_is_outlier)
+    WHERE NOT price_is_outlier;
+CREATE INDEX idx_current_prices_brand_lower
+    ON current_prices (lower(brand_name) text_pattern_ops);
+CREATE INDEX idx_current_prices_country
+    ON current_prices (country, fuel_type);
