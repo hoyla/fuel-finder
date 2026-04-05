@@ -1,8 +1,11 @@
--- Fix regression introduced in 019_postcode_overrides.sql which reverted
--- the forecourt_type fallback from 'Uncategorised' back to 'Independent'.
+-- Fix regressions introduced in 019_postcode_overrides.sql:
 --
--- 'Uncategorised' is for unmapped brands; 'Independent' is reserved for
--- brands explicitly assigned that category in brand_categories.
+-- 1. forecourt_type fallback reverted from 'Uncategorised' to 'Independent',
+--    making unmapped brands indistinguishable from explicitly Independent ones.
+--
+-- 2. country COALESCE chain changed from (pl.country, pr.country, 'Other/Unknown')
+--    to (pl.country, s.country), dropping the postcode_regions fallback and the
+--    'Other/Unknown' literal, causing ~30 stations to show unknown country.
 
 DROP MATERIALIZED VIEW IF EXISTS current_prices;
 
@@ -54,7 +57,7 @@ SELECT
     END AS forecourt_type,
     s.city,
     s.county,
-    COALESCE(pl.country, s.country) AS country,
+    COALESCE(pl.country, pr.country, 'Other/Unknown') AS country,
     COALESCE(spo.corrected_postcode, s.postcode) AS postcode,
     COALESCE(pl.ons_region, pr.region) AS region,
     pr.region_group,

@@ -64,7 +64,7 @@ SELECT
     END AS forecourt_type,
     s.city,
     s.county,
-    COALESCE(pl.country, s.country) AS country,
+    COALESCE(pl.country, pr.country, 'Other/Unknown') AS country,
     COALESCE(spo.corrected_postcode, s.postcode) AS postcode,
     COALESCE(pl.ons_region, pr.region) AS region,
     pr.region_group,
