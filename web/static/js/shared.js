@@ -653,6 +653,27 @@ function setMultiSelectValues(msId, csv) {
 function getSelectedCategories() { return getMultiSelectValues('search-category-ms'); }
 
 // ---------------------------------------------------------------------------
+// Toast notifications
+// ---------------------------------------------------------------------------
+function showToast(message, type = 'success', duration = 3000) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = message;
+    container.appendChild(el);
+    setTimeout(() => {
+        el.classList.add('fade-out');
+        el.addEventListener('animationend', () => el.remove());
+    }, duration);
+}
+
+// ---------------------------------------------------------------------------
 // API wrappers (POST / DELETE)
 // ---------------------------------------------------------------------------
 async function apiPost(path, body) {
