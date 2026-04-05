@@ -560,7 +560,7 @@ async function loadOverrides() {
     }
     body.innerHTML = data.map(r => `
         <tr>
-            <td style="font-family:monospace;font-size:0.8rem;word-break:break-all;max-width:7rem">${escHtml(r.node_id)}</td>
+            <td style="font-family:monospace;font-size:0.8rem;white-space:nowrap"><span title="${escHtml(r.node_id)}">${escHtml(r.node_id.slice(0, 8))}…</span> <a href="#" class="copy-id" data-id="${escHtml(r.node_id)}" style="font-family:var(--font);font-size:0.75rem;color:var(--accent);text-decoration:none;">Copy</a></td>
             <td>${escHtml(r.trading_name)}</td>
             <td>${escHtml(r.raw_brand_name)}</td>
             <td><strong>${escHtml(r.canonical_brand)}</strong></td>
@@ -667,6 +667,16 @@ async function loadPostcodeIssues() {
 }
 
 document.addEventListener('click', e => {
+    const copyId = e.target.closest('.copy-id');
+    if (copyId) {
+        e.preventDefault();
+        navigator.clipboard.writeText(copyId.dataset.id).then(() => {
+            const orig = copyId.textContent;
+            copyId.textContent = 'Copied!';
+            setTimeout(() => { copyId.textContent = orig; }, 1500);
+        });
+        return;
+    }
     const fixPc = e.target.closest('[data-action="fix-postcode"]');
     if (fixPc) {
         fixPostcode(fixPc.dataset.node, fixPc.dataset.postcode, fixPc.dataset.name);
