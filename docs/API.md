@@ -337,6 +337,7 @@ Useful when you already have a large list of node IDs and only need location met
       "brand": "Tesco",
       "forecourt_type": "Supermarket",
       "postcode": "LS11 5TZ",
+      "original_postcode": "LS11 5TZ",
       "city": "Leeds",
       "county": "West Yorkshire",
       "country": "England",
@@ -357,6 +358,7 @@ Useful when you already have a large list of node IDs and only need location met
       "brand": null,
       "forecourt_type": null,
       "postcode": null,
+      "original_postcode": null,
       "city": null,
       "county": null,
       "country": null,
@@ -612,6 +614,24 @@ Manually set coordinates for a postcode that postcodes.io didn't recognise.
 **Body:** `{ "latitude": 51.5, "longitude": -0.1 }`
 
 **Response:** `{ "postcode": "SW1A 1AA", "latitude": 51.5, "longitude": -0.1 }`
+
+### Retry failed postcode lookups
+
+`POST /api/admin/postcode-lookups/retry-failed`
+
+Re-checks all postcodes that previously failed lookup (where `pc_latitude IS NULL`) against postcodes.io in batches of 100. Updates `looked_up_at` on all retried postcodes. Requires editor or admin role.
+
+**Body:** `{}` (empty)
+
+**Response:** `{ "retried": 12, "resolved": 3, "still_failed": 9 }`
+
+### Postcode issues stats
+
+`GET /api/admin/postcode-issues/stats`
+
+Returns the count of currently-failed postcode lookups and the timestamp of the most recent lookup attempt among them.
+
+**Response:** `{ "failed_count": 12, "last_checked_at": "2026-04-05T14:30:00Z" }`
 
 ### Postcode overrides
 

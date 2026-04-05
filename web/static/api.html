@@ -276,7 +276,7 @@
         <pre>{
   "node_ids": ["node-a", "node-b", "node-c"]
 }</pre>
-        <p>Returns: <code>{ results: [...], requested, found, missing }</code>. Result order matches the request order. Missing IDs are returned with <code>found: false</code> and null location fields.</p>
+        <p>Returns: <code>{ results: [...], requested, found, missing }</code>. Result order matches the request order. Missing IDs are returned with <code>found: false</code> and null location fields. Each result includes <code>postcode</code> (corrected if overridden) and <code>original_postcode</code> (from source data).</p>
     </div>
 
     <div class="endpoint">
@@ -460,6 +460,17 @@
         <div class="desc">Manually set coordinates for a postcode that postcodes.io didn't recognise.</div>
         <pre>{ "latitude": 51.5, "longitude": -0.1 }</pre>
         <p>Returns: <code>{ postcode, latitude, longitude }</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method post">POST</span> /api/admin/postcode-lookups/retry-failed</div>
+        <div class="desc">Re-check all previously unrecognised postcodes against postcodes.io (batched). Updates <code>looked_up_at</code> on all retried postcodes. Requires editor or admin.</div>
+        <pre>{}</pre>
+        <p>Returns: <code>{ retried, resolved, still_failed }</code></p>
+    </div>
+    <div class="endpoint">
+        <div class="method-path"><span class="method get">GET</span> /api/admin/postcode-issues/stats</div>
+        <div class="desc">Count of currently-failed postcode lookups and timestamp of the most recent lookup attempt among them.</div>
+        <p>Returns: <code>{ failed_count, last_checked_at }</code></p>
     </div>
 
     <h3>Postcode overrides</h3>
