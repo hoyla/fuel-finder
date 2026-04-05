@@ -1,22 +1,13 @@
--- Postcode overrides: per-station replacement for incorrect postcodes.
--- Original postcodes in stations are never modified.  When an override
--- exists the corrected postcode is used for postcode_lookups joins in
--- current_prices, giving proper geographic enrichment.
+-- Fix regression introduced in 019_postcode_overrides.sql which reverted
+-- the forecourt_type fallback from 'Uncategorised' back to 'Independent'.
+--
+-- 'Uncategorised' is for unmapped brands; 'Independent' is reserved for
+-- brands explicitly assigned that category in brand_categories.
 
-CREATE TABLE IF NOT EXISTS station_postcode_overrides (
-    node_id             TEXT PRIMARY KEY REFERENCES stations(node_id),
-    original_postcode   TEXT NOT NULL,
-    corrected_postcode  TEXT NOT NULL,
-    notes               TEXT,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Rebuild current_prices to join postcode_lookups via the overridden postcode.
 DROP MATERIALIZED VIEW IF EXISTS current_prices;
 
 CREATE MATERIALIZED VIEW current_prices AS
 WITH latest AS (
-    -- One row per (station, fuel_type): the most recent price observation.
     SELECT DISTINCT ON (fp.node_id, fp.fuel_type)
         fp.node_id,
         fp.fuel_type,
@@ -31,7 +22,6 @@ WITH latest AS (
     ORDER BY fp.node_id, fp.fuel_type, fp.observed_at DESC
 ),
 bounds AS (
-    -- IQR fences per fuel type, computed from non-anomalous, non-closed prices.
     SELECT
         l.fuel_type,
         PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY l.price) AS q1,
@@ -111,29 +101,9 @@ LEFT JOIN brand_categories bc ON bc.canonical_brand = COALESCE(
 LEFT JOIN postcode_lookups pl ON pl.postcode = COALESCE(spo.corrected_postcode, s.postcode)
 LEFT JOIN bounds b ON b.fuel_type = l.fuel_type;
 
--- Re-create all indexes
 CREATE UNIQUE INDEX idx_current_prices_node_fuel
     ON current_prices (node_id, fuel_type);
 CREATE INDEX idx_current_prices_fuel_price
     ON current_prices (fuel_type, price);
 CREATE INDEX idx_current_prices_postcode
     ON current_prices (postcode);
-CREATE INDEX idx_current_prices_region
-    ON current_prices (region, fuel_type);
-CREATE INDEX idx_current_prices_forecourt_type
-    ON current_prices (forecourt_type, fuel_type);
-CREATE INDEX idx_current_prices_admin_district
-    ON current_prices (admin_district, fuel_type);
-CREATE INDEX idx_current_prices_constituency
-    ON current_prices (parliamentary_constituency, fuel_type);
-CREATE INDEX idx_current_prices_rural_urban
-    ON current_prices (rural_urban, fuel_type);
-CREATE INDEX idx_current_prices_outlier
-    ON current_prices (fuel_type, price_is_outlier)
-    WHERE NOT price_is_outlier;
-CREATE INDEX idx_current_prices_brand_lower
-    ON current_prices (lower(brand_name) text_pattern_ops);
-CREATE INDEX idx_current_prices_country
-    ON current_prices (country, fuel_type);
-
-REFRESH MATERIALIZED VIEW current_prices;
