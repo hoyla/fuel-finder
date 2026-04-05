@@ -583,8 +583,8 @@ async function loadPostcodeIssues() {
             }
             const actions = [];
             if (canEdit() && s.postcode && !s.corrected_postcode) {
-                actions.push(`<button class="small" data-action="fix-postcode" data-node="${escHtml(s.node_id)}" data-postcode="${escHtml(s.postcode)}" data-name="${escHtml(s.trading_name || '')}">Fix postcode</button>`);
-                actions.push(`<button class="small" data-action="fix-coords" data-postcode="${escHtml(s.postcode)}" data-lat="${s.api_latitude}" data-lon="${s.api_longitude}">Fix coords</button>`);
+                actions.push(`<button class="small" data-action="fix-postcode" data-node="${escHtml(s.node_id)}" data-postcode="${escHtml(s.postcode)}" data-name="${escHtml(s.trading_name || '')}" title="Replace the postcode for this station. Triggers a postcodes.io lookup to update region, constituency, district and other geographic fields.">Fix postcode</button>`);
+                actions.push(`<button class="small" data-action="fix-coords" data-postcode="${escHtml(s.postcode)}" data-lat="${s.api_latitude}" data-lon="${s.api_longitude}" title="Manually set latitude/longitude for this postcode. Use when the postcode is correct but its coordinates are missing or wrong.">Fix coords</button>`);
             }
             return `<tr${s.coords_outside_uk ? ' style="background:var(--bg-warn,#fff3cd)"' : ''}>
             <td><code>${escHtml(s.postcode || '(empty)')}</code></td>
