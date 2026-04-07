@@ -283,13 +283,13 @@ token_status() {
     fi
 }
 
-# ── Export helper ────────────────────────────────────────────────────────
+# ── Generate env vars helper ─────────────────────────────────────────────
 show_env_export() {
     if [[ -z "$FF_ID_TOKEN" || "$FF_ID_TOKEN" == "__none__" ]]; then
         warn "No token to export."
         return
     fi
-    echo -e "\n${BOLD}Paste this into another terminal to reuse the session:${RESET}\n"
+    echo -e "\n${BOLD}Copy and paste these into your terminal to set up your environment:${RESET}\n"
     if [[ "$FF_ID_TOKEN" == __apikey__:* ]]; then
         echo -e "  export FF_BASE_URL='${FF_BASE_URL}'"
         echo -e "  export FF_API_KEY='${FF_ID_TOKEN#__apikey__:}'"
@@ -300,12 +300,23 @@ show_env_export() {
         echo -e "\n  ${DIM}# Then use:  curl -H \"Authorization: Bearer \$FF_ID_TOKEN\" \"\$FF_BASE_URL/api/prices/by-region\"${RESET}"
     fi
     echo
+    hr
+    echo -e "  ${CYAN}1${RESET}  Quit so you can paste these into your terminal"
+    echo -e "  ${CYAN}2${RESET}  Return to main menu"
+    hr
+    read -rp "Choose [1/2]: " subchoice
+    case "$subchoice" in
+        1) echo -e "\n${DIM}Bye! Paste the export commands above into your terminal.${RESET}"; exit 0 ;;
+        *) ;;
+    esac
 }
 
 # ── Curl hint helper ─────────────────────────────────────────────────────
 _curl_hint_header() {
     echo -e "\n${BOLD}To run this yourself:${RESET}"
-    echo -e "${DIM}(First export your tokens with option ${CYAN}e${DIM} above)${RESET}\n"
+    echo -e "  ${DIM}1.${RESET} Generate environment variables for your token (menu option ${CYAN}g${RESET})"
+    echo -e "  ${DIM}2.${RESET} Copy and paste the export commands into your terminal"
+    echo -e "  ${DIM}3.${RESET} Run this command:\n"
 }
 
 _curl_hint_auth_line() {
@@ -331,7 +342,7 @@ _curl_hint_params() {
             echo -e "    --data-urlencode \"${param}\" \\"
         done
     fi
-    echo -e "    \"\$FF_BASE_URL/api/prices${base}\""
+    echo -e "    \"${FF_BASE_URL}/api/prices${base}\""
 }
 
 curl_hint_get() {
@@ -350,7 +361,7 @@ curl_hint_post() {
     _curl_hint_auth_line
     echo -e "    -H 'Content-Type: application/json' \\"
     echo -e "    -d '${body}' \\"
-    echo -e "    \"\$FF_BASE_URL/api${path}\""
+    echo -e "    \"${FF_BASE_URL}/api${path}\""
     echo
 }
 
@@ -455,7 +466,7 @@ show_menu() {
     echo -e "  ${DIM}TOOLS${RESET}"
     echo -e "  ${CYAN}t${RESET}  Token status"
     echo -e "  ${CYAN}r${RESET}  Refresh / re-authenticate"
-    echo -e "  ${CYAN}e${RESET}  Export token as env vars for use in your own API requests"
+    echo -e "  ${CYAN}g${RESET}  Generate environment variables for using your token in curl requests"
     echo -e "  ${CYAN}c${RESET}  Clear cached tokens"
     echo -e "  ${CYAN}q${RESET}  Quit"
     echo
@@ -481,14 +492,14 @@ main() {
 
     while true; do
         show_menu
-        read -rp "Choose [1-3, t/r/e/c/q]: " choice
+        read -rp "Choose [1-3, t/r/g/c/q]: " choice
         case "$choice" in
             1) example_regional_avg ;;
             2) example_brand_history ;;
             3) example_batch_history ;;
             t) token_status ;;
             r) do_refresh ;;
-            e) show_env_export ;;
+            g) show_env_export ;;
             c) clear_token_cache ;;
             q) echo -e "\n${DIM}Bye!${RESET}"; exit 0 ;;
             *) warn "Invalid choice." ;;
