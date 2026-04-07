@@ -459,8 +459,21 @@ example_batch_history() {
         (.[0:5] + [{"bucket":"…","avg_price":"…","stations":"…"}] + .[-5:])
     else . end | .[] | {date: .bucket, avg_price: (.avg_price | tostring + "p"), stations}'
 
-    curl_hint_post "/stations/lookup" "$json_ids"
-    curl_hint_get "/history?fuel_type=E10&node_ids=${found}&days=${days}"
+    echo -e "\n${BOLD}To run this yourself:${RESET}"
+    echo -e "  ${DIM}1.${RESET} Generate environment variables for your token (menu option ${CYAN}g${RESET})"
+    echo -e "  ${DIM}2.${RESET} Copy and paste the export commands into your terminal"
+    echo -e "  ${DIM}3.${RESET} Run these commands:\n"
+    echo -e "${DIM}Look up station details:${RESET}\n"
+    echo -e "  curl \\"
+    _curl_hint_auth_line
+    echo -e "    -H 'Content-Type: application/json' \\"
+    echo -e "    -d '${json_ids}' \\"
+    echo -e "    \"${FF_BASE_URL}/api/stations/lookup\""
+    echo -e "\n${DIM}Fetch price history for matched stations:${RESET}\n"
+    echo -e "  curl \\"
+    _curl_hint_auth_line
+    _curl_hint_params "/history?fuel_type=E10&node_ids=${found}&days=${days}"
+    echo
     echo -e "${DIM}All endpoints are listed at ${FF_BASE_URL}/api${RESET}"
 }
 
