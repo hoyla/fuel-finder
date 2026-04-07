@@ -395,7 +395,7 @@ example_regional_avg() {
     ')
     echo -e "\n${GREEN}Weighted average across all three regions: ${BOLD}${overall}p${RESET}"
     curl_hint_get "/by-region?fuel_type=E10"
-    echo -e "${DIM}All endpoints are listed at ${FF_BASE_URL}/api${RESETq}"
+    echo -e "${DIM}All endpoints are listed at ${FF_BASE_URL}/api${RESET}"
 }
 
 example_brand_history() {
