@@ -140,6 +140,17 @@ async function loadDashboard() {
     cards.innerHTML += renderThirtyDayChangeCard('E10', 'Unleaded (E10)<br>30-day change', summaryNowByFuel.E10, e10Past, e10Date);
     cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel (B7)<br>30-day change', summaryNowByFuel.B7_STANDARD, b7Past, b7Date);
 
+    const [e10WarBaseline, b7WarBaseline] = await Promise.all([
+        fetchFixedDateBaseline('E10', '2026-02-28'),
+        fetchFixedDateBaseline('B7_STANDARD', '2026-02-28'),
+    ]);
+    const e10WarPast = e10WarBaseline?.price ?? null;
+    const e10WarDate = e10WarBaseline?.date ?? null;
+    const b7WarPast = b7WarBaseline?.price ?? null;
+    const b7WarDate = b7WarBaseline?.date ?? null;
+    cards.innerHTML += renderThirtyDayChangeCard('E10', 'Unleaded (E10)<br>since 28 Feb', summaryNowByFuel.E10, e10WarPast, e10WarDate);
+    cards.innerHTML += renderThirtyDayChangeCard('B7_STANDARD', 'Diesel (B7)<br>since 28 Feb', summaryNowByFuel.B7_STANDARD, b7WarPast, b7WarDate);
+
     // Wire up 30-day change cards to navigate to Trends tab
     document.querySelectorAll('[data-fuel-change]').forEach(card => {
         card.style.cursor = 'pointer';
@@ -235,6 +246,35 @@ async function fetchThirtyDaysAgoBaseline(fuelCode) {
         rangeStart.setDate(rangeStart.getDate() - 3);
         const rangeEnd = new Date(target);
         rangeEnd.setDate(rangeEnd.getDate() + 3);
+
+        const fmt = d => d.toISOString().slice(0, 10);
+        const resp = await apiFetch(
+            `/prices/history?fuel_type=${encodeURIComponent(fuelCode)}&start_date=${fmt(rangeStart)}&end_date=${fmt(rangeEnd)}&granularity=daily`
+        );
+
+        const points = (resp.data || []).filter(d => d.avg_price != null);
+        if (!points.length) return null;
+
+        points.sort((a, b) => {
+            const da = Math.abs(new Date(a.bucket).getTime() - target.getTime());
+            const db = Math.abs(new Date(b.bucket).getTime() - target.getTime());
+            return da - db;
+        });
+
+        const baseline = Number(points[0].avg_price);
+        const bucketDate = points[0].bucket;
+        return isFinite(baseline) ? { price: baseline, date: bucketDate } : null;
+    } catch {
+        return null;
+    }
+}
+
+async function fetchFixedDateBaseline(fuelCode, dateStr) {
+    try {
+        const target = new Date(dateStr + 'T00:00:00');
+        const rangeStart = new Date(target);
+        rangeStart.setDate(rangeStart.getDate() - 3);
+        const rangeEnd = new Date(target);
 
         const fmt = d => d.toISOString().slice(0, 10);
         const resp = await apiFetch(
