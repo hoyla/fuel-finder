@@ -134,6 +134,7 @@ do_login() {
     hr
     read -rp "Email / username: " username
     read -rsp "Password: " password; echo
+    echo
 
     local body resp
     body=$(jq -n --arg cid "$COGNITO_CLIENT_ID" --arg u "$username" --arg p "$password" \
@@ -150,6 +151,7 @@ do_login() {
         session=$(echo "$resp" | jq -r '.Session')
         challenge_user=$(echo "$resp" | jq -r '.ChallengeParameters.USER_ID_FOR_SRP')
         read -rsp "New password: " new_pw; echo
+        echo
         body=$(jq -n --arg cid "$COGNITO_CLIENT_ID" --arg s "$session" --arg u "$challenge_user" --arg p "$new_pw" \
             '{ChallengeName:"NEW_PASSWORD_REQUIRED",ClientId:$cid,Session:$s,ChallengeResponses:{USERNAME:$u,NEW_PASSWORD:$p}}')
         resp=$(cognito_call "RespondToAuthChallenge" "$body") || { err "Password change failed."; return 1; }
@@ -175,6 +177,7 @@ store_tokens() {
 
     local email
     email=$(echo "$payload" | base64 -d 2>/dev/null | jq -r '.email // .["cognito:username"] // "unknown"')
+    echo
     ok "Signed in as ${BOLD}${email}${RESET}"
     local remaining=$(( TOKEN_EXPIRY - $(date +%s) ))
     info "Token expires in $(( remaining / 60 )) minutes"
@@ -190,6 +193,7 @@ do_refresh() {
     fi
 
     info "Refreshing token…"
+    echo
     local body resp
     body=$(jq -n --arg cid "$COGNITO_CLIENT_ID" --arg rt "$FF_REFRESH_TOKEN" \
         '{AuthFlow:"REFRESH_TOKEN_AUTH",ClientId:$cid,AuthParameters:{REFRESH_TOKEN:$rt}}')
@@ -265,6 +269,7 @@ ensure_valid_token() {
 }
 
 token_status() {
+    echo
     if [[ "$FF_ID_TOKEN" == "__none__" ]]; then
         ok "No-auth mode — no token needed"
     elif [[ "$FF_ID_TOKEN" == __apikey__:* ]]; then
@@ -478,7 +483,10 @@ show_menu() {
 }
 
 main() {
-    echo -e "\n${BOLD}🔧 Fuel Finder API Shell${RESET}\n"
+    echo -e "\n${BOLD}🔧 Fuel price tracker API setup tool${RESET}\n"
+    echo -e "Create API keys using your Fuel tracker username and password."
+    echo -e "See some example API queries and their responses."
+    echo -e "Clear API tokens from your computer when you're done.\n"
 
     prompt_base_url
     fetch_auth_config || exit 1
