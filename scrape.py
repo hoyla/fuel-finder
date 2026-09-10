@@ -123,7 +123,7 @@ def run_scrape(mode="auto"):
             enriched = enrich_run()
             if enriched:
                 log.info("Enriched %d new postcodes via postcodes.io", enriched)
-                refresh_current_prices(conn)
+                refresh_current_prices(conn, refresh_reconstructed=True)
         except Exception as e:
             log.warning("Postcode enrichment failed (non-fatal): %s", e)
 

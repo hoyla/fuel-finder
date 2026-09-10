@@ -300,7 +300,7 @@ def import_csv_to_db(csv_path, database_url=None, dry_run=False, batch_size=5000
 
         # 10. Refresh materialised view
         log.info("Refreshing current_prices materialised view...")
-        refresh_current_prices(conn)
+        refresh_current_prices(conn, refresh_reconstructed=True)
         log.info("Materialised view refreshed")
 
     except Exception:

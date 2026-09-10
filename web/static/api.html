@@ -371,7 +371,7 @@
 
     <p><strong>Editor</strong> endpoints (mutations, exports, view refresh) require <code>admin</code> or <code>editor</code> group membership. <strong>Admin</strong> endpoints (user management) require <code>admin</code> group only.</p>
 
-    <div class="note warning">Changes to lookup tables are not reflected in the dashboard until you call <code>POST /api/admin/refresh-view</code> to rebuild the materialised view.</div>
+    <div class="note warning">Changes to lookup tables are not reflected in the dashboard until you call <code>POST /api/admin/refresh-view</code> to rebuild the materialised view. When reconstructed caches are installed, this also refreshes them; a classification change can require a full grouped-cache rebuild.</div>
 
     <h3>Scrape history</h3>
 
@@ -546,7 +546,7 @@
 
     <div class="endpoint">
         <div class="method-path"><span class="method post">POST</span> /api/admin/refresh-view</div>
-        <div class="desc">Rebuilds the <code>current_prices</code> materialised view. Call after changing any lookup table.</div>
+        <div class="desc">Rebuilds the <code>current_prices</code> materialised view and, when installed, synchronously refreshes reconstructed history caches. Classification changes can require a full grouped rebuild. Call after changing any lookup table.</div>
         <pre>{ "status": "ok", "message": "current_prices view refreshed" }</pre>
     </div>
 
