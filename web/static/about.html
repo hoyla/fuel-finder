@@ -204,6 +204,19 @@ Fuel Finder API (GOV.UK)
         are computed on the fly and do not alter stored data.
     </div>
 
+    <div class="note info">
+        <strong>Station-weighted history rollout:</strong> In environments with reconstructed
+        history enabled, each UTC hour uses a station's latest recorded price. Daily means
+        average eligible hours within a station, then stations equally. An anomaly-flagged
+        latest record creates a gap; corrections are applied while retaining the audited
+        original-flag eligibility rule. Aggregate series keep the existing Hampel filter;
+        values before replacement remain available in the API and chart tooltips. The
+        <em>Check sensitivity</em> disclosure compares age limits using the same Hampel settings
+        on both series. Record age is not confirmation age. The separate Dashboard check
+        preserves current-snapshot Tukey IQR exclusions. Historical group labels use current
+        snapshot classifications, and no age limit is a statement of pump-price accuracy.
+    </div>
+
     <h2 id="brand-normalisation">Brand normalisation</h2>
 
     <p>The API provides brand names inconsistently — <code>ESSO</code>, <code>Esso</code>, <code>esso</code> all appear for the same company. Three layers of normalisation clean this up:</p>

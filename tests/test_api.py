@@ -38,6 +38,254 @@ def has_data():
     return count
 
 
+class TestFrontendCaching:
+    @pytest.mark.parametrize("path", ["/", "/static/js/dashboard.js", "/static/style.css", "/docs/api", "/docs/about"])
+    def test_unversioned_frontend_revalidates(self, client, path):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers.get("cache-control") == "no-cache"
+        assert response.headers.get("etag")
+
+    @pytest.mark.parametrize("path", ["/static/js/dashboard.js", "/static/style.css"])
+    def test_unchanged_assets_keep_conditional_responses(self, client, path):
+        response = client.get(path)
+        unchanged = client.get(path, headers={"If-None-Match": response.headers["etag"]})
+        assert unchanged.status_code == 304
+        assert unchanged.headers.get("cache-control") == "no-cache"
+        assert unchanged.content == b""
+
+    def test_api_cache_policy_is_unchanged(self, client):
+        response = client.get("/auth/config")
+        assert response.status_code == 200
+        assert "cache-control" not in response.headers
+
+
+@pytest.fixture
+def reconstruction_db():
+    from psycopg2.extras import RealDictCursor
+    connection = psycopg2.connect(os.environ["DATABASE_URL"], cursor_factory=RealDictCursor)
+    with connection.cursor() as cursor:
+        for table in ("current_prices", "fuel_prices", "price_corrections"):
+            from psycopg2 import sql
+            cursor.execute(sql.SQL("CREATE TEMP TABLE {} AS SELECT * FROM public.{} WITH NO DATA").format(sql.Identifier(table), sql.Identifier(table)))
+        cursor.execute("""INSERT INTO current_prices (node_id, fuel_type, price, region, forecourt_type, temporary_closure)
+                          VALUES ('old', 'E10', 100, 'North', 'Independent', false),
+                                 ('changing', 'E10', 220, 'South', 'Supermarket', false)""")
+        cursor.execute("""INSERT INTO fuel_prices (id, node_id, fuel_type, price, observed_at)
+                          VALUES (1, 'old', 'E10', 100, '2026-08-01T00:00:00Z'),
+                                 (2, 'changing', 'E10', 200, '2026-08-11T00:00:00Z'),
+                                 (3, 'changing', 'E10', 220, '2026-08-11T12:00:00Z')""")
+    try:
+        yield connection
+    finally:
+        connection.rollback()
+        connection.close()
+
+
+class TestReconstructedHistory:
+    @pytest.mark.parametrize("minimum,expected_fuels", [(0, {"E10", "B7_STANDARD"}), (210, {"E10"})])
+    def test_multi_fuel_export_keeps_price_filter_per_fuel(self, client, reconstruction_db, monkeypatch, minimum, expected_fuels):
+        from types import SimpleNamespace
+        from web import api as api_module
+        with reconstruction_db.cursor() as cursor:
+            cursor.execute("""INSERT INTO current_prices (node_id, fuel_type, price, temporary_closure)
+                              VALUES ('changing', 'B7_STANDARD', 90, false)""")
+            cursor.execute("""INSERT INTO fuel_prices (id, node_id, fuel_type, price, observed_at)
+                              VALUES (4, 'changing', 'B7_STANDARD', 90, '2026-08-11T00:00:00Z')""")
+        monkeypatch.setattr(api_module, "_pool", SimpleNamespace(getconn=lambda: reconstruction_db, putconn=lambda connection: None))
+        response = client.get("/api/prices/history/export", params={
+            "fuel_type": "E10,B7_STANDARD", "start_date": "2026-08-11", "end_date": "2026-08-11",
+            "min_price": minimum, "format": "json",
+        })
+        assert response.status_code == 200
+        assert {row["fuel_type"] for row in response.json()} == expected_fuels
+
+    def test_station_history_keeps_age_control_and_all_data_range(self, client, reconstruction_db):
+        from web import api as api_module
+        app.dependency_overrides[api_module.get_db] = lambda: reconstruction_db
+        try:
+            response = client.get("/api/prices/station/old/history?fuel_type=E10&end_date=2026-08-12&granularity=daily&age_limit=7&include_sensitivity=true")
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["smoothing"] == "none"
+            assert payload["age_limit"] == "7"
+            assert payload["data"][0]["bucket"] == "2026-08-01"
+            assert len(payload["data"]) == 12
+            assert payload["data"][-1]["age_price"] is None
+            assert float(payload["data"][-1]["avg_price"]) == 100
+        finally:
+            app.dependency_overrides.pop(api_module.get_db, None)
+    def test_all_data_starts_at_selected_stations_first_record(self, client, reconstruction_db):
+        from web import api as api_module
+        app.dependency_overrides[api_module.get_db] = lambda: reconstruction_db
+        try:
+            response = client.get("/api/prices/history?fuel_type=E10&end_date=2026-08-12&granularity=daily&node_ids=changing")
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["range_start"] == "2026-08-11T00:00:00+00:00"
+            assert len(payload["data"]) == 2
+            assert payload["data"][0]["avg_price"] == 210
+            assert not payload["range_capped"]
+        finally:
+            app.dependency_overrides.pop(api_module.get_db, None)
+
+    def test_all_data_keeps_access_tier_cap(self, reconstruction_db):
+        from datetime import datetime, timezone
+        from price_history import resolve_history_window
+        now = datetime(2026, 9, 10, tzinfo=timezone.utc)
+        with reconstruction_db.cursor() as cursor:
+            cursor.execute("UPDATE fuel_prices SET observed_at = '2025-01-01T00:00:00Z' WHERE id = 1")
+        start, end, capped = resolve_history_window(reconstruction_db, "E10", {}, end_date="2026-09-09", role="readonly", now=now)
+        assert (end - start).days == 90
+        assert capped
+
+    @pytest.fixture(autouse=True)
+    def enable_reconstruction(self, monkeypatch):
+        monkeypatch.setenv("RECONSTRUCTED_HISTORY_ENABLED", "true")
+
+    def test_daily_equal_station_weight_and_age_limit(self, reconstruction_db):
+        from datetime import datetime, timezone
+        from price_history import reconstruct
+        start = datetime(2026, 8, 11, tzinfo=timezone.utc)
+        end = datetime(2026, 8, 12, tzinfo=timezone.utc)
+        result = reconstruct(reconstruction_db, "E10", start, end, age_limit="7", include_groups=True)
+        assert float(result["data"][0]["avg_price"]) == 155
+        assert float(result["data"][0]["age_price"]) == 210
+        assert result["data"][0]["stations"] == 2
+        assert result["data"][0]["included_stations"] == 1
+        assert result["data"][0]["included_hours"] == 24
+        assert sum(row["excluded_stations"] for row in result["groups"] if row["dimension"] == "region") == 1
+
+    def test_hourly_values_and_selected_station_filter(self, reconstruction_db):
+        from datetime import datetime, timezone
+        from price_history import reconstruct
+        start = datetime(2026, 8, 11, tzinfo=timezone.utc)
+        end = datetime(2026, 8, 12, tzinfo=timezone.utc)
+        result = reconstruct(reconstruction_db, "E10", start, end, "hourly", filters={"node_ids": "changing"})
+        assert len(result["data"]) == 24
+        assert float(result["data"][0]["avg_price"]) == 200
+        assert float(result["data"][12]["avg_price"]) == 220
+        assert all(row["stations"] == 1 for row in result["data"])
+
+    def test_endpoint_uses_reconstruction_and_paired_hampel(self, client, reconstruction_db):
+        from web import api as api_module
+        app.dependency_overrides[api_module.get_db] = lambda: reconstruction_db
+        try:
+            response = client.get("/api/prices/history?fuel_type=E10&start_date=2026-08-11&end_date=2026-08-11&granularity=daily&age_limit=7&include_sensitivity=true")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["method"] == "last_reported_station_weighted"
+            assert data["smoothing"] == "hampel"
+            assert data["data"][0]["avg_price"] == 155
+            assert data["data"][0]["age_price"] == 210
+            assert data["data"][0]["unsmoothed_avg_price"] == 155
+            assert data["data"][0]["unsmoothed_age_price"] == 210
+            assert len(data["groups"]) == 4
+        finally:
+            app.dependency_overrides.pop(api_module.get_db, None)
+
+    @pytest.mark.parametrize("query", ["start_date=bad", "start_date=2026-09-09&end_date=2026-08-01", "age_limit=bad", "granularity=bad"])
+    def test_invalid_parameters(self, client, query):
+        assert client.get("/api/prices/history?" + query).status_code == 422
+
+    def test_current_sensitivity_keeps_snapshot_iqr_exclusions(self, reconstruction_db):
+        from datetime import datetime, timezone
+        from price_history import snapshot_sensitivity
+        with reconstruction_db.cursor() as cursor:
+            cursor.execute("UPDATE current_prices SET price_is_outlier = false, observed_at = '2026-08-11T00:00:00Z'")
+            cursor.execute("UPDATE current_prices SET price_is_outlier = true WHERE node_id = 'changing'")
+        data = snapshot_sensitivity(reconstruction_db, "E10", "none", datetime(2026, 8, 12, tzinfo=timezone.utc))
+        assert float(data["data"]["avg_price"]) == 100
+        assert data["data"]["stations"] == 1
+        assert data["data"]["included_stations"] == 1
+
+    @pytest.mark.parametrize("age_limit", ["none", "30", "14", "7", "today"])
+    @pytest.mark.parametrize("granularity", ["daily", "hourly"])
+    def test_interval_sql_matches_audited_sampling(self, reconstruction_db, age_limit, granularity):
+        from datetime import datetime, timezone
+        from price_history import reconstruct
+        from scripts.audit_trend_weighting import compare_prices, load_events
+        start = datetime(2026, 8, 11, tzinfo=timezone.utc)
+        end = datetime(2026, 8, 13, tzinfo=timezone.utc)
+        with reconstruction_db.cursor() as cursor:
+            cursor.execute("""INSERT INTO fuel_prices (id, node_id, fuel_type, price, observed_at, anomaly_flags)
+                              VALUES (4, 'changing', 'E10', 206, '2026-08-11T00:15:00Z', NULL),
+                                     (5, 'changing', 'E10', 240, '2026-08-11T18:00:00Z', ARRAY['test_flag']),
+                                     (6, 'changing', 'E10', 250, '2026-08-11T23:15:00Z', NULL)""")
+            cursor.execute("INSERT INTO price_corrections (id, fuel_price_id, original_price, corrected_price) VALUES (1, 1, 100, 140)")
+        events = load_events(reconstruction_db, "E10", start, end)
+        selected_hours = []
+        selected_days, _ = compare_prices(events, start, end, age_limit, hourly_output=selected_hours)
+        reference_hours = []
+        reference_days, _ = compare_prices(events, start, end, hourly_output=reference_hours)
+        result = reconstruct(reconstruction_db, "E10", start, end, granularity, age_limit)["data"]
+        expected = zip(reference_days, selected_days) if granularity == "daily" else zip(reference_hours, selected_hours)
+        for row, (reference, selected) in zip(result, expected):
+            value = reference["equal_station_hourly"] if granularity == "daily" else reference["avg_price"]
+            limited = selected["equal_station_hourly"] if granularity == "daily" else selected["avg_price"]
+            assert abs(float(row["avg_price"]) - value) <= 0.051
+            if limited is None:
+                assert row["age_price"] is None
+            else:
+                assert abs(float(row["age_price"]) - limited) <= 0.051
+            assert row["included_stations"] == selected["reconstructed_stations" if granularity == "daily" else "stations"]
+
+    def test_filter_intersection_and_quotes_are_safe(self, reconstruction_db):
+        from datetime import datetime, timezone
+        from price_history import reconstruct
+        start = datetime(2026, 8, 11, tzinfo=timezone.utc)
+        end = datetime(2026, 8, 12, tzinfo=timezone.utc)
+        assert reconstruct(reconstruction_db, "E10", start, end, filters={"node_ids": "old", "region": "South"})["data"] == []
+        assert reconstruct(reconstruction_db, "E10", start, end, filters={"brand": "' OR 1=1 --"})["data"] == []
+        result = reconstruct(reconstruction_db, "E10", start, end, filters={"min_price": 210})
+        assert float(result["data"][0]["avg_price"]) == 210
+
+    def test_rollout_disabled_keeps_current_sensitivity_unavailable(self, client, monkeypatch):
+        monkeypatch.setenv("RECONSTRUCTED_HISTORY_ENABLED", "false")
+        assert not client.get("/auth/config").json()["reconstructed_history"]
+        assert client.get("/api/prices/current/sensitivity").status_code == 404
+
+    def test_raw_export_preserves_history_station_filters(self, client, reconstruction_db, monkeypatch):
+        from types import SimpleNamespace
+        from web import api as api_module
+        pool = SimpleNamespace(getconn=lambda: reconstruction_db, putconn=lambda connection: None)
+        monkeypatch.setattr(api_module, "_pool", pool)
+        response = client.get("/api/prices/history/export?fuel_type=E10&start_date=2026-08-11&end_date=2026-08-11&min_price=210&format=json")
+        assert response.status_code == 200
+        records = response.json()
+        assert len(records) == 2
+        assert all(row["node_id"] == "changing" for row in records)
+        assert {float(row["original_price"]) for row in records} == {200, 220}
+
+
+class TestLocalTrendComparison:
+    @pytest.mark.parametrize("environment,configured,enabled", [
+        ("local", True, True), ("local", False, False),
+        ("production", True, False), ("staging", True, False),
+    ])
+    def test_local_gate(self, client, monkeypatch, tmp_path, environment, configured, enabled):
+        from web import api as api_module
+
+        artifact = tmp_path / "results.json"
+        artifact.write_text('{"fuels": {"E10": {"daily": []}}}')
+        monkeypatch.setattr(api_module, "import_env", environment)
+        if configured:
+            monkeypatch.setenv("TREND_COMPARISON_FILE", str(artifact))
+        else:
+            monkeypatch.delenv("TREND_COMPARISON_FILE", raising=False)
+        response = client.get("/api/local/trend-comparison")
+        assert response.status_code == (200 if enabled else 404)
+        assert client.get("/auth/config").json().get("trend_comparison", False) is enabled
+        if enabled:
+            assert response.json() == {"fuels": {"E10": {"daily": []}}}
+            assert response.headers["cache-control"] == "no-store"
+
+    def test_missing_artifact_is_not_advertised(self, client, monkeypatch, tmp_path):
+        monkeypatch.setenv("TREND_COMPARISON_FILE", str(tmp_path / "missing.json"))
+        assert client.get("/api/local/trend-comparison").status_code == 404
+        assert "trend_comparison" not in client.get("/auth/config").json()
+
+
 class TestSummary:
     def test_returns_200(self, client, has_data):
         r = client.get("/api/summary")
@@ -141,6 +389,31 @@ class TestPriceMap:
 
 
 class TestSearch:
+    def test_fuel_subset_preserves_total_and_pagination(self, client, has_data):
+        fuels = {"E10", "B7_STANDARD"}
+        expected = sum(client.get("/api/prices/search", params={"fuel_type": fuel, "limit": 1}).json()["total"] for fuel in fuels)
+        for offset in (0, 7):
+            response = client.get("/api/prices/search", params={"fuel_type": "E10,B7_STANDARD", "limit": 7, "offset": offset})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total"] == expected
+            assert len(data["results"]) == 7
+            assert {row["fuel_type"] for row in data["results"]} <= fuels
+
+    @pytest.mark.parametrize("selection", [None, "E10,B7_STANDARD"])
+    def test_history_export_all_or_subset(self, client, has_data, selection):
+        node = client.get("/api/prices/search?fuel_type=E10&limit=1").json()["results"][0]["node_id"]
+        parameters = {"node_id": node, "format": "json"}
+        if selection:
+            parameters["fuel_type"] = selection
+        response = client.get("/api/prices/search/export", params=parameters)
+        assert response.status_code == 200
+        records = response.json()
+        assert records
+        assert all(row["node_id"] == node for row in records)
+        if selection:
+            assert {row["fuel_type"] for row in records} <= set(selection.split(","))
+
     def test_returns_200(self, client, has_data):
         r = client.get("/api/prices/search?fuel_type=E10")
         assert r.status_code == 200
@@ -265,6 +538,18 @@ class TestAnomalies:
 
 
 class TestOutliers:
+    def test_subset_retains_individual_fuel_bounds(self, client, has_data):
+        fuels = {"E10", "B7_STANDARD"}
+        singles = {fuel: client.get("/api/outliers", params={"fuel_type": fuel}).json() for fuel in fuels}
+        response = client.get("/api/outliers?fuel_type=E10,B7_STANDARD&limit=5&offset=2")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == sum(single["total"] for single in singles.values())
+        assert set(data["bounds"]) == fuels
+        for fuel in fuels:
+            assert data["bounds"][fuel] == singles[fuel]["bounds"][fuel]
+        assert {row["fuel_type"] for row in data["outliers"]} <= fuels
+
     def test_returns_200(self, client, has_data):
         r = client.get("/api/outliers")
         assert r.status_code == 200
@@ -295,6 +580,14 @@ class TestOutliers:
 
 
 class TestStationPriceRecords:
+    def test_fuel_subset_records(self, client, has_data):
+        node = client.get("/api/prices/search?fuel_type=E10&limit=1").json()["results"][0]["node_id"]
+        response = client.get(f"/api/prices/station/{node}/records?fuel_type=E10,B7_STANDARD")
+        assert response.status_code == 200
+        records = response.json()["records"]
+        assert records
+        assert {row["fuel_type"] for row in records} <= {"E10", "B7_STANDARD"}
+
     def test_non_anomalous_iqr_outlier_is_shown_in_status(self, client, has_data):
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         try:

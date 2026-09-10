@@ -7,7 +7,7 @@ Auth is stubbed out for future use (JWT / API key).
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Literal, Optional
 
 import statistics
 
@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from price_history import apply_hampel, reconstruct, resolve_history_window, resolve_window, select_stations, snapshot_sensitivity
 
 # ---------------------------------------------------------------------------
 # Database connection pool
@@ -150,7 +151,67 @@ def health():
 @app.get("/auth/config")
 def auth_config():
     """Return auth mode so the frontend can adapt."""
-    return get_auth_config()
+    config = get_auth_config()
+    if _local_trend_comparison_file():
+        config["trend_comparison"] = True
+    config["reconstructed_history"] = _reconstructed_history_enabled()
+    return config
+
+
+def _reconstructed_history_enabled():
+    return os.environ.get("RECONSTRUCTED_HISTORY_ENABLED", "false").lower() == "true"
+
+
+def _reconstructed_response(db, fuel_type, days, start_date, end_date, granularity, age_limit,
+                            include_sensitivity, role, filters, smooth=True):
+    try:
+        start, end, capped = resolve_history_window(
+            db, fuel_type, filters, start_date, end_date, days, role,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if granularity not in (None, "hourly", "daily"):
+        raise HTTPException(status_code=422, detail="Granularity must be hourly or daily")
+    span = ((end - timedelta(microseconds=1)).date() - start.date()).days + 1
+    effective = granularity or ("daily" if span >= 30 else "hourly")
+    result = reconstruct(db, fuel_type, start, end, effective, age_limit, filters, include_sensitivity)
+    if smooth:
+        apply_hampel(result["data"], effective)
+        apply_hampel(result["data"], effective, "age_price")
+    for row in result["data"] + result["groups"]:
+        row["bucket"] = row["bucket"].date().isoformat() if effective == "daily" else row["bucket"].isoformat()
+    result.update(granularity=effective, age_limit=age_limit, range_start=start.isoformat(),
+                  range_end_exclusive=end.isoformat(), range_capped=capped,
+                  method="last_reported_station_weighted", smoothing="hampel" if smooth else "none",
+                  classification_basis="current_snapshot")
+    return result
+
+
+@app.get("/api/prices/current/sensitivity")
+def current_price_sensitivity(
+    fuel_type: str = Query("E10"),
+    age_limit: Literal["none", "30", "14", "7", "today"] = Query("30"),
+    db=Depends(get_db),
+    _auth=Depends(require_auth),
+):
+    if not _reconstructed_history_enabled():
+        raise HTTPException(status_code=404, detail="Sensitivity is not enabled")
+    return snapshot_sensitivity(db, fuel_type, age_limit)
+
+
+def _local_trend_comparison_file():
+    path = os.environ.get("TREND_COMPARISON_FILE", "")
+    if import_env == "local" and path and os.path.isfile(path):
+        return path
+    return None
+
+
+@app.get("/api/local/trend-comparison", include_in_schema=False)
+def local_trend_comparison(_auth=Depends(require_auth)):
+    path = _local_trend_comparison_file()
+    if not path:
+        raise HTTPException(status_code=404, detail="Comparison is not enabled")
+    return FileResponse(path, media_type="application/json", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/auth/me")
@@ -328,10 +389,20 @@ def station_price_history(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     granularity: Optional[str] = Query(None),
+    age_limit: Literal["none", "30", "14", "7", "today"] = Query("none"),
+    include_sensitivity: bool = Query(False),
     db=Depends(get_db),
     role: str = Depends(resolve_role),
 ):
     """Price history for a single station."""
+    if _reconstructed_history_enabled():
+        result = _reconstructed_response(db, fuel_type, days, start_date, end_date, granularity or "hourly",
+                         age_limit, include_sensitivity, role, {"node_ids": node_id}, smooth=False)
+        with db.cursor() as cur:
+            cur.execute("""SELECT DISTINCT ON (node_id) trading_name, brand_name, raw_brand_name,
+                                  city, postcode, forecourt_type FROM current_prices WHERE node_id = %s""", (node_id,))
+            result["station"] = cur.fetchone()
+        return result
     max_days = 90 if role == "readonly" else 365
     if start_date or end_date:
         range_start = datetime.fromisoformat(start_date) if start_date else None
@@ -443,6 +514,10 @@ def price_history(
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
+    min_price: Optional[float] = Query(None),
+    max_price: Optional[float] = Query(None),
+    age_limit: Literal["none", "30", "14", "7", "today"] = Query("none"),
+    include_sensitivity: bool = Query(False),
     db=Depends(get_db),
     role: str = Depends(resolve_role),
 ):
@@ -456,6 +531,14 @@ def price_history(
     Excludes anomaly-flagged records. Applies a Hampel filter (rolling
     median ± 3×MAD) to smooth outlier averages without distorting trends.
     """
+    if _reconstructed_history_enabled():
+        filters = dict(region=region, country=country, rural_urban=rural_urban, node_ids=node_ids,
+                       station=station, brand=brand, category=category, postcode=postcode, city=city,
+                       district=district, constituency=constituency, supermarket_only=supermarket_only,
+                       motorway_only=motorway_only, exclude_outliers=exclude_outliers,
+                       min_price=min_price, max_price=max_price)
+        return _reconstructed_response(db, fuel_type, days, start_date, end_date, granularity,
+                                       age_limit, include_sensitivity, role, filters)
     max_days = 90 if role == "readonly" else 365
     # Resolve the time range
     if start_date or end_date:
@@ -706,8 +789,12 @@ def price_history_export(
     supermarket_only: bool = Query(False),
     motorway_only: bool = Query(False),
     exclude_outliers: bool = Query(False),
+    station: Optional[str] = Query(None),
+    min_price: Optional[float] = Query(None),
+    max_price: Optional[float] = Query(None),
     format: str = Query("csv"),
     db=Depends(get_db),
+    role: str = Depends(resolve_role),
     _auth=Depends(require_editor),
 ):
     """Export raw individual price records matching the trend filters.
@@ -717,6 +804,9 @@ def price_history_export(
     """
     import csv
     import io
+    import json
+
+    fuel_codes = [value.strip() for value in fuel_type.split(',') if value.strip()]
 
     # Time filter
     time_filter = ""
@@ -773,9 +863,9 @@ def price_history_export(
         search_conditions.append("NOT price_is_outlier")
 
     if search_conditions:
-        sub_where = " AND ".join(["fuel_type = %s", "NOT temporary_closure"] + search_conditions)
-        node_filter = f"AND fp.node_id IN (SELECT node_id FROM current_prices WHERE {sub_where})"
-        node_params = [fuel_type, *search_params_list]
+        sub_where = " AND ".join(["fuel_type = ANY(%s)", "NOT temporary_closure"] + search_conditions)
+        node_filter = f"AND (fp.node_id, fp.fuel_type) IN (SELECT node_id, fuel_type FROM current_prices WHERE {sub_where})"
+        node_params = [fuel_codes, *search_params_list]
     elif node_ids:
         ids = [n.strip() for n in node_ids.split(",") if n.strip()]
         if ids:
@@ -860,13 +950,45 @@ def price_history_export(
         LEFT JOIN brand_categories bc
             ON bc.canonical_brand = COALESCE(so.canonical_brand, ba.canonical_brand, s.brand_name)
         LEFT JOIN fuel_type_labels ftl ON ftl.fuel_type_code = fp.fuel_type
-        WHERE fp.fuel_type = %s
+            WHERE fp.fuel_type = ANY(%s)
           {time_filter}
           {node_filter}
           {location_filters}
         ORDER BY fp.observed_at, s.trading_name
     """
-    params = (fuel_type, *time_params, *node_params, *location_params)
+    params = (
+        fuel_codes, *time_params, *node_params, *location_params,
+    )
+
+    if _reconstructed_history_enabled():
+        from psycopg2 import sql
+        try:
+            start, end, _ = resolve_window(start_date, end_date, days, role)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        selection, selection_params = select_stations(fuel_type, dict(
+            region=region, country=country, rural_urban=rural_urban, node_ids=node_ids,
+            station=station, brand=brand, category=category, postcode=postcode, city=city,
+            district=district, constituency=constituency, supermarket_only=supermarket_only,
+            motorway_only=motorway_only, exclude_outliers=exclude_outliers,
+            min_price=min_price, max_price=max_price,
+        ))
+        query = sql.SQL("""
+            SELECT fp.node_id, cp.trading_name, cp.raw_brand_name AS raw_brand,
+                   cp.brand_name AS brand, fp.fuel_type, cp.fuel_name,
+                   fp.price AS original_price, pc.corrected_price,
+                   COALESCE(pc.corrected_price, fp.price) AS price, fp.observed_at, fp.anomaly_flags,
+                   cp.postcode, cp.city, cp.county, cp.country, cp.region, cp.admin_district,
+                   cp.parliamentary_constituency, cp.rural_urban, cp.forecourt_type,
+                   cp.latitude, cp.longitude, cp.is_motorway_service_station, cp.is_supermarket_service_station
+            FROM fuel_prices fp
+            JOIN current_prices cp ON cp.node_id = fp.node_id AND cp.fuel_type = fp.fuel_type
+            LEFT JOIN price_corrections pc ON pc.fuel_price_id = fp.id
+                        WHERE fp.fuel_type = ANY(%s) AND fp.observed_at >= %s AND fp.observed_at < %s
+                            AND (fp.node_id, fp.fuel_type) IN (SELECT node_id, fuel_type FROM current_prices WHERE {selection})
+            ORDER BY fp.observed_at, cp.trading_name
+        """).format(selection=selection)
+        params = (fuel_codes, start, end, *selection_params)
 
     columns = [
         "node_id", "trading_name", "raw_brand", "brand", "fuel_type",
@@ -1032,8 +1154,8 @@ def price_search(
     conditions = ["NOT temporary_closure"]
     params: list = []
     if fuel_type:
-        conditions.append("fuel_type = %s")
-        params.append(fuel_type)
+        conditions.append("fuel_type = ANY(%s)")
+        params.append([value.strip() for value in fuel_type.split(',') if value.strip()])
     if node_id:
         conditions.append("node_id = %s")
         params.append(node_id.strip())
@@ -1120,7 +1242,7 @@ def price_search(
     with db.cursor() as cur:
         cur.execute(f"""
             SELECT node_id, trading_name, brand_name, raw_brand_name, city, county,
-                   postcode, region, price, fuel_name, fuel_category,
+                   postcode, region, price, fuel_type, fuel_name, fuel_category,
                    forecourt_type, admin_district, parliamentary_constituency,
                    rural_urban,
                    latitude, longitude,
@@ -1128,7 +1250,7 @@ def price_search(
                    observed_at
             FROM current_prices
             WHERE {where}
-            ORDER BY {sort_col} {sort_dir} NULLS LAST
+            ORDER BY {sort_col} {sort_dir} NULLS LAST, node_id, fuel_type
             LIMIT %s OFFSET %s
         """, params + [limit, offset])
         rows = cur.fetchall()
@@ -1144,7 +1266,7 @@ def price_search(
 
 @app.get("/api/prices/search/export")
 def price_search_export(
-    fuel_type: str = Query(...),
+    fuel_type: Optional[str] = Query(None),
     postcode: Optional[str] = Query(None),
     station: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
@@ -1173,9 +1295,13 @@ def price_search_export(
     """
     import csv
     import io
+    import json
 
-    conditions = ["fp.fuel_type = %s"]
-    params: list = [fuel_type]
+    conditions = ["TRUE"]
+    params: list = []
+    if fuel_type:
+        conditions.append("fp.fuel_type = ANY(%s)")
+        params.append([value.strip() for value in fuel_type.split(',') if value.strip()])
     if node_ids:
         ids = [n.strip() for n in node_ids.split(",") if n.strip()]
         if ids:
@@ -2322,8 +2448,10 @@ def outliers(
         conditions = ["cp.price_is_outlier", "NOT cp.temporary_closure", "cp.anomaly_flags IS NULL"]
         params: list = []
         if fuel_type:
-            conditions.append("cp.fuel_type = %s")
-            params.append(fuel_type)
+            selected_fuels = [value.strip() for value in fuel_type.split(',') if value.strip()]
+            conditions.append("cp.fuel_type = ANY(%s)")
+            params.append(selected_fuels)
+            bounds = {key: value for key, value in bounds.items() if key in selected_fuels}
 
         where = " AND ".join(conditions)
         cur.execute(f"""
@@ -2470,8 +2598,8 @@ def station_price_records(
     conditions = ["fp.node_id = %s"]
     params: list = [node_id]
     if fuel_type:
-        conditions.append("fp.fuel_type = %s")
-        params.append(fuel_type)
+        conditions.append("fp.fuel_type = ANY(%s)")
+        params.append([value.strip() for value in fuel_type.split(',') if value.strip()])
     where = " AND ".join(conditions)
     with db.cursor() as cur:
         cur.execute(f"""
@@ -2654,6 +2782,9 @@ def _refresh_daily_prices_for(cur, fuel_price_ids):
             max_price  = EXCLUDED.max_price,
             sample_count = EXCLUDED.sample_count
     """, ([int(fid) for fid in fuel_price_ids],))
+    cur.execute("SELECT to_regprocedure('refresh_reconstructed_daily()') IS NOT NULL AS available")
+    if cur.fetchone()["available"]:
+        cur.execute("SELECT refresh_reconstructed_daily()")
 
 
 @app.post("/api/corrections")
@@ -2926,17 +3057,25 @@ def delete_user(username: str, _auth=Depends(require_admin)):
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
+
+class RevalidatingStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 if os.path.isdir(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", RevalidatingStaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/")
     def index():
-        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
 
     @app.get("/docs/api")
     def api_docs_page():
-        return FileResponse(os.path.join(STATIC_DIR, "api.html"))
+        return FileResponse(os.path.join(STATIC_DIR, "api.html"), headers={"Cache-Control": "no-cache"})
 
     @app.get("/docs/about")
     def about_page():
-        return FileResponse(os.path.join(STATIC_DIR, "about.html"))
+        return FileResponse(os.path.join(STATIC_DIR, "about.html"), headers={"Cache-Control": "no-cache"})

@@ -115,7 +115,7 @@ async function loadDashboard() {
             : '';
         cards.innerHTML += `
             <div class="card" data-fuel-price="${ft.fuel_type}">
-                <div class="label">${ft.fuel_name || ft.fuel_type} average price</div>
+                <div class="label">${ft.fuel_name || ft.fuel_type} ${reconstructedHistoryEnabled ? 'average last-reported price' : 'average price'}</div>
                 <div class="value">${ppl(ft.avg_price)}</div>
                 <canvas class="sparkline" data-fuel="${ft.fuel_type}" width="160" height="32"></canvas>
                 <div class="sub">${ppl(ft.min_price)} – ${ppl(ft.max_price)}</div>
@@ -157,8 +157,7 @@ async function loadDashboard() {
         card.addEventListener('click', e => {
             if (e.target.closest('a')) return;
             const fuel = card.dataset.fuelChange;
-            const sel = document.getElementById('trend-fuel');
-            if (sel.querySelector(`option[value="${fuel}"]`)) sel.value = fuel;
+            setFuelSelection('trend-fuel', fuel);
             switchTab('trends');
             loadTrends();
         });
@@ -178,8 +177,7 @@ async function loadDashboard() {
             document.getElementById('anomaly-section').value = 'outliers';
             await switchAnomalySection(true);
             // Set fuel type and load
-            const sel = document.getElementById('outlier-fuel');
-            if (sel.querySelector(`option[value="${fuel}"]`)) sel.value = fuel;
+            setFuelSelection('outlier-fuel', fuel);
             loadOutliers();
         });
     });
@@ -188,7 +186,7 @@ async function loadDashboard() {
     document.querySelectorAll('.country-link').forEach(link => {
         link.addEventListener('click', e => {
             e.preventDefault();
-            const ft = document.getElementById('dashboard-fuel').value || 'E10';
+            const ft = getFuelSelection('dashboard-fuel');
             navigateToSearch({ fuel_type: ft, country: link.dataset.country });
         });
     });
@@ -241,6 +239,7 @@ async function fetchThirtyDaysAgoBaseline(fuelCode) {
     try {
         const target = new Date();
         target.setDate(target.getDate() - 30);
+        if (reconstructedHistoryEnabled) target.setUTCHours(0, 0, 0, 0);
 
         const rangeStart = new Date(target);
         rangeStart.setDate(rangeStart.getDate() - 3);
@@ -331,10 +330,11 @@ async function loadSparklines(fuelCodes) {
     await Promise.all(promises);
 }
 
+let dashboardChartRequest = 0;
 async function loadDashboardCharts() {
-    const fuelCode = document.getElementById('dashboard-fuel').value || 'E10';
-    const fuelSel = document.getElementById('dashboard-fuel');
-    const fuelName = fuelSel.options[fuelSel.selectedIndex]?.textContent || fuelCode;
+    const request = ++dashboardChartRequest;
+    const fuelCode = getFuelSelection('dashboard-fuel') || 'E10';
+    const fuelName = fuelLabel(fuelCode);
 
     // Update chart headings
     document.getElementById('heading-region').textContent = `Average price by region \u2013 ${fuelName}`;
@@ -350,11 +350,13 @@ async function loadDashboardCharts() {
 
     // Region chart
     const regionData = await apiFetch(`/prices/by-region?fuel_type=${encodeURIComponent(fuelCode)}`);
+    if (request !== dashboardChartRequest) return;
     renderBarChart('chart-region', regionData.map(r => r.region), regionData.map(r => r.avg_price),
         'Avg pence/litre', '#1d70b8');
 
     // Category chart
     const catData = await apiFetch(`/prices/by-category?fuel_type=${encodeURIComponent(fuelCode)}`);
+    if (request !== dashboardChartRequest) return;
     const catColours = catData.map(c => FORECOURT_COLOURS[c.forecourt_type] || '#999');
     if (charts['chart-category']) charts['chart-category'].destroy();
     const catCtx = document.getElementById('chart-category').getContext('2d');
@@ -382,49 +384,62 @@ async function loadDashboardCharts() {
 
     // Brand chart (cheapest)
     const brandData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15`);
+    if (request !== dashboardChartRequest) return;
     renderBrandChart('chart-brand', brandData);
 
     // Brand chart (most expensive)
     const brandExpData = await apiFetch(`/prices/by-brand?fuel_type=${encodeURIComponent(fuelCode)}&limit=15&order=desc`);
+    if (request !== dashboardChartRequest) return;
     renderBrandChart('chart-brand-expensive', brandExpData);
 
     // Price trend chart (all data, daily)
-    const trendResp = await apiFetch(`/prices/history?fuel_type=${encodeURIComponent(fuelCode)}&days=365&granularity=daily`);
-    const trendData = (trendResp.data || []).map(d => ({ x: new Date(d.bucket), y: d.avg_price }));
+    const trendResp = await apiFetch(`/prices/history?fuel_type=${encodeURIComponent(fuelCode)}&end_date=${new Date().toISOString().slice(0, 10)}&granularity=daily`);
+    if (request !== dashboardChartRequest) return;
+    const trendData = (trendResp.data || []).map(row => ({ x: row.bucket, y: row.avg_price }));
+    const colour = fuelColour(fuelCode);
     if (charts['chart-dashboard-trend']) charts['chart-dashboard-trend'].destroy();
     const trendCtx = document.getElementById('chart-dashboard-trend').getContext('2d');
     charts['chart-dashboard-trend'] = new Chart(trendCtx, {
         type: 'line',
         data: {
+            labels: trendData.map(point => point.x),
             datasets: [{
-                label: 'Avg pence/litre',
+                label: fuelName,
                 data: trendData,
-                borderColor: '#1d70b8',
-                backgroundColor: '#1d70b833',
-                fill: true, tension: 0.3,
-                pointRadius: 1.5,
+                borderColor: colour,
+                backgroundColor: colour,
+                fill: false, tension: 0, spanGaps: false,
+                pointRadius: 2,
                 pointHoverRadius: 4,
-                pointBackgroundColor: '#1d70b8',
-                borderWidth: 2,
+                pointBackgroundColor: colour,
+                borderWidth: 2.5,
             }]
         },
         options: {
-            responsive: true,
-            aspectRatio: 1.8,
+            responsive: true, animation: false,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
             scales: {
                 x: {
-                    type: 'time',
-                    time: { unit: 'day', tooltipFormat: 'd MMM yyyy', displayFormats: { day: 'd MMM' } },
-                    ticks: { maxRotation: 45 }
+                    type: 'category',
+                    ticks: { maxTicksLimit: 8, maxRotation: 0,
+                        callback(value) {
+                            return new Date(this.getLabelForValue(value)).toLocaleDateString('en-GB', {timeZone: 'UTC', day: 'numeric', month: 'short'});
+                        }
+                    }
                 },
-                y: { beginAtZero: false }
+                y: { title: { display: true, text: 'Pence per litre' } }
             },
-            plugins: { legend: { display: false } }
+            plugins: { legend: { display: false }, tooltip: { callbacks: {
+                title: items => new Date(items[0].raw.x).toISOString().slice(0, 10) + ' UTC',
+                label: item => item.dataset.label + ': ' + ppl(item.parsed.y),
+            } } }
         }
     });
 
     // Rural/Urban chart
     const ruData = await apiFetch(`/prices/by-rural-urban?fuel_type=${encodeURIComponent(fuelCode)}`);
+    if (request !== dashboardChartRequest) return;
     const ruColourMap = {
         'Urban (Eng & Wales)': '#d4351c',
         'Urban (Scot)':        '#e8756a',
@@ -476,10 +491,12 @@ async function loadDashboardCharts() {
 
     // District charts (most/least expensive)
     const distExpensive = await apiFetch(`/prices/by-district?fuel_type=${encodeURIComponent(fuelCode)}&limit=15`);
+    if (request !== dashboardChartRequest) return;
     renderBarChart('chart-district-expensive',
         distExpensive.map(d => `${d.admin_district} (${d.station_count})`),
         distExpensive.map(d => d.avg_price), 'Avg pence/litre', '#d4351c');
     const distCheap = await apiFetch(`/prices/by-district?fuel_type=${encodeURIComponent(fuelCode)}&limit=500`);
+    if (request !== dashboardChartRequest) return;
     const cheapest15 = distCheap.slice(-15).reverse();
     renderBarChart('chart-district-cheap',
         cheapest15.map(d => `${d.admin_district} (${d.station_count})`),

@@ -51,7 +51,7 @@ async function doSearch(offset = 0) {
 }
 
 function buildSearchUrl(limit, offset) {
-    const fuel = document.getElementById('search-fuel').value;
+    const fuel = getFuelSelection('search-fuel');
     const postcode = document.getElementById('search-postcode').value;
     const station = document.getElementById('search-station').value;
     const brand = document.getElementById('search-brand').value;
@@ -97,12 +97,11 @@ function getSearchDlScope() {
 }
 
 function getCheckedNodeIds() {
-    return Array.from(document.querySelectorAll('.search-row-cb:checked')).map(cb => cb.value);
+    return [...new Set(Array.from(document.querySelectorAll('.search-row-cb:checked'), checkbox => checkbox.value))];
 }
 
 function syncSearchDownloadState() {
     const hasResults = searchState.total > 0;
-    const allFuelsSearch = !document.getElementById('search-fuel').value;
     const scope = getSearchDlScope();
     const selectedIds = getCheckedNodeIds();
     const hasSelection = selectedIds.length > 0;
@@ -110,10 +109,10 @@ function syncSearchDownloadState() {
 
     document.getElementById('search-dl-csv').disabled = !hasResults || blocked;
     document.getElementById('search-dl-json').disabled = !hasResults || blocked;
-    document.getElementById('search-hist-dl-csv').disabled = !hasResults || allFuelsSearch || blocked;
-    document.getElementById('search-hist-dl-json').disabled = !hasResults || allFuelsSearch || blocked;
-    document.getElementById('search-hist-dl-csv').title = allFuelsSearch ? 'Select a single fuel type to export historical data' : '';
-    document.getElementById('search-hist-dl-json').title = allFuelsSearch ? 'Select a single fuel type to export historical data' : '';
+    document.getElementById('search-hist-dl-csv').disabled = !hasResults || blocked;
+    document.getElementById('search-hist-dl-json').disabled = !hasResults || blocked;
+    document.getElementById('search-hist-dl-csv').title = '';
+    document.getElementById('search-hist-dl-json').title = '';
 }
 
 async function downloadSearchData(fmt) {
@@ -121,12 +120,16 @@ async function downloadSearchData(fmt) {
     btn.disabled = true;
     btn.textContent = '⏳ ' + fmt.toUpperCase();
     try {
-        const data = await apiFetch(buildSearchUrl(10000, 0));
-        let rows = data.results;
-        if (getSearchDlScope() === 'selected') {
-            const ids = new Set(getCheckedNodeIds());
-            rows = rows.filter(r => ids.has(r.node_id));
+        const url = new URL(buildSearchUrl(10000, 0), location.origin);
+        const selectedIds = getSearchDlScope() === 'selected' ? new Set(getCheckedNodeIds()) : null;
+        let rows = [];
+        while (true) {
+            url.searchParams.set('offset', rows.length);
+            const data = await apiFetch(url.pathname + url.search);
+            rows.push(...data.results);
+            if (!data.results.length || rows.length >= data.total) break;
         }
+        if (selectedIds) rows = rows.filter(row => selectedIds.has(row.node_id));
         downloadFile(rows, 'fuel-search-results', fmt);
     } finally {
         btn.disabled = false;
@@ -158,7 +161,7 @@ function toggleSearchSelectAll(master) {
 }
 
 function updateTrendButton() {
-    const count = document.querySelectorAll('.search-row-cb:checked').length;
+    const count = getCheckedNodeIds().length;
     const btn = document.getElementById('search-view-trend-btn');
     if (count === 0) {
         btn.disabled = true;
@@ -178,11 +181,61 @@ function showStationTrendPanel() {
     tabs.forEach(x => x.classList.remove('active'));
     panels.forEach(x => x.classList.remove('active'));
     document.getElementById('panel-station-trend').classList.add('active');
-    history.pushState({ panel: 'station-trend' }, '', '#station-trend');
+    document.getElementById('station-trend-node-id').textContent = stationTrendState.nodeId || '';
+    const suffix = stationTrendState.mode === 'single' ? '/' + encodeURIComponent(stationTrendState.nodeId) : '';
+    history.pushState({ panel: 'station-trend', stationTrend: { selection: {...stationTrendState} } }, '', '#station-trend' + suffix);
+}
+
+function rememberStationTrend() {
+    if (!location.hash.startsWith('#station-trend') || !stationTrendState.mode) return;
+    const controls = {};
+    const applied = reconstructedHistoryEnabled ? historyFilterState.station?.applied : null;
+    for (const name of ['fuel', 'range', 'granularity', 'start', 'end']) controls[name] = applied ? applied[name] : document.getElementById('st-' + name).value;
+    if (!applied) controls.fuel = getFuelSelection('st-fuel');
+    const age = document.getElementById('station-sensitivity-age');
+    const compare = document.getElementById('station-sensitivity-compare');
+    if (age) controls.age = applied?.age || age.value;
+    if (compare) controls.compare = compare.checked;
+    history.replaceState({...history.state, panel: 'station-trend', stationTrend: {
+        selection: {...stationTrendState}, controls,
+        title: document.getElementById('station-trend-title').textContent,
+        subtitle: document.getElementById('station-trend-subtitle').textContent,
+    }}, '', location.href);
+}
+
+function restoreStationTrend() {
+    const saved = history.state?.stationTrend;
+    const node = location.hash.split('/')[1];
+    if (saved?.selection?.mode) stationTrendState = {...saved.selection};
+    else if (node) stationTrendState = {mode: 'single', nodeId: decodeURIComponent(node), nodeIds: null, title: 'Station price history'};
+    else if (!stationTrendState.mode) {
+        switchTab('search', false);
+        return;
+    }
+    initStationTrendFuels();
+    document.getElementById('station-trend-title').textContent = saved?.title || stationTrendState.title;
+    document.getElementById('station-trend-subtitle').textContent = saved?.subtitle || '';
+    document.getElementById('station-trend-node-id').textContent = stationTrendState.nodeId || '';
+    if (saved?.controls) {
+        for (const name of ['range', 'granularity', 'start', 'end']) document.getElementById('st-' + name).value = saved.controls[name];
+        document.getElementById('st-granularity').value = saved.controls.granularity === 'hourly' ? 'hourly' : 'daily';
+        setFuelSelection('st-fuel', saved.controls.fuel);
+        if (document.getElementById('station-sensitivity-age')) document.getElementById('station-sensitivity-age').value = saved.controls.age || 'none';
+        if (document.getElementById('station-sensitivity-compare')) document.getElementById('station-sensitivity-compare').checked = Boolean(saved.controls.compare);
+        for (const name of ['start', 'end']) {
+            document.getElementById('st-' + name + '-ctl').style.display = '';
+            document.getElementById('st-' + name).readOnly = document.getElementById('st-range').value !== 'custom';
+        }
+        loadStationTrend();
+    } else {
+        setFuelSelection('st-fuel', 'E10');
+        document.getElementById('st-range').value = '30';
+        setStationTrendRange('30', true);
+    }
 }
 
 function closeStationTrend() {
-    history.back();
+    switchTab('search');
 }
 
 function goToOverrideStation() {
@@ -196,30 +249,16 @@ function goToOverrideStation() {
     history.replaceState({ panel: 'data', section: 'overrides' }, '', '#data/overrides');
 }
 
-function initStationTrendFuels() {
-    const sel = document.getElementById('st-fuel');
-    if (!sel.options.length) {
-        const allOpt = document.createElement('option');
-        allOpt.value = ''; allOpt.textContent = 'All fuel types';
-        sel.appendChild(allOpt);
-        fuelTypes.forEach(ft => {
-            const o = document.createElement('option');
-            o.value = ft.fuel_type_code;
-            o.textContent = ft.fuel_name;
-            sel.appendChild(o);
-        });
-    }
-    // Sync fuel type from search panel
-    const searchFuel = document.getElementById('search-fuel').value;
-    sel.value = searchFuel; // empty string = "All fuel types"
+function initStationTrendFuels(selection = getFuelSelection('search-fuel')) {
+    setFuelSelection('st-fuel', selection);
 }
 
-function openStationTrend(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district) {
+function openStationTrend(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district, fuelSelection) {
     stationTrendState = { mode: 'single', nodeId, nodeIds: null, title: name, postcode, lat, lon };
-    initStationTrendFuels();
+    initStationTrendFuels(fuelSelection);
     // Reset range to 30 days
     document.getElementById('st-range').value = '30';
-    document.getElementById('st-granularity').value = 'auto';
+    document.getElementById('st-granularity').value = 'daily';
     document.getElementById('station-trend-title').textContent = name;
     document.getElementById('station-trend-node-id').textContent = nodeId;
 
@@ -239,7 +278,7 @@ function openStationTrend(nodeId, name, brand, city, postcode, category, rawBran
     }
 
     showStationTrendPanel();
-    setStationTrendRange('30');
+    setStationTrendRange('30', true);
 }
 
 function renderStationSubtitle(nodeId, name, brand, city, postcode, category, rawBrand, lat, lon, motorway, supermarket, region, district, originalPostcode) {
@@ -271,7 +310,7 @@ function renderStationSubtitle(nodeId, name, brand, city, postcode, category, ra
 }
 
 function viewSelectedTrend() {
-    const checked = document.querySelectorAll('.search-row-cb:checked');
+    const checked = [...new Map(Array.from(document.querySelectorAll('.search-row-cb:checked'), checkbox => [checkbox.value, checkbox])).values()];
     if (!checked.length) return;
     const ids = Array.from(checked).map(cb => cb.value);
     const names = Array.from(checked).map(cb => cb.dataset.name);
@@ -286,12 +325,12 @@ function viewSelectedTrend() {
     initStationTrendFuels();
     // Reset range to 30 days
     document.getElementById('st-range').value = '30';
-    document.getElementById('st-granularity').value = 'auto';
+    document.getElementById('st-granularity').value = 'daily';
     document.getElementById('station-trend-title').textContent = `Average trend for ${ids.length} stations`;
     const preview = names.length <= 5 ? names.join(', ') : names.slice(0, 5).join(', ') + ` + ${names.length - 5} more`;
     document.getElementById('station-trend-subtitle').textContent = preview;
     showStationTrendPanel();
-    setStationTrendRange('30');
+    setStationTrendRange('30', true);
 }
 
 async function viewAllResultsTrend() {
@@ -324,22 +363,30 @@ async function viewAllResultsTrend() {
     if (supermarket) searchFilters.supermarket_only = true;
     if (motorway) searchFilters.motorway_only = true;
     if (excludeOutliers) searchFilters.exclude_outliers = true;
+    if (reconstructedHistoryEnabled) {
+        for (const [id, key] of [['search-min', 'min_price'], ['search-max', 'max_price'], ['search-node-id', 'node_ids']]) {
+            const value = document.getElementById(id).value;
+            if (value !== '') searchFilters[key] = value;
+        }
+    }
 
     const total = searchState.total || 0;
     stationTrendState = { mode: 'search', nodeId: null, nodeIds: null, searchFilters, title: `${total} stations` };
     initStationTrendFuels();
     document.getElementById('st-range').value = '30';
-    document.getElementById('st-granularity').value = 'auto';
+    document.getElementById('st-granularity').value = 'daily';
     document.getElementById('station-trend-title').textContent = `Average trend for all ${total.toLocaleString()} search results`;
     document.getElementById('station-trend-subtitle').textContent = 'Based on current search filters';
     showStationTrendPanel();
-    setStationTrendRange('30');
+    setStationTrendRange('30', true);
 }
 
-function setStationTrendRange(value) {
+function setStationTrendRange(value, load = false) {
     const customFields = value === 'custom';
-    document.getElementById('st-start-ctl').style.display = customFields ? '' : 'none';
-    document.getElementById('st-end-ctl').style.display = customFields ? '' : 'none';
+    document.getElementById('st-start-ctl').style.display = customFields || reconstructedHistoryEnabled ? '' : 'none';
+    document.getElementById('st-end-ctl').style.display = customFields || reconstructedHistoryEnabled ? '' : 'none';
+    document.getElementById('st-start').readOnly = reconstructedHistoryEnabled && !customFields;
+    document.getElementById('st-end').readOnly = reconstructedHistoryEnabled && !customFields;
     if (!customFields) {
         const end = new Date();
         document.getElementById('st-end').value = end.toISOString().slice(0, 10);
@@ -347,15 +394,21 @@ function setStationTrendRange(value) {
             document.getElementById('st-start').value = '';
         } else {
             const start = new Date();
-            start.setDate(start.getDate() - parseInt(value));
+            start.setDate(start.getDate() - parseInt(value) + (reconstructedHistoryEnabled ? 1 : 0));
             document.getElementById('st-start').value = start.toISOString().slice(0, 10);
         }
-        loadStationTrend();
+        if (load || !reconstructedHistoryEnabled) loadStationTrend();
     }
+    if (!load && reconstructedHistoryEnabled) updateHistoryFilterState('station');
 }
 
 async function loadStationTrend() {
-    const fuel = document.getElementById('st-fuel').value;
+    if (!stationTrendState.mode) {
+        restoreStationTrend();
+        return;
+    }
+    if (!reconstructedHistoryEnabled) rememberStationTrend();
+    const fuel = getFuelSelection('st-fuel');
     const startDate = document.getElementById('st-start').value;
     const endDate = document.getElementById('st-end').value;
     const gran = document.getElementById('st-granularity').value;
@@ -366,7 +419,7 @@ async function loadStationTrend() {
     if (charts['chart-station-trend']) { charts['chart-station-trend'].destroy(); delete charts['chart-station-trend']; }
 
     const isSingle = stationTrendState.mode === 'single';
-    const allFuels = !fuel;
+    const allFuels = selectedFuelTypes(fuel).length !== 1;
 
     function buildUrl(fuelCode) {
         let url;
@@ -375,6 +428,11 @@ async function loadStationTrend() {
         } else if (stationTrendState.mode === 'search') {
             url = `/prices/history?fuel_type=${fuelCode}`;
             const sf = stationTrendState.searchFilters;
+            if (reconstructedHistoryEnabled) {
+                for (const key of ['station', 'min_price', 'max_price', 'node_ids']) {
+                    if (sf[key] != null) url += `&${key}=${encodeURIComponent(sf[key])}`;
+                }
+            }
             if (sf.brand) url += `&brand=${encodeURIComponent(sf.brand)}`;
             if (sf.city) url += `&city=${encodeURIComponent(sf.city)}`;
             if (sf.postcode) url += `&postcode=${encodeURIComponent(sf.postcode)}`;
@@ -391,7 +449,7 @@ async function loadStationTrend() {
             const ids = stationTrendState.nodeIds.join(',');
             url = `/prices/history?fuel_type=${fuelCode}&node_ids=${encodeURIComponent(ids)}`;
         }
-        if (startDate) url += `&start_date=${startDate}`;
+        if (startDate && document.getElementById('st-range').value !== 'all') url += `&start_date=${startDate}`;
         if (endDate) url += `&end_date=${endDate}`;
         if (!startDate && !endDate) url += '&days=30';
         if (gran !== 'auto') url += `&granularity=${gran}`;
@@ -399,20 +457,26 @@ async function loadStationTrend() {
     }
 
     // Show table view / override buttons for single-station views
-    document.getElementById('st-edit-btn').style.display = isSingle ? '' : 'none';
-    document.getElementById('st-override-btn').style.display =
-        isSingle && canEdit() ? '' : 'none';
+    document.getElementById('st-edit-btn').style.display = reconstructedHistoryEnabled || isSingle ? '' : 'none';
+    document.getElementById('st-edit-btn').disabled = !isSingle;
+    document.getElementById('st-override-btn').style.display = reconstructedHistoryEnabled || (isSingle && canEdit()) ? '' : 'none';
+    document.getElementById('st-override-btn').disabled = !isSingle || !canEdit();
+
+    if (reconstructedHistoryEnabled) {
+        await loadWeightedTrend('station', fuel, buildUrl, isSingle);
+        return;
+    }
 
     if (allFuels) {
-        const { datasets, granularity } = await fetchAllFuelTrends(buildUrl);
+        const { datasets, granularity } = await fetchAllFuelTrends(buildUrl, false, fuel);
         const hourly = granularity === 'hourly';
         const hasData = datasets.length > 0;
         lastStationTrendData = [];
-        document.getElementById('st-dl-csv').disabled = true;
-        document.getElementById('st-dl-json').disabled = true;
-        document.getElementById('st-dl-csv').title = 'Select a single fuel type to export raw data';
-        document.getElementById('st-dl-json').title = 'Select a single fuel type to export raw data';
-        const suffix = ' — all fuel types';
+        document.getElementById('st-dl-csv').disabled = !hasData || _userRole === 'readonly';
+        document.getElementById('st-dl-json').disabled = !hasData || _userRole === 'readonly';
+        document.getElementById('st-dl-csv').title = '';
+        document.getElementById('st-dl-json').title = '';
+        const suffix = ' by fuel type';
         document.getElementById('st-trend-heading').textContent =
             isSingle ? (hourly ? 'Hourly price' + suffix : 'Daily price' + suffix)
                      : (hourly ? 'Hourly average price' + suffix : 'Daily average price' + suffix);
@@ -533,7 +597,7 @@ async function loadStationTrend() {
 }
 
 function downloadStationTrendData(fmt) {
-    const fuel = document.getElementById('st-fuel').value;
+    const fuel = selectedFuelTypes(getFuelSelection('st-fuel')).map(type => type.fuel_type_code).join(',');
     const startDate = document.getElementById('st-start').value;
     const endDate = document.getElementById('st-end').value;
 
@@ -547,6 +611,11 @@ function downloadStationTrendData(fmt) {
         url += `&node_ids=${encodeURIComponent(stationTrendState.nodeId)}`;
     } else if (stationTrendState.mode === 'search') {
         const sf = stationTrendState.searchFilters;
+        if (reconstructedHistoryEnabled) {
+            for (const key of ['station', 'min_price', 'max_price', 'node_ids']) {
+                if (sf[key] != null) url += `&${key}=${encodeURIComponent(sf[key])}`;
+            }
+        }
         if (sf.brand) url += `&brand=${encodeURIComponent(sf.brand)}`;
         if (sf.city) url += `&city=${encodeURIComponent(sf.city)}`;
         if (sf.postcode) url += `&postcode=${encodeURIComponent(sf.postcode)}`;
@@ -590,19 +659,7 @@ function openPriceEditor(nodeId, stationName, backTo) {
     document.getElementById('price-editor-title').textContent = stationName;
     document.getElementById('price-editor-subtitle').textContent = 'Edit individual price records for this station';
     history.pushState({ panel: 'price-editor' }, '', '#price-editor');
-    // Populate fuel select
-    const sel = document.getElementById('pe-fuel');
-    if (!sel.options.length) {
-        const allOpt = document.createElement('option');
-        allOpt.value = ''; allOpt.textContent = 'All fuel types';
-        sel.appendChild(allOpt);
-        fuelTypes.forEach(ft => {
-            const o = document.createElement('option');
-            o.value = ft.fuel_type_code;
-            o.textContent = ft.fuel_name || ft.fuel_type_code;
-            sel.appendChild(o);
-        });
-    }
+    setFuelSelection('pe-fuel', backTo === 'station-trend' ? getFuelSelection('st-fuel') : getFuelSelection('outlier-fuel'));
     loadPriceEditorRecords();
 }
 
@@ -619,7 +676,7 @@ function suggestCorrection(price) {
 
 async function loadPriceEditorRecords() {
     const nodeId = priceEditorState.nodeId;
-    const fuel = document.getElementById('pe-fuel').value;
+    const fuel = getFuelSelection('pe-fuel');
     let url = `/prices/station/${encodeURIComponent(nodeId)}/records?limit=500`;
     if (fuel) url += `&fuel_type=${encodeURIComponent(fuel)}`;
     const resp = await apiFetch(url);
