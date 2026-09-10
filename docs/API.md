@@ -36,9 +36,12 @@ the legacy endpoint behaviour documented below remains in effect.
   Corrections use `COALESCE(corrected_price, original_price)`; historical eligibility
   remains `fuel_prices.anomaly_flags IS NULL`, including for corrected records.
 - Completed station-days and today's partial day read exact sums/counts from
-  `reconstructed_daily_prices`; unfiltered national daily charts read the compact
-  `reconstructed_daily_totals` cache (migrations 022-023). Triggers invalidate on
-  raw/flag/correction changes; scrape and correction maintenance call
+  `reconstructed_daily_prices`; unfiltered national daily series read
+  `reconstructed_daily_totals`, and unfiltered region/forecourt breakdowns read
+  `reconstructed_daily_groups` (migrations 022-024). Filtered requests retain the
+  station path. A current-classification signature and cache row counts reject
+  stale or incomplete compact data. Triggers invalidate on raw/flag/correction
+  changes; scrape, import and correction maintenance call
   `refresh_reconstructed_daily()`. Responses using the partial cache include
   `partial_through`. A live fallback exceeding `RECONSTRUCTED_HISTORY_TIMEOUT_MS`
   (20 seconds by default) returns HTTP 503. These optimizations change neither
@@ -58,8 +61,10 @@ the legacy endpoint behaviour documented below remains in effect.
   uses the selected threshold. Both receive the same Hampel policy independently.
   Station counts do not change when Hampel replaces an aggregate value.
 - With `include_sensitivity=true`, `groups` contains per-bucket region/forecourt
-  coverage and unsmoothed group means. National series are in `data`. No current
-  classification is presented as historical membership. Null prices are not zero.
+  coverage and unsmoothed group means. Unfiltered daily breakdowns use the compact
+  group cache; filtered ones apply station selection before aggregation. National
+  series are in `data`. Classification remains a current snapshot, not historical
+  membership. Null prices are not zero.
 - Response metadata includes `method=last_reported_station_weighted`,
   `smoothing=hampel`, `age_limit`, `range_start`, `range_end_exclusive`,
   `range_capped`, and `classification_basis=current_snapshot`.
@@ -597,6 +602,8 @@ List all parliamentary constituencies.
 Endpoints below require elevated access. **Editor** endpoints (mutations, exports, view refresh) require `admin` or `editor` group membership. **Admin** endpoints (user management) require `admin` group only.
 
 Changes to lookup tables take effect after calling `POST /api/admin/refresh-view`.
+When reconstructed caches are installed, this also refreshes them synchronously;
+a classification change can require a full grouped-cache rebuild.
 
 ### Scrape history
 
@@ -752,7 +759,9 @@ Per-station postcode corrections for stations with mistyped or expired postcodes
 
 `POST /api/admin/refresh-view`
 
-Rebuilds the `current_prices` materialised view. Call after changing any lookup table.
+Rebuilds the `current_prices` materialised view. When available, it also refreshes
+reconstructed history caches; classification changes can require a full grouped
+rebuild. Call after changing any lookup table.
 
 **Response:** `{ "status": "ok", "message": "current_prices view refreshed" }`
 

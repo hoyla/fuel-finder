@@ -7,6 +7,7 @@ Auth is stubbed out for future use (JWT / API key).
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from threading import BoundedSemaphore
 from typing import Literal, Optional
 
 import statistics
@@ -32,23 +33,54 @@ DATABASE_URL = os.environ.get(
     "postgresql://fuelfinder:fuelfinder@localhost:5432/fuelfinder",
 )
 
+_pool_max = int(os.environ.get("DB_POOL_MAX", "10"))
+_pool_wait_seconds = float(os.environ.get("DB_POOL_WAIT_SECONDS", "5"))
 _pool = ThreadedConnectionPool(
     minconn=2,
-    maxconn=int(os.environ.get("DB_POOL_MAX", "10")),
+    maxconn=_pool_max,
     dsn=DATABASE_URL,
     cursor_factory=RealDictCursor,
 )
+_pool_slots = BoundedSemaphore(_pool_max)
+
+
+def _acquire_db_connection():
+    if not _pool_slots.acquire(timeout=_pool_wait_seconds):
+        raise HTTPException(status_code=503, detail="Database is busy; please retry")
+    conn = None
+    try:
+        conn = _pool.getconn()
+        with conn.cursor() as cur:
+            cur.execute("SET work_mem = '16MB'")
+        return conn
+    except Exception:
+        try:
+            if conn is not None:
+                _pool.putconn(conn, close=True)
+        finally:
+            _pool_slots.release()
+        raise
+
+
+def _release_db_connection(conn):
+    try:
+        try:
+            conn.rollback()
+        except Exception:
+            _pool.putconn(conn, close=True)
+            raise
+        else:
+            _pool.putconn(conn)
+    finally:
+        _pool_slots.release()
 
 
 def get_db():
-    conn = _pool.getconn()
+    conn = _acquire_db_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute("SET work_mem = '16MB'")
         yield conn
     finally:
-        conn.rollback()
-        _pool.putconn(conn)
+        _release_db_connection(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -806,7 +838,6 @@ def price_history_export(
     min_price: Optional[float] = Query(None),
     max_price: Optional[float] = Query(None),
     format: str = Query("csv"),
-    db=Depends(get_db),
     role: str = Depends(resolve_role),
     _auth=Depends(require_editor),
 ):
@@ -1012,12 +1043,12 @@ def price_history_export(
         "forecourt_type", "latitude", "longitude",
         "is_motorway_service_station", "is_supermarket_service_station",
     ]
+    stream_conn = _acquire_db_connection()
 
     if format == "json":
         def json_stream():
-            conn = _pool.getconn()
             try:
-                with conn.cursor() as cur:
+                with stream_conn.cursor() as cur:
                     cur.execute(query, params)
                     yield "[\n"
                     first = True
@@ -1036,7 +1067,7 @@ def price_history_export(
                             yield json.dumps(d, default=str)
                     yield "\n]\n"
             finally:
-                _pool.putconn(conn)
+                _release_db_connection(stream_conn)
 
         return StreamingResponse(
             json_stream(),
@@ -1045,9 +1076,8 @@ def price_history_export(
         )
     else:
         def csv_stream():
-            conn = _pool.getconn()
             try:
-                with conn.cursor() as cur:
+                with stream_conn.cursor() as cur:
                     cur.execute(query, params)
                     buf = io.StringIO()
                     writer = csv.writer(buf)
@@ -1065,7 +1095,7 @@ def price_history_export(
                         buf.seek(0)
                         buf.truncate(0)
             finally:
-                _pool.putconn(conn)
+                _release_db_connection(stream_conn)
 
         return StreamingResponse(
             csv_stream(),
@@ -1464,12 +1494,12 @@ def price_search_export(
         "forecourt_type", "latitude", "longitude",
         "is_motorway_service_station", "is_supermarket_service_station",
     ]
+    stream_conn = _acquire_db_connection()
 
     if format == "json":
         def json_stream():
-            conn = _pool.getconn()
             try:
-                with conn.cursor() as cur:
+                with stream_conn.cursor() as cur:
                     cur.execute(query, params)
                     yield "[\n"
                     first = True
@@ -1487,7 +1517,7 @@ def price_search_export(
                             yield json.dumps(d, default=str)
                     yield "\n]\n"
             finally:
-                _pool.putconn(conn)
+                _release_db_connection(stream_conn)
 
         import json
         return StreamingResponse(
@@ -1497,9 +1527,8 @@ def price_search_export(
         )
     else:
         def csv_stream():
-            conn = _pool.getconn()
             try:
-                with conn.cursor() as cur:
+                with stream_conn.cursor() as cur:
                     cur.execute(query, params)
                     buf = io.StringIO()
                     writer = csv.writer(buf)
@@ -1517,7 +1546,7 @@ def price_search_export(
                         buf.seek(0)
                         buf.truncate(0)
             finally:
-                _pool.putconn(conn)
+                _release_db_connection(stream_conn)
 
         return StreamingResponse(
             csv_stream(),
@@ -2388,6 +2417,10 @@ def refresh_view(db=Depends(get_db), _auth=Depends(require_editor)):
     with db.cursor() as cur:
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
         db.commit()
+        cur.execute("SELECT to_regprocedure('refresh_reconstructed_daily()') IS NOT NULL AS available")
+        if cur.fetchone()["available"]:
+            cur.execute("SELECT refresh_reconstructed_daily()")
+            db.commit()
     return {"status": "ok", "message": "current_prices view refreshed"}
 
 

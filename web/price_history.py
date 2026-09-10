@@ -87,13 +87,90 @@ def _cached_totals(connection, fuel_type, start, end, age_limit, partial=False):
                    totals.hour_counts[1] AS reference_hours,
                    totals.hour_counts[%s] AS included_hours
             FROM reconstructed_daily_totals totals
-            JOIN reconstructed_daily_state cache ON cache.singleton AND {validity}
+            JOIN reconstructed_daily_state cache ON cache.singleton
+              AND {validity}
+              AND cache.totals_row_count = (
+                  SELECT COUNT(*) FROM reconstructed_daily_totals
+              )
             WHERE totals.fuel_type = %s AND {date_filter}
             ORDER BY bucket
         """).format(validity=validity, date_filter=date_filter),
                        (policy, policy, policy, policy, policy,
                         *validity_parameters, fuel_type, *date_parameters))
         return [dict(row) for row in cursor.fetchall()]
+
+
+def _cached_totals_and_groups(connection, fuel_type, start, end, age_limit, partial=False):
+    policy = list(AGE_LIMITS).index(age_limit) + 1
+    validity = sql.SQL("cache.partial_date = %s AND cache.partial_through IS NOT NULL") if partial else sql.SQL(
+        "cache.valid_from <= %s AND cache.valid_until >= %s"
+    )
+    totals_date_filter = sql.SQL("totals.price_date = %s") if partial else sql.SQL(
+        "totals.price_date >= %s AND totals.price_date < %s"
+    )
+    groups_date_filter = sql.SQL("grouped.price_date = %s") if partial else sql.SQL(
+        "grouped.price_date >= %s AND grouped.price_date < %s"
+    )
+    validity_parameters = (start.date(),) if partial else (start.date(), end.date())
+    date_parameters = (start.date(),) if partial else (start.date(), end.date())
+    with connection.cursor() as cursor:
+        cursor.execute(sql.SQL("""
+            WITH valid_cache AS (
+                SELECT 1
+                FROM reconstructed_daily_state cache
+                WHERE cache.singleton
+              AND {validity}
+              AND cache.group_signature = reconstructed_daily_group_signature()
+                  AND cache.group_row_count = (
+                      SELECT COUNT(*) FROM reconstructed_daily_groups
+                  )
+                  AND cache.totals_row_count = (
+                      SELECT COUNT(*) FROM reconstructed_daily_totals
+                  )
+                  AND cache.group_generation = cache.station_generation
+            ), compact AS (
+                SELECT totals.price_date, 'national'::text AS dimension,
+                       'All'::text AS label, totals.price_totals,
+                       totals.station_counts, totals.hour_counts
+                FROM reconstructed_daily_totals totals
+                CROSS JOIN valid_cache
+                WHERE totals.fuel_type = %s AND {totals_date_filter}
+                UNION ALL
+                SELECT grouped.price_date, grouped.dimension, grouped.label,
+                       grouped.price_totals, grouped.station_counts,
+                       grouped.hour_counts
+                FROM reconstructed_daily_groups grouped
+                CROSS JOIN valid_cache
+                WHERE grouped.fuel_type = %s AND {groups_date_filter}
+            )
+            SELECT price_date::timestamp AT TIME ZONE 'UTC' AS bucket,
+                   dimension, label,
+                   ROUND(price_totals[1] / NULLIF(station_counts[1], 0), 1) AS avg_price,
+                   ROUND(price_totals[%s] / NULLIF(station_counts[%s], 0), 1) AS age_price,
+                   station_counts[1]::bigint AS stations,
+                   station_counts[%s]::bigint AS included_stations,
+                   (station_counts[1] - station_counts[%s])::bigint AS excluded_stations,
+                   hour_counts[1] AS reference_hours,
+                   hour_counts[%s] AS included_hours
+            FROM compact
+            ORDER BY bucket, dimension, label
+        """).format(
+            validity=validity,
+            totals_date_filter=totals_date_filter,
+            groups_date_filter=groups_date_filter,
+        ), (*validity_parameters,
+            fuel_type, *date_parameters,
+            fuel_type, *date_parameters,
+            policy, policy, policy, policy, policy))
+        data = []
+        groups = []
+        for row in cursor.fetchall():
+            item = dict(row)
+            if item["dimension"] == "national":
+                data.append(item)
+            else:
+                groups.append(item)
+        return {"data": data, "groups": groups}
 
 
 def resolve_history_window(connection, fuel_type, filters, start_date=None, end_date=None, days=None, role="readonly", now=None):
@@ -133,10 +210,17 @@ def apply_hampel(rows, granularity, field="avg_price"):
 
 
 def cached_daily(connection, fuel_type, start, end, age_limit, filters, include_groups):
-    if not include_groups and not _has_station_filters(filters):
-        totals = _cached_totals(connection, fuel_type, start, end, age_limit)
-        if totals:
-            return {"data": totals, "groups": []}
+    if not _has_station_filters(filters):
+        if include_groups:
+            compact = _cached_totals_and_groups(
+                connection, fuel_type, start, end, age_limit,
+            )
+            if compact["data"] and compact["groups"]:
+                return compact
+        else:
+            totals = _cached_totals(connection, fuel_type, start, end, age_limit)
+            if totals:
+                return {"data": totals, "groups": []}
     selection, parameters = select_stations(fuel_type, filters)
     policy = list(AGE_LIMITS).index(age_limit) + 1
     grouping = sql.SQL("((dp.price_date), (dp.price_date, cp.region), (dp.price_date, cp.forecourt_type))") if include_groups else sql.SQL("((dp.price_date))")
@@ -168,10 +252,19 @@ def cached_daily(connection, fuel_type, start, end, age_limit, filters, include_
 def cached_partial_daily(connection, fuel_type, start, end, age_limit, filters, include_groups):
     if start.date() != end.date() or start.time() != datetime.min.time():
         return {"data": [], "groups": []}
-    if not include_groups and not _has_station_filters(filters):
-        totals = _cached_totals(connection, fuel_type, start, end, age_limit, partial=True)
-        if totals:
-            return {"data": totals, "groups": []}
+    if not _has_station_filters(filters):
+        if include_groups:
+            compact = _cached_totals_and_groups(
+                connection, fuel_type, start, end, age_limit, partial=True,
+            )
+            if compact["data"] and compact["groups"]:
+                return compact
+        else:
+            totals = _cached_totals(
+                connection, fuel_type, start, end, age_limit, partial=True,
+            )
+            if totals:
+                return {"data": totals, "groups": []}
     selection, parameters = select_stations(fuel_type, filters)
     policy = list(AGE_LIMITS).index(age_limit) + 1
     grouping = sql.SQL("((dp.price_date), (dp.price_date, cp.region), (dp.price_date, cp.forecourt_type))") if include_groups else sql.SQL("((dp.price_date))")

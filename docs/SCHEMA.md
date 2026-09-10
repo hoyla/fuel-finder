@@ -185,6 +185,8 @@ Used by legacy history endpoints when the reconstructed-history rollout is disab
 Migration 022 adds a separate cache for station-weighted history. Each row is a
 station/fuel/completed-UTC-day, including unchanged carried prices. Original source
 records are not modified. The composite primary key is `(fuel_type, price_date, node_id)`.
+Migration 024 adds a secondary `(price_date)` index for incremental all-fuel group
+refreshes.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -204,7 +206,16 @@ Migration 023 adds a compact national serving cache derived from
 `reconstructed_daily_prices`. It has one row per fuel/day, with five-element
 `price_totals`, `station_counts`, and `hour_counts` arrays in the same policy order.
 Unfiltered daily charts can therefore avoid scanning the station-level cache.
-Its primary key is `(fuel_type, price_date)`.
+Its primary key is `(fuel_type, price_date)`. It depends only on station-day rows,
+not on mutable `current_prices` membership.
+
+### `reconstructed_daily_groups`
+
+Migration 024 adds compact current-snapshot region and forecourt breakdowns. Its
+primary key is `(fuel_type, price_date, dimension, label)`; `dimension` is `region`
+or `forecourt_type`. Each row has the same five-policy `price_totals`,
+`station_counts`, and `hour_counts` arrays as the national cache. Unfiltered daily
+breakdowns use this table, while filtered requests retain the station-level path.
 
 ### `reconstructed_daily_state`
 
@@ -213,13 +224,21 @@ both `DATE`. `partial_date` and `partial_through` identify the separately refres
 current-day snapshot. Null bounds mean no cache is ready. Dates outside those
 windows use live reconstruction.
 
+`group_signature` identifies the `(node_id, fuel_type, region, forecourt_type)`
+snapshot used to build grouped rows. `group_row_count` and `totals_row_count` guard
+against incomplete compact tables; `station_generation` and `group_generation`
+prevent a direct station-cache refresh from leaving apparently valid old groups.
+Signature, count or generation mismatches use the correct station-level fallback
+rather than serving partial/stale compact data.
+
 `refresh_reconstructed_daily()` rebuilds from the first invalid day through the
-current partial UTC day and refreshes the compact totals. It is serialized by an
+current partial UTC day and refreshes compact totals and groups. A changed
+classification signature rebuilds all groups from a consistent `current_prices`
+snapshot without rebuilding historical station-day prices. Maintenance is serialized by an
 advisory lock. Price and correction triggers invalidate affected days
 transactionally, including adjacent anomaly updates; a failed refresh never marks
-incomplete output valid. The scraper and correction endpoints run refresh
-maintenance. Historic imports can trigger a larger rebuild. Current station
-geography/classification is not cached here.
+incomplete output valid. The scraper, historical importer, correction endpoints,
+postcode enrichment and admin view refresh run the corresponding maintenance.
 
 ### `price_corrections`
 

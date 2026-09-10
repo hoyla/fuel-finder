@@ -60,6 +60,60 @@ class TestFrontendCaching:
         assert "cache-control" not in response.headers
 
 
+def test_database_pool_exhaustion_is_a_retryable_503(monkeypatch):
+    from web import api as api_module
+
+    class NoSlotAvailable:
+        def acquire(self, timeout):
+            assert timeout == api_module._pool_wait_seconds
+            return False
+
+    monkeypatch.setattr(api_module, "_pool_slots", NoSlotAvailable())
+    dependency = api_module.get_db()
+    with pytest.raises(api_module.HTTPException) as error:
+        next(dependency)
+    assert error.value.status_code == 503
+    assert "retry" in error.value.detail.lower()
+
+
+def test_database_pool_setup_failure_closes_connection_and_releases_slot(monkeypatch):
+    from web import api as api_module
+
+    class RecordingSlots:
+        def __init__(self):
+            self.releases = 0
+
+        def acquire(self, timeout):
+            return True
+
+        def release(self):
+            self.releases += 1
+
+    class BrokenConnection:
+        def cursor(self):
+            raise RuntimeError("connection setup failed")
+
+    class RecordingPool:
+        def __init__(self):
+            self.connection = BrokenConnection()
+            self.returned = []
+
+        def getconn(self):
+            return self.connection
+
+        def putconn(self, connection, close=False):
+            self.returned.append((connection, close))
+
+    slots = RecordingSlots()
+    pool = RecordingPool()
+    monkeypatch.setattr(api_module, "_pool_slots", slots)
+    monkeypatch.setattr(api_module, "_pool", pool)
+    with pytest.raises(RuntimeError, match="connection setup failed"):
+        api_module._acquire_db_connection()
+    assert pool.returned == [(pool.connection, True)]
+    assert slots.releases == 1
+
+
 @pytest.fixture
 def reconstruction_db():
     from psycopg2.extras import RealDictCursor
@@ -876,6 +930,56 @@ class TestRefreshView:
         r = client.post("/api/admin/refresh-view", json={})
         assert r.status_code == 200
         assert r.json()["status"] == "ok"
+
+    @pytest.mark.parametrize("available,expected_commits", [(True, 2), (False, 1)])
+    def test_refreshes_optional_reconstructed_cache(
+        self, client, available, expected_commits,
+    ):
+        from web import api as api_module
+
+        class RecordingCursor:
+            def __init__(self, database):
+                self.database = database
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, statement, _parameters=None):
+                self.database.statements.append(" ".join(str(statement).split()))
+
+            def fetchone(self):
+                return {"available": available}
+
+        class RecordingDatabase:
+            def __init__(self):
+                self.statements = []
+                self.commits = 0
+
+            def cursor(self):
+                return RecordingCursor(self)
+
+            def commit(self):
+                self.commits += 1
+
+        database = RecordingDatabase()
+        app.dependency_overrides[api_module.get_db] = lambda: database
+        try:
+            response = client.post("/api/admin/refresh-view", json={})
+        finally:
+            app.dependency_overrides.pop(api_module.get_db, None)
+
+        assert response.status_code == 200
+        assert database.statements[:2] == [
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices",
+            "SELECT to_regprocedure('refresh_reconstructed_daily()') IS NOT NULL AS available",
+        ]
+        assert database.statements[2:] == (
+            ["SELECT refresh_reconstructed_daily()"] if available else []
+        )
+        assert database.commits == expected_commits
 
 
 class TestSearchCategory:

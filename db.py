@@ -240,11 +240,28 @@ def insert_fuel_prices(conn, price_records, scrape_run_id):
     return len(rows)
 
 
-def refresh_current_prices(conn):
+def refresh_current_prices(conn, refresh_reconstructed=False):
     """Refresh the current_prices materialised view after a scrape."""
     with conn.cursor() as cur:
         cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY current_prices")
     conn.commit()
+    if refresh_reconstructed:
+        refresh_reconstructed_history(conn)
+
+
+def refresh_reconstructed_history(conn):
+    """Refresh optional reconstructed-history caches when their function exists."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regprocedure('refresh_reconstructed_daily()') IS NOT NULL")
+            if cur.fetchone()[0]:
+                cur.execute("SELECT refresh_reconstructed_daily()")
+        conn.commit()
+    except Exception:
+        # Callers may treat derived-cache maintenance as non-fatal. Leave their
+        # connection usable even when PostgreSQL aborts this transaction.
+        conn.rollback()
+        raise
 
 
 def refresh_daily_prices(conn):
@@ -275,11 +292,7 @@ def refresh_daily_prices(conn):
                 sample_count = EXCLUDED.sample_count
         """)
     conn.commit()
-    with conn.cursor() as cur:
-        cur.execute("SELECT to_regprocedure('refresh_reconstructed_daily()') IS NOT NULL")
-        if cur.fetchone()[0]:
-            cur.execute("SELECT refresh_reconstructed_daily()")
-    conn.commit()
+    refresh_reconstructed_history(conn)
 
 
 def get_last_scrape_timestamp(conn):
