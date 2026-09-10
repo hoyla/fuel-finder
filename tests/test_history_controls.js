@@ -23,6 +23,131 @@ function loadFuelControls() {
     return context;
 }
 
+function loadTrendUrlControls(url = 'https://fuel.hoy.la/#trends') {
+    const elements = new Map();
+    const element = (id, value = '') => {
+        if (!elements.has(id)) elements.set(id, {id, value, checked: false, disabled: false, style: {}});
+        return elements.get(id);
+    };
+    for (const [id, value] of [
+        ['trend-range', '30'], ['trend-start', ''], ['trend-end', ''],
+        ['trend-granularity', 'daily'], ['trend-sensitivity-age', 'none'],
+    ]) element(id, value);
+    element('trend-start-ctl');
+    element('trend-end-ctl');
+    element('trend-sensitivity-compare');
+
+    const location = new URL(url);
+    const selected = {fuel: '', 'trend-country-ms': '', 'trend-region-ms': '', 'trend-rural-urban-ms': ''};
+    const context = {
+        URL, location, selected, reconstructedHistoryEnabled: true,
+        document: {
+            addEventListener() {},
+            getElementById(id) { return element(id); },
+        },
+        history: {
+            state: {},
+            replaceState(state, _title, next) {
+                this.state = state;
+                location.href = new URL(String(next), location.href).href;
+            },
+        },
+        navigator: {clipboard: {async writeText() {}}},
+        fuelTypes: [
+            {fuel_type_code: 'E10'}, {fuel_type_code: 'E5'},
+            {fuel_type_code: 'B7_STANDARD'},
+        ],
+        tomSelects: {
+            'trend-country-ms': {options: {England: {}, Scotland: {}}},
+            'trend-region-ms': {options: {London: {}, 'North East': {}}},
+            'trend-rural-urban-ms': {options: {'Large Urban Areas': {}, 'Remote Rural': {}}},
+        },
+        setFuelSelection(_id, value) { selected.fuel = Array.isArray(value) ? value.join(',') : value; },
+        setMultiSelectValues(id, value) { selected[id] = value; },
+        resetMultiSelect(id) { selected[id] = ''; },
+        updateHistoryFilterState() {},
+    };
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../web/static/js/trends.js'), 'utf8'), context);
+    return context;
+}
+
+function loadRouter(url) {
+    const location = new URL(url);
+    const panel = {classList: {add() {}, remove() {}}};
+    const order = [];
+    const context = {
+        location, order,
+        document: {
+            body: {classList: {toggle() {}}},
+            querySelectorAll() { return []; },
+            querySelector() { return null; },
+            getElementById(id) { return id === 'panel-trends' ? panel : null; },
+        },
+        window: {addEventListener() {}},
+        history: {
+            state: {},
+            pushState(state, _title, next) { this.state = state; location.href = new URL(next, location.href).href; },
+            replaceState(state, _title, next) { this.state = state; location.href = new URL(next, location.href).href; },
+        },
+        restoreTrendUrl() { order.push('restore'); },
+        loadTrends() { order.push('load'); },
+    };
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../web/static/js/router.js'), 'utf8'), context);
+    return context;
+}
+
+function loadWeightedTrendControls({fail = false} = {}) {
+    const elements = new Map();
+    const element = id => {
+        if (!elements.has(id)) elements.set(id, {
+            id, value: '', checked: false, disabled: false, textContent: '', innerHTML: '', title: '', style: {},
+            selectedOptions: [{textContent: 'Last 7 days'}], getContext() { return this; },
+        });
+        return elements.get(id);
+    };
+    element('trend-sensitivity-age').value = '7';
+    element('trend-sensitivity-compare').checked = true;
+    const remembered = [];
+    const requested = {
+        fuel: 'E10', range: '30', granularity: 'daily', start: '2026-08-12', end: '2026-09-10',
+        age: '7', country: '', region: '', 'rural-urban': '',
+    };
+    const context = {
+        AbortController, remembered, requested, reconstructedHistoryEnabled: true, _userRole: 'admin', charts: {},
+        document: {
+            addEventListener() {},
+            getElementById(id) { return element(id); },
+            querySelector() { return {open: false}; },
+        },
+        selectedFuelTypes() { return [{fuel_type_code: 'E10', fuel_name: 'Unleaded'}]; },
+        fuelColour() { return '#123456'; },
+        escHtml(value) { return String(value); },
+        rememberTrendUrl(filters, compare) { remembered.push({filters, compare}); },
+        async apiFetch() {
+            if (fail) throw new Error('request failed');
+            return {
+                method: 'last_reported_station_weighted', granularity: 'daily', age_limit: '7',
+                range_start: '2026-08-12T00:00:00+00:00', range_capped: false, groups: [],
+                data: [{bucket: '2026-08-12', avg_price: 150, age_price: 151, stations: 100,
+                    included_stations: 90, excluded_stations: 10, reference_hours: 2400, included_hours: 2100,
+                    hampel_avg_price_changed: false, hampel_age_price_changed: false}],
+            };
+        },
+        Chart: function(_canvas, config) {
+            this.data = config.data;
+            this.options = config.options;
+            this.destroy = () => {};
+            this.update = () => {};
+        },
+    };
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../web/static/js/sensitivity.js'), 'utf8'), context);
+    context.historyFilters = () => JSON.parse(JSON.stringify(requested));
+    return context;
+}
+
 test('fuel subsets resolve in catalogue order and clearing means all fuels', () => {
     const controls = loadFuelControls();
     const codes = selection => Array.from(controls.selectedFuelTypes(selection), type => type.fuel_type_code);
@@ -230,4 +355,92 @@ test('selected line is solid and the optional reference is light and dashed', ()
     assert.equal(labels[1].lineDash, compared[1].borderDash);
     results[0].response.age_limit = 'none';
     assert.equal(controls.historyDatasets(results, true).length, 1);
+});
+
+test('rolling trend links store the preset and omit absolute dates', () => {
+    const controls = loadTrendUrlControls();
+    controls.rememberTrendUrl({
+        fuel: 'E10,E5', range: '30', start: '2026-08-12', end: '2026-09-10',
+        granularity: 'daily', age: '7', country: 'England', region: 'London',
+        'rural-urban': 'Large Urban Areas',
+    }, true);
+    const url = new URL(controls.location.href);
+    assert.equal(url.hash, '#trends');
+    assert.equal(url.searchParams.get('trendFuel'), 'E10,E5');
+    assert.equal(url.searchParams.get('trendRange'), '30');
+    assert.equal(url.searchParams.has('trendStart'), false);
+    assert.equal(url.searchParams.has('trendEnd'), false);
+    assert.equal(url.searchParams.get('trendGranularity'), 'daily');
+    assert.equal(url.searchParams.get('trendAge'), '7');
+    assert.equal(url.searchParams.get('trendCountry'), 'England');
+    assert.equal(url.searchParams.get('trendRegion'), 'London');
+    assert.equal(url.searchParams.get('trendRuralUrban'), 'Large Urban Areas');
+    assert.equal(url.searchParams.get('trendCompare'), '1');
+});
+
+test('custom trend links retain exact dates', () => {
+    const controls = loadTrendUrlControls();
+    controls.rememberTrendUrl({
+        fuel: 'B7_STANDARD', range: 'custom', start: '2026-03-01', end: '2026-04-15',
+        granularity: 'hourly', age: 'none', country: '', region: '', 'rural-urban': '',
+    }, true);
+    const parameters = new URL(controls.location.href).searchParams;
+    assert.equal(parameters.get('trendRange'), 'custom');
+    assert.equal(parameters.get('trendStart'), '2026-03-01');
+    assert.equal(parameters.get('trendEnd'), '2026-04-15');
+    assert.equal(parameters.has('trendCompare'), false);
+});
+
+test('rolling trend links restore current dates and validated selections', () => {
+    const url = new URL('https://fuel.hoy.la/#trends');
+    for (const [name, value] of Object.entries({
+        trendFuel: 'E10,NOT_A_FUEL', trendRange: '30', trendStart: '2020-01-01', trendEnd: '2020-01-30',
+        trendGranularity: 'hourly', trendAge: '14', trendCountry: 'England,Atlantis',
+        trendRegion: 'London,Nowhere', trendRuralUrban: 'Remote Rural', trendCompare: '1',
+    })) url.searchParams.set(name, value);
+    const controls = loadTrendUrlControls(url.href);
+    assert.equal(controls.restoreTrendUrl(), true);
+    assert.equal(controls.selected.fuel, 'E10');
+    assert.equal(controls.selected['trend-country-ms'], 'England');
+    assert.equal(controls.selected['trend-region-ms'], 'London');
+    assert.equal(controls.selected['trend-rural-urban-ms'], 'Remote Rural');
+    assert.equal(controls.document.getElementById('trend-range').value, '30');
+    assert.equal(controls.document.getElementById('trend-end').value, new Date().toISOString().slice(0, 10));
+    assert.notEqual(controls.document.getElementById('trend-start').value, '2020-01-01');
+    assert.equal(controls.document.getElementById('trend-granularity').value, 'hourly');
+    assert.equal(controls.document.getElementById('trend-sensitivity-age').value, '14');
+    assert.equal(controls.document.getElementById('trend-sensitivity-compare').checked, true);
+});
+
+test('custom trend links restore exact dates and reject invalid ranges', () => {
+    const exact = loadTrendUrlControls('https://fuel.hoy.la/?trendRange=custom&trendStart=2026-03-01&trendEnd=2026-04-15#trends');
+    exact.restoreTrendUrl();
+    assert.equal(exact.document.getElementById('trend-range').value, 'custom');
+    assert.equal(exact.document.getElementById('trend-start').value, '2026-03-01');
+    assert.equal(exact.document.getElementById('trend-end').value, '2026-04-15');
+
+    const invalid = loadTrendUrlControls('https://fuel.hoy.la/?trendRange=custom&trendStart=2026-04-15&trendEnd=2026-03-01#trends');
+    invalid.restoreTrendUrl();
+    assert.equal(invalid.document.getElementById('trend-range').value, '30');
+});
+
+test('direct trend links restore criteria before loading and retain their query string', () => {
+    const controls = loadRouter('https://fuel.hoy.la/?trendFuel=E10&trendRange=30#trends');
+    controls.applyInitialHash();
+    assert.deepEqual(controls.order, ['restore', 'load']);
+    assert.equal(controls.location.searchParams.get('trendFuel'), 'E10');
+    assert.equal(controls.location.searchParams.get('trendRange'), '30');
+    assert.equal(controls.location.hash, '#trends');
+});
+
+test('trend URL changes only after a successful chart request', async () => {
+    const successful = loadWeightedTrendControls();
+    await successful.loadWeightedTrend('trend', 'E10', fuel => '/prices/history?fuel_type=' + fuel);
+    assert.equal(successful.remembered.length, 1);
+    assert.deepEqual(successful.remembered[0].filters, successful.requested);
+    assert.equal(successful.remembered[0].compare, true);
+
+    const failed = loadWeightedTrendControls({fail: true});
+    await failed.loadWeightedTrend('trend', 'E10', fuel => '/prices/history?fuel_type=' + fuel);
+    assert.equal(failed.remembered.length, 0);
 });

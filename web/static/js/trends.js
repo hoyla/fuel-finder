@@ -10,6 +10,101 @@ const comparisonBaselines = {
     equal_reporting_station: 'Equal-weight reporting stations',
 };
 const comparisonAgeLimits = ['none', '30', '14', '7', 'today'];
+const trendRanges = ['7', '14', '30', '90', '180', '365', 'all', 'custom'];
+const trendGranularities = ['daily', 'hourly'];
+const trendUrlParameters = {
+    fuel: 'trendFuel', range: 'trendRange', start: 'trendStart', end: 'trendEnd',
+    granularity: 'trendGranularity', age: 'trendAge', country: 'trendCountry',
+    region: 'trendRegion', 'rural-urban': 'trendRuralUrban', compare: 'trendCompare',
+};
+
+function validTrendDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false;
+    const parsed = new Date(value + 'T00:00:00Z');
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function trendParameterValues(value, allowed) {
+    const choices = new Set(allowed);
+    return (value || '').split(',').filter(item => choices.has(item));
+}
+
+function setTrendMultiSelectFromUrl(id, value) {
+    const available = Object.keys(tomSelects[id]?.options || {});
+    const selected = trendParameterValues(value, available);
+    if (selected.length) setMultiSelectValues(id, selected.join(','));
+    else resetMultiSelect(id);
+}
+
+function restoreTrendUrl() {
+    const parameters = new URL(location.href).searchParams;
+    if (!Object.values(trendUrlParameters).some(name => parameters.has(name))) return false;
+
+    if (parameters.has(trendUrlParameters.fuel)) {
+        const available = fuelTypes.map(type => type.fuel_type_code);
+        setFuelSelection('trend-fuel', trendParameterValues(parameters.get(trendUrlParameters.fuel), available));
+    }
+    for (const [key, id] of [['country', 'trend-country-ms'], ['region', 'trend-region-ms'], ['rural-urban', 'trend-rural-urban-ms']]) {
+        if (parameters.has(trendUrlParameters[key])) setTrendMultiSelectFromUrl(id, parameters.get(trendUrlParameters[key]));
+    }
+
+    let range = parameters.get(trendUrlParameters.range);
+    range = trendRanges.includes(range) ? range : '30';
+    document.getElementById('trend-range').value = range;
+    setTrendRange(range, false);
+    if (range === 'custom') {
+        const start = parameters.get(trendUrlParameters.start);
+        const end = parameters.get(trendUrlParameters.end);
+        const today = new Date().toISOString().slice(0, 10);
+        if (validTrendDate(start) && validTrendDate(end) && start <= end && end <= today) {
+            document.getElementById('trend-start').value = start;
+            document.getElementById('trend-end').value = end;
+        } else {
+            range = '30';
+            document.getElementById('trend-range').value = range;
+            setTrendRange(range, false);
+        }
+    }
+
+    const granularity = parameters.get(trendUrlParameters.granularity);
+    document.getElementById('trend-granularity').value = trendGranularities.includes(granularity) ? granularity : 'daily';
+    const age = parameters.get(trendUrlParameters.age);
+    const ageControl = document.getElementById('trend-sensitivity-age');
+    const compareControl = document.getElementById('trend-sensitivity-compare');
+    if (ageControl) ageControl.value = comparisonAgeLimits.includes(age) ? age : 'none';
+    if (compareControl) compareControl.checked = parameters.get(trendUrlParameters.compare) === '1';
+    return true;
+}
+
+function rememberTrendUrl(filters, compare = false) {
+    const url = new URL(location.href);
+    for (const name of Object.values(trendUrlParameters)) url.searchParams.delete(name);
+    const values = {
+        fuel: filters.fuel, range: filters.range, granularity: filters.granularity,
+        age: filters.age, country: filters.country, region: filters.region,
+        'rural-urban': filters['rural-urban'],
+    };
+    for (const [key, value] of Object.entries(values)) {
+        if (value) url.searchParams.set(trendUrlParameters[key], value);
+    }
+    if (filters.range === 'custom') {
+        url.searchParams.set(trendUrlParameters.start, filters.start);
+        url.searchParams.set(trendUrlParameters.end, filters.end);
+    }
+    if (compare && filters.age !== 'none') url.searchParams.set(trendUrlParameters.compare, '1');
+    url.hash = 'trends';
+    history.replaceState({...history.state, panel: 'trends', trendFilters: filters}, '', url);
+}
+
+async function copyTrendLink() {
+    const status = document.getElementById('trend-filter-status');
+    try {
+        await navigator.clipboard.writeText(location.href);
+        status.textContent = 'Chart link copied.';
+    } catch {
+        status.textContent = 'Clipboard access unavailable. The address bar contains this chart link.';
+    }
+}
 
 function comparisonNumber(value, precision = 2) {
     if (value == null || !Number.isFinite(Number(value))) return 'n/a';
