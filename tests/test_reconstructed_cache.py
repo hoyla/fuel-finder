@@ -8,7 +8,7 @@ from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 import pytest
 
-from price_history import _reconstruct_live, cached_daily
+from price_history import _reconstruct_live, cached_daily, cached_partial_daily, reconstruct
 
 
 @pytest.fixture
@@ -21,6 +21,7 @@ def cache_db():
         for table in ("fuel_prices", "current_prices", "price_corrections"):
             cursor.execute(sql.SQL("CREATE TABLE {} AS SELECT * FROM public.{} WITH NO DATA").format(sql.Identifier(table), sql.Identifier(table)))
         cursor.execute((Path(__file__).resolve().parents[1] / "migrations/022_reconstructed_daily_cache.sql").read_text())
+        cursor.execute((Path(__file__).resolve().parents[1] / "migrations/023_reconstructed_history_serving_cache.sql").read_text())
         cursor.execute("INSERT INTO current_prices (node_id,fuel_type,price,region,forecourt_type,temporary_closure) VALUES ('old','E10',100,'North','Independent',false),('changing','E10',220,'South','Supermarket',false)")
         cursor.execute("SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date AS today")
         today = cursor.fetchone()["today"]
@@ -42,7 +43,8 @@ def refresh(connection):
 
 def state(connection):
     with connection.cursor() as cursor:
-        cursor.execute("SELECT valid_from,valid_until FROM reconstructed_daily_state")
+        cursor.execute("""SELECT valid_from, valid_until, partial_date, partial_through
+                          FROM reconstructed_daily_state""")
         return cursor.fetchone()
 
 
@@ -54,9 +56,40 @@ def test_cache_matches_live_all_policies_and_groups(cache_db, policy):
     actual = cached_daily(connection, "E10", start, end, policy, {}, True)
     assert actual == expected
     assert state(connection)["valid_until"] == end.date()
+    assert state(connection)["partial_date"] == end.date()
+    assert state(connection)["partial_through"] is not None
     with connection.cursor() as cursor:
         cursor.execute("SELECT COUNT(*) AS count FROM reconstructed_daily_prices WHERE price_date >= %s", (end.date(),))
-        assert cursor.fetchone()["count"] == 0
+        assert cursor.fetchone()["count"] == 2
+
+
+def test_unfiltered_completed_and_partial_days_use_totals(cache_db, monkeypatch):
+    connection, start, end = cache_db
+    refresh(connection)
+    expected_completed = _reconstruct_live(connection, "E10", start, end)
+    expected_partial = _reconstruct_live(connection, "E10", end, datetime.now(timezone.utc))
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM reconstructed_daily_prices")
+    assert cached_daily(connection, "E10", start, end, "none", {}, False) == expected_completed
+    assert cached_partial_daily(
+        connection, "E10", end, datetime.now(timezone.utc), "none", {}, False,
+    ) == expected_partial
+    monkeypatch.setattr("price_history._reconstruct_live", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("live fallback used")))
+    result = reconstruct(connection, "E10", start, datetime.now(timezone.utc))
+    assert len(result["data"]) == (end.date() - start.date()).days + 1
+    assert result["partial_through"] is not None
+
+
+def test_missing_totals_fall_back_to_station_cache(cache_db, monkeypatch):
+    connection, start, end = cache_db
+    refresh(connection)
+    expected = _reconstruct_live(connection, "E10", start, state(connection)["partial_through"])
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM reconstructed_daily_totals")
+    monkeypatch.setattr("price_history._reconstruct_live", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("live fallback used")))
+    actual = reconstruct(connection, "E10", start, datetime.now(timezone.utc))
+    assert actual["data"] == expected["data"]
+    assert actual["partial_through"] is not None
 
 
 def test_correction_update_delete_and_flag_changes_invalidate(cache_db):
@@ -89,6 +122,7 @@ def test_backfill_before_cache_start_and_current_day_insert(cache_db):
     with connection.cursor() as cursor:
         cursor.execute("INSERT INTO fuel_prices (id,node_id,fuel_type,price,observed_at) VALUES (4,'old','E10',110,%s)", (end,))
     assert state(connection)["valid_until"] == end.date()
+    assert state(connection)["partial_through"] is None
     with connection.cursor() as cursor:
         cursor.execute("INSERT INTO fuel_prices (id,node_id,fuel_type,price,observed_at) VALUES (5,'old','E10',90,%s)", (start - timedelta(days=1),))
     assert state(connection)["valid_until"] == start.date()
@@ -118,6 +152,8 @@ def test_empty_source_leaves_no_cache_marked_valid(cache_db):
     refresh(connection)
     assert state(connection)["valid_from"] is None
     assert state(connection)["valid_until"] is None
+    assert state(connection)["partial_date"] is None
+    assert state(connection)["partial_through"] is None
     with connection.cursor() as cursor:
         cursor.execute("SELECT COUNT(*) AS count FROM reconstructed_daily_prices")
         assert cursor.fetchone()["count"] == 0

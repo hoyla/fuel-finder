@@ -35,11 +35,14 @@ the legacy endpoint behaviour documented below remains in effect.
   equally. Prices carry between changes; a flagged latest record creates a gap.
   Corrections use `COALESCE(corrected_price, original_price)`; historical eligibility
   remains `fuel_prices.anomaly_flags IS NULL`, including for corrected records.
-- Completed station-days read exact sums/counts from the separate
-  `reconstructed_daily_prices` cache (migration 022). Invalidated dates and today's
-  partial day are calculated live. Triggers invalidate on raw/flag/correction
-  changes; scrape and correction maintenance call `refresh_reconstructed_daily()`.
-  This optimization changes neither weighting, eligibility nor Hampel behaviour.
+- Completed station-days and today's partial day read exact sums/counts from
+  `reconstructed_daily_prices`; unfiltered national daily charts read the compact
+  `reconstructed_daily_totals` cache (migrations 022-023). Triggers invalidate on
+  raw/flag/correction changes; scrape and correction maintenance call
+  `refresh_reconstructed_daily()`. Responses using the partial cache include
+  `partial_through`. A live fallback exceeding `RECONSTRUCTED_HISTORY_TIMEOUT_MS`
+  (20 seconds by default) returns HTTP 503. These optimizations change neither
+  weighting, eligibility nor Hampel behaviour.
 - Hampel remains unchanged: 7 populated daily points or 49 hourly points, median
   replacement beyond `3 * 1.4826 * MAD`, no replacement at zero MAD. Null buckets
   remain null. Rounding to 0.1p occurs before filtering. Range-edge behaviour is
@@ -238,7 +241,10 @@ Price history for a single station.
 
 ### `GET /api/prices/history`
 
-Average price over time. Uses **hourly** granularity for ranges under 30 days, **daily** for 30 days or longer. Daily queries use the pre-aggregated `daily_prices` table for faster response times.
+Average price over time. Uses **hourly** granularity for ranges under 30 days,
+**daily** for 30 days or longer. With reconstructed history disabled, daily queries
+use `daily_prices`; with it enabled, they use the reconstructed caches described
+above.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|

@@ -198,18 +198,28 @@ Array order is **no limit, 30 days, 14 days, 7 days, recorded that day**. Divide
 sum by its count to get a station-day mean; zero hours means no eligible price.
 Aggregate stations equally, round, then apply Hampel at query time, as before.
 
+### `reconstructed_daily_totals`
+
+Migration 023 adds a compact national serving cache derived from
+`reconstructed_daily_prices`. It has one row per fuel/day, with five-element
+`price_totals`, `station_counts`, and `hour_counts` arrays in the same policy order.
+Unfiltered daily charts can therefore avoid scanning the station-level cache.
+Its primary key is `(fuel_type, price_date)`.
+
 ### `reconstructed_daily_state`
 
 Single-row validity marker: `valid_from` inclusive and `valid_until` exclusive,
-both `DATE`. Null bounds mean no cache is ready. Dates outside that interval use
-live reconstruction, including today's partial day.
+both `DATE`. `partial_date` and `partial_through` identify the separately refreshed
+current-day snapshot. Null bounds mean no cache is ready. Dates outside those
+windows use live reconstruction.
 
 `refresh_reconstructed_daily()` rebuilds from the first invalid day through the
-last completed UTC day. It is serialized by an advisory lock. Price and correction
-triggers invalidate affected days transactionally, including adjacent anomaly
-updates; a failed refresh never marks incomplete output valid. The scraper and
-correction endpoints run refresh maintenance. Historic imports can trigger a
-larger rebuild. Current station geography/classification is not cached here.
+current partial UTC day and refreshes the compact totals. It is serialized by an
+advisory lock. Price and correction triggers invalidate affected days
+transactionally, including adjacent anomaly updates; a failed refresh never marks
+incomplete output valid. The scraper and correction endpoints run refresh
+maintenance. Historic imports can trigger a larger rebuild. Current station
+geography/classification is not cached here.
 
 ### `price_corrections`
 

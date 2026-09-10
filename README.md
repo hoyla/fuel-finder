@@ -105,9 +105,10 @@ FUEL_API_ID= FUEL_API_SECRET= docker compose --env-file /dev/null \
 
 `RECONSTRUCTED_HISTORY_ENABLED=true` enables station-weighted last-reported-price
 history. It is **off by default** and enabled by `docker-compose.local.yml` only.
-Migration 022 creates the derived daily cache; it does not change original price
-records. Disable the flag and recreate the web container to return to the
-legacy event-weighted history. Production deployment requires a separate decision.
+Migrations 022 and 023 create derived daily serving caches; they do not change
+original price records. Disable the flag and recreate the web container to return
+to the legacy event-weighted history. Production deployment requires a separate
+decision after the caches have been warmed and benchmarked.
 
 Open http://localhost:18080/#trends. Age controls remain above the chart alongside
 the filters, on Trends and station/Search history pages. All filter edits wait for
@@ -129,9 +130,11 @@ baselines use reconstructed history when enabled. The percentage-change cards
 still compare those daily baselines with the current IQR-filtered snapshot, so
 they are not like-for-like changes within the daily historical series.
 
-Completed UTC days use `reconstructed_daily_prices`: exact per-station price sums
-and hour counts for all five age policies, with no premature rounding or smoothing.
-The current partial day and uncached/invalid dates fall back to live reconstruction.
+Completed UTC days and the current partial day use `reconstructed_daily_prices`:
+exact per-station price sums and hour counts for all five age policies, with no
+premature rounding or smoothing. Unfiltered national charts read the much smaller
+`reconstructed_daily_totals`; filtered series and breakdowns retain station-level
+detail. The partial-day response reports the cache's `partial_through` timestamp.
 Hampel is still applied after aggregation. Station geography/categories are joined
 at query time, so changed lookup values do not require rebuilding price summaries.
 
@@ -140,16 +143,18 @@ database. For this local stack:
 
 ```bash
 docker exec fuel-finder-local-postgres-1 psql -U fuelfinder -d fuelfinder \
-    -v ON_ERROR_STOP=1 -c 'SELECT refresh_reconstructed_daily(); ANALYZE reconstructed_daily_prices;'
+    -v ON_ERROR_STOP=1 -c 'SELECT refresh_reconstructed_daily_totals(); SELECT refresh_reconstructed_daily(); ANALYZE reconstructed_daily_prices; ANALYZE reconstructed_daily_totals;'
 ```
 
-The scraper refreshes newly completed days after each run. Triggers invalidate
-cached dates from the earliest affected observation onwards when prices, flags or
-corrections change. Correction endpoints refresh after saving; imports/direct SQL
-can leave invalidated dates on the slower live fallback until the next refresh.
-Rebuilds are serialized and committed atomically. No source values are overwritten.
-An old correction can require recomputing many days; plan the first warm-up outside
-peak traffic. Invalid or absent cache data is never required for API availability.
+The scraper refreshes the current partial day and newly completed days after each
+run. Triggers invalidate cached dates from the earliest affected observation
+onwards when prices, flags or corrections change. Correction endpoints refresh
+after saving; imports/direct SQL can leave invalidated dates on the slower live
+fallback until the next refresh. Rebuilds are serialized and committed atomically.
+No source values are overwritten. An old correction can require recomputing many
+days; plan the first warm-up outside peak traffic. Live fallbacks are bounded by
+`RECONSTRUCTED_HISTORY_TIMEOUT_MS` (20 seconds by default) and return HTTP 503 on
+timeout, preventing abandoned requests from accumulating indefinitely.
 
 Reconstruction selects each station's latest observation at each UTC hour start.
 Daily values average those hours within stations, then weight stations equally.
