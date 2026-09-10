@@ -15,7 +15,7 @@ import boto3
 import psycopg2
 import requests
 from psycopg2.extras import RealDictCursor
-from psycopg2.pool import SimpleConnectionPool
+from psycopg2.pool import ThreadedConnectionPool
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -32,7 +32,7 @@ DATABASE_URL = os.environ.get(
     "postgresql://fuelfinder:fuelfinder@localhost:5432/fuelfinder",
 )
 
-_pool = SimpleConnectionPool(
+_pool = ThreadedConnectionPool(
     minconn=2,
     maxconn=int(os.environ.get("DB_POOL_MAX", "10")),
     dsn=DATABASE_URL,
@@ -47,6 +47,7 @@ def get_db():
             cur.execute("SET work_mem = '16MB'")
         yield conn
     finally:
+        conn.rollback()
         _pool.putconn(conn)
 
 
@@ -165,16 +166,28 @@ def _reconstructed_history_enabled():
 def _reconstructed_response(db, fuel_type, days, start_date, end_date, granularity, age_limit,
                             include_sensitivity, role, filters, smooth=True):
     try:
+        with db.cursor() as cursor:
+            cursor.execute(
+                "SET LOCAL statement_timeout = %s",
+                (max(1000, int(os.environ.get("RECONSTRUCTED_HISTORY_TIMEOUT_MS", "20000"))),),
+            )
         start, end, capped = resolve_history_window(
             db, fuel_type, filters, start_date, end_date, days, role,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    except psycopg2.errors.QueryCanceled as error:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="History calculation timed out; narrow the range or retry") from error
     if granularity not in (None, "hourly", "daily"):
         raise HTTPException(status_code=422, detail="Granularity must be hourly or daily")
     span = ((end - timedelta(microseconds=1)).date() - start.date()).days + 1
     effective = granularity or ("daily" if span >= 30 else "hourly")
-    result = reconstruct(db, fuel_type, start, end, effective, age_limit, filters, include_sensitivity)
+    try:
+        result = reconstruct(db, fuel_type, start, end, effective, age_limit, filters, include_sensitivity)
+    except psycopg2.errors.QueryCanceled as error:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="History calculation timed out; narrow the range or retry") from error
     if smooth:
         apply_hampel(result["data"], effective)
         apply_hampel(result["data"], effective, "age_price")

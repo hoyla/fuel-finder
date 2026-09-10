@@ -184,6 +184,25 @@ class TestReconstructedHistory:
         finally:
             app.dependency_overrides.pop(api_module.get_db, None)
 
+    def test_reconstruction_timeout_returns_retryable_service_error(self, client, reconstruction_db, monkeypatch):
+        from web import api as api_module
+        app.dependency_overrides[api_module.get_db] = lambda: reconstruction_db
+        monkeypatch.setattr(
+            api_module,
+            "reconstruct",
+            lambda *args, **kwargs: (_ for _ in ()).throw(psycopg2.errors.QueryCanceled()),
+        )
+        try:
+            response = client.get(
+                "/api/prices/history?fuel_type=E10&start_date=2026-08-11&end_date=2026-08-11&granularity=daily"
+            )
+            assert response.status_code == 503
+            assert response.json() == {
+                "detail": "History calculation timed out; narrow the range or retry"
+            }
+        finally:
+            app.dependency_overrides.pop(api_module.get_db, None)
+
     @pytest.mark.parametrize("query", ["start_date=bad", "start_date=2026-09-09&end_date=2026-08-01", "age_limit=bad", "granularity=bad"])
     def test_invalid_parameters(self, client, query):
         assert client.get("/api/prices/history?" + query).status_code == 422

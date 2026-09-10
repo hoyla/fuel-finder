@@ -7,6 +7,7 @@ from psycopg2 import sql
 
 
 AGE_LIMITS = {"none": None, "30": 30, "14": 14, "7": 7, "today": 0}
+BOOLEAN_FILTERS = {"supermarket_only", "motorway_only", "exclude_outliers"}
 
 
 def resolve_window(start_date=None, end_date=None, days=None, role="readonly", now=None):
@@ -57,6 +58,44 @@ def select_stations(fuel_type, filters):
     return sql.SQL(" AND ").join(conditions), parameters
 
 
+def _has_station_filters(filters):
+    return any(
+        bool(value) if name in BOOLEAN_FILTERS else value is not None and value != ""
+        for name, value in (filters or {}).items()
+    )
+
+
+def _cached_totals(connection, fuel_type, start, end, age_limit, partial=False):
+    policy = list(AGE_LIMITS).index(age_limit) + 1
+    validity = sql.SQL("cache.partial_date = %s AND cache.partial_through IS NOT NULL") if partial else sql.SQL(
+        "cache.valid_from <= %s AND cache.valid_until >= %s"
+    )
+    date_filter = sql.SQL("totals.price_date = %s") if partial else sql.SQL(
+        "totals.price_date >= %s AND totals.price_date < %s"
+    )
+    validity_parameters = (start.date(),) if partial else (start.date(), end.date())
+    date_parameters = (start.date(),) if partial else (start.date(), end.date())
+    with connection.cursor() as cursor:
+        cursor.execute(sql.SQL("""
+            SELECT totals.price_date::timestamp AT TIME ZONE 'UTC' AS bucket,
+                   'national' AS dimension, 'All' AS label,
+                   ROUND(totals.price_totals[1] / NULLIF(totals.station_counts[1], 0), 1) AS avg_price,
+                   ROUND(totals.price_totals[%s] / NULLIF(totals.station_counts[%s], 0), 1) AS age_price,
+                   totals.station_counts[1]::bigint AS stations,
+                   totals.station_counts[%s]::bigint AS included_stations,
+                   (totals.station_counts[1] - totals.station_counts[%s])::bigint AS excluded_stations,
+                   totals.hour_counts[1] AS reference_hours,
+                   totals.hour_counts[%s] AS included_hours
+            FROM reconstructed_daily_totals totals
+            JOIN reconstructed_daily_state cache ON cache.singleton AND {validity}
+            WHERE totals.fuel_type = %s AND {date_filter}
+            ORDER BY bucket
+        """).format(validity=validity, date_filter=date_filter),
+                       (policy, policy, policy, policy, policy,
+                        *validity_parameters, fuel_type, *date_parameters))
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def resolve_history_window(connection, fuel_type, filters, start_date=None, end_date=None, days=None, role="readonly", now=None):
     start, end, capped = resolve_window(start_date, end_date, days, role, now)
     if start_date is None and end_date is not None and days is None:
@@ -94,6 +133,10 @@ def apply_hampel(rows, granularity, field="avg_price"):
 
 
 def cached_daily(connection, fuel_type, start, end, age_limit, filters, include_groups):
+    if not include_groups and not _has_station_filters(filters):
+        totals = _cached_totals(connection, fuel_type, start, end, age_limit)
+        if totals:
+            return {"data": totals, "groups": []}
     selection, parameters = select_stations(fuel_type, filters)
     policy = list(AGE_LIMITS).index(age_limit) + 1
     grouping = sql.SQL("((dp.price_date), (dp.price_date, cp.region), (dp.price_date, cp.forecourt_type))") if include_groups else sql.SQL("((dp.price_date))")
@@ -122,30 +165,91 @@ def cached_daily(connection, fuel_type, start, end, age_limit, filters, include_
             "groups": [row for row in rows if row["dimension"] != "national"]}
 
 
+def cached_partial_daily(connection, fuel_type, start, end, age_limit, filters, include_groups):
+    if start.date() != end.date() or start.time() != datetime.min.time():
+        return {"data": [], "groups": []}
+    if not include_groups and not _has_station_filters(filters):
+        totals = _cached_totals(connection, fuel_type, start, end, age_limit, partial=True)
+        if totals:
+            return {"data": totals, "groups": []}
+    selection, parameters = select_stations(fuel_type, filters)
+    policy = list(AGE_LIMITS).index(age_limit) + 1
+    grouping = sql.SQL("((dp.price_date), (dp.price_date, cp.region), (dp.price_date, cp.forecourt_type))") if include_groups else sql.SQL("((dp.price_date))")
+    dimension = sql.SQL("CASE WHEN GROUPING(cp.region) = 0 THEN 'region' WHEN GROUPING(cp.forecourt_type) = 0 THEN 'forecourt_type' ELSE 'national' END") if include_groups else sql.SQL("'national'")
+    label = sql.SQL("CASE WHEN GROUPING(cp.region) = 0 THEN COALESCE(cp.region, 'Unknown') WHEN GROUPING(cp.forecourt_type) = 0 THEN COALESCE(cp.forecourt_type, 'Unknown') ELSE 'All' END") if include_groups else sql.SQL("'All'")
+    with connection.cursor() as cursor:
+        cursor.execute(sql.SQL("""
+            SELECT dp.price_date::timestamp AT TIME ZONE 'UTC' AS bucket,
+                   {dimension} AS dimension, {label} AS label,
+                   ROUND(AVG(price_sums[1] / hour_counts[1]), 1) AS avg_price,
+                   ROUND(AVG(price_sums[%s] / NULLIF(hour_counts[%s], 0)), 1) AS age_price,
+                   COUNT(*) AS stations, COUNT(*) FILTER (WHERE hour_counts[%s] > 0) AS included_stations,
+                   COUNT(*) FILTER (WHERE hour_counts[%s] = 0) AS excluded_stations,
+                   SUM(hour_counts[1])::bigint AS reference_hours,
+                   SUM(hour_counts[%s])::bigint AS included_hours
+            FROM reconstructed_daily_prices dp
+            JOIN (SELECT node_id, fuel_type, region, forecourt_type FROM current_prices WHERE {selection}) cp
+              ON cp.node_id = dp.node_id AND cp.fuel_type = dp.fuel_type
+            JOIN reconstructed_daily_state cache ON cache.singleton
+              AND cache.partial_date = %s AND cache.partial_through IS NOT NULL
+            WHERE dp.fuel_type = %s AND dp.price_date = %s
+            GROUP BY GROUPING SETS {grouping} ORDER BY bucket, dimension, label
+        """).format(selection=selection, dimension=dimension, label=label, grouping=grouping),
+                       (policy, policy, policy, policy, policy,
+                        *parameters, start.date(), fuel_type, start.date()))
+        rows = [dict(row) for row in cursor.fetchall()]
+    return {"data": [row for row in rows if row["dimension"] == "national"],
+            "groups": [row for row in rows if row["dimension"] != "national"]}
+
+
 def reconstruct(connection, fuel_type, start, end, granularity="daily", age_limit="none", filters=None, include_groups=False):
     if age_limit not in AGE_LIMITS or granularity not in ("daily", "hourly"):
         raise ValueError("Invalid age limit or granularity")
     if granularity != "daily":
         return _reconstruct_live(connection, fuel_type, start, end, granularity, age_limit, filters, include_groups)
     with connection.cursor() as cursor:
-        cursor.execute("""SELECT to_regclass('public.reconstructed_daily_state') IS NOT NULL
-                          AND to_regclass('fuel_prices') = to_regclass('public.fuel_prices')
-                          AND to_regclass('current_prices') = to_regclass('public.current_prices') AS usable""")
+        cursor.execute("""
+            SELECT to_regclass('reconstructed_daily_state') IS NOT NULL
+               AND (SELECT relnamespace FROM pg_class WHERE oid = to_regclass('reconstructed_daily_state'))
+                   = (SELECT relnamespace FROM pg_class WHERE oid = to_regclass('fuel_prices'))
+               AND (SELECT relnamespace FROM pg_class WHERE oid = to_regclass('reconstructed_daily_state'))
+                   = (SELECT relnamespace FROM pg_class WHERE oid = to_regclass('current_prices')) AS usable
+        """)
         if not cursor.fetchone()["usable"]:
             return _reconstruct_live(connection, fuel_type, start, end, granularity, age_limit, filters, include_groups)
-        cursor.execute("SELECT valid_from, valid_until FROM reconstructed_daily_state WHERE singleton")
+        cursor.execute("""SELECT valid_from, valid_until, partial_date, partial_through
+                          FROM reconstructed_daily_state WHERE singleton""")
         state = cursor.fetchone()
     if not state or not state["valid_from"] or not state["valid_until"]:
         return _reconstruct_live(connection, fuel_type, start, end, granularity, age_limit, filters, include_groups)
     lower = max(start, datetime.combine(state["valid_from"], datetime.min.time(), timezone.utc))
     upper = min(end.replace(hour=0, minute=0, second=0, microsecond=0),
                 datetime.combine(state["valid_until"], datetime.min.time(), timezone.utc))
-    if lower >= upper:
-        return _reconstruct_live(connection, fuel_type, start, end, granularity, age_limit, filters, include_groups)
-    result = cached_daily(connection, fuel_type, lower, upper, age_limit, filters or {}, include_groups)
-    if not result["data"]:
-        result = _reconstruct_live(connection, fuel_type, lower, upper, granularity, age_limit, filters, include_groups)
-    for first, last in ((start, lower), (upper, end)):
+    result = {"data": [], "groups": []}
+    cursor_at = start
+    if cursor_at < lower:
+        fresh = _reconstruct_live(connection, fuel_type, cursor_at, min(lower, end), granularity, age_limit, filters, include_groups)
+        result["data"].extend(fresh["data"])
+        result["groups"].extend(fresh["groups"])
+        cursor_at = min(lower, end)
+    if cursor_at < upper:
+        completed = cached_daily(connection, fuel_type, cursor_at, upper, age_limit, filters or {}, include_groups)
+        if not completed["data"]:
+            completed = _reconstruct_live(connection, fuel_type, cursor_at, upper, granularity, age_limit, filters, include_groups)
+        result["data"].extend(completed["data"])
+        result["groups"].extend(completed["groups"])
+        cursor_at = upper
+    if (cursor_at < end and state["partial_date"] == cursor_at.date()
+            and state["partial_through"] is not None):
+        partial = cached_partial_daily(
+            connection, fuel_type, cursor_at, end, age_limit, filters or {}, include_groups,
+        )
+        if partial["data"]:
+            result["data"].extend(partial["data"])
+            result["groups"].extend(partial["groups"])
+            cursor_at = end
+            result["partial_through"] = state["partial_through"]
+    for first, last in ((cursor_at, end),):
         if first < last:
             fresh = _reconstruct_live(connection, fuel_type, first, last, granularity, age_limit, filters, include_groups)
             result["data"].extend(fresh["data"])
