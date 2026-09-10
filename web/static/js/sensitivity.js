@@ -39,6 +39,13 @@ function updateHistoryFilterState(scope) {
     if (status) status.textContent = historyFilterMessage(draft, state);
     const apply = document.getElementById(scope + '-apply-filters');
     if (apply) apply.disabled = Boolean(state.loading && !historyFiltersDiffer(draft, state.requested));
+    if (scope === 'trend') {
+        const copy = document.getElementById('trend-copy-link');
+        if (copy) {
+            copy.disabled = Boolean(state.loading || dirty || !state.applied);
+            copy.title = dirty ? 'Apply filters before copying a chart link' : 'Copy chart link';
+        }
+    }
     if (scope === 'dashboard') return;
     const results = sensitivityResults[scope] || [];
     for (const format of ['csv', 'json']) {
@@ -56,6 +63,9 @@ function redrawHistoryComparison(scope) {
     chart.data.datasets = historyDatasets(results, document.getElementById(scope + '-sensitivity-compare').checked);
     chart.options.plugins.legend.display = chart.data.datasets.length > 1;
     chart.update('none');
+    if (scope === 'trend' && historyFilterState.trend?.applied) {
+        rememberTrendUrl(historyFilterState.trend.applied, document.getElementById('trend-sensitivity-compare').checked);
+    }
     if (scope === 'station') rememberStationTrend();
 }
 
@@ -280,6 +290,7 @@ async function loadWeightedTrend(scope, fuel, buildUrl, single = false) {
             }).join('');
         }
         state.applied = requested;
+        if (scope === 'trend') rememberTrendUrl(requested, comparison.checked);
         if (scope === 'station') rememberStationTrend();
     } catch (error) {
         if (controller.signal.aborted) return;

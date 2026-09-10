@@ -55,7 +55,10 @@ function switchTab(panelName, pushState) {
         lazyLoaded[panelName] = true;
         if (panelName === 'dashboard') loadDashboard();
         if (panelName === 'map') initMap();
-        if (panelName === 'trends') loadTrends();
+        if (panelName === 'trends') {
+            if (typeof restoreTrendUrl === 'function') restoreTrendUrl();
+            loadTrends();
+        }
         if (panelName === 'trend-comparison') loadTrendComparison();
         if (panelName === 'anomalies') loadAnomalies();
         if (panelName === 'logs') { loadScrapeHistory(); loadCorrectionsLog(); }
@@ -89,7 +92,10 @@ function applyInitialHash() {
     if (hash.panel && document.getElementById('panel-' + hash.panel)) {
         applyPanelSection(hash.panel, hash.section);
         // Replace state so back button works from the initial tab
-        history.replaceState({ ...history.state, panel: hash.panel, section: hash.section || null }, '', location.hash || ('#' + hash.panel));
+        history.replaceState(
+            { ...history.state, panel: hash.panel, section: hash.section || null }, '',
+            location.pathname + location.search + (location.hash || ('#' + hash.panel)),
+        );
     } else {
         switchTab('dashboard', false);
         history.replaceState({ panel: 'dashboard' }, '', '#dashboard');
