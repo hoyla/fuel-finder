@@ -275,6 +275,11 @@ def refresh_daily_prices(conn):
                 sample_count = EXCLUDED.sample_count
         """)
     conn.commit()
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regprocedure('refresh_reconstructed_daily()') IS NOT NULL")
+        if cur.fetchone()[0]:
+            cur.execute("SELECT refresh_reconstructed_daily()")
+    conn.commit()
 
 
 def get_last_scrape_timestamp(conn):

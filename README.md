@@ -69,6 +69,156 @@ docker compose run --rm scraper python scrape.py full
 docker compose run --rm scraper python scrape.py incremental
 ```
 
+### Isolated local analysis environment
+
+Use the local override to keep a production data copy separate from the default
+Compose stack. Requires Docker Compose 2.24.4 or newer for `!override` support.
+
+```bash
+FUEL_API_ID= FUEL_API_SECRET= docker compose --env-file /dev/null \
+    -f docker-compose.yml -f docker-compose.local.yml \
+    up -d --build --wait postgres web
+```
+
+The dashboard is at http://localhost:18080 and PostgreSQL is at
+`127.0.0.1:15432` (database, username and local password: `fuelfinder`).
+Both ports bind only to localhost. Data lives in the separate
+`fuel-finder-local_pgdata` volume. The web app uses local no-auth mode; Cognito
+user management is not configured. The scraper is behind the optional `scrape`
+profile and is not started by this command. S3 uploads are disabled in this stack.
+
+The command ignores `.env`, so production credentials are not loaded. Keep local
+database dumps in the Git-ignored `.local/` directory. An RDS snapshot cannot be
+restored directly into local PostgreSQL: use a consistent `pg_dump --format=custom`
+archive instead. Restore into an empty local database before starting the web app,
+which applies pending migrations on startup. A restored copy is static until
+explicitly refreshed; it does not track production automatically.
+
+Stop the local stack without deleting its database:
+
+```bash
+FUEL_API_ID= FUEL_API_SECRET= docker compose --env-file /dev/null \
+    -f docker-compose.yml -f docker-compose.local.yml down
+```
+
+### Reconstructed history rollout
+
+`RECONSTRUCTED_HISTORY_ENABLED=true` enables station-weighted last-reported-price
+history. It is **off by default** and enabled by `docker-compose.local.yml` only.
+Migration 022 creates the derived daily cache; it does not change original price
+records. Disable the flag and recreate the web container to return to the
+legacy event-weighted history. Production deployment requires a separate decision.
+
+Open http://localhost:18080/#trends. Age controls remain above the chart alongside
+the filters, on Trends and station/Search history pages. All filter edits wait for
+**Apply filters**; pending edits are labelled and disable downloads until applied.
+The selected series is shown alone. **Compare with no age limit** optionally adds
+a lighter dashed reference with matching line samples in the legend; toggling it
+uses cached browser data and sends no request. Coverage and differences appear
+below the chart. Exclusion breakdowns are fetched only when opened and use the
+applied filters. Aggregate series retain the existing Hampel policy; single-station
+history retains its no-Hampel policy. **Data coverage and sensitivity** on Dashboard checks
+the current snapshot, keeping Tukey IQR and anomaly exclusions unchanged. It sits
+below the Dashboard charts and does not alter the headline cards.
+
+Dashboard's daily trend uses the same fuel colours and line styling as Trends,
+starting at the first available observation within the existing access-tier cap.
+Current-price cards already average one latest price per station/fuel and retain
+their snapshot exclusions. Their sparklines and historical percentage-change
+baselines use reconstructed history when enabled. The percentage-change cards
+still compare those daily baselines with the current IQR-filtered snapshot, so
+they are not like-for-like changes within the daily historical series.
+
+Completed UTC days use `reconstructed_daily_prices`: exact per-station price sums
+and hour counts for all five age policies, with no premature rounding or smoothing.
+The current partial day and uncached/invalid dates fall back to live reconstruction.
+Hampel is still applied after aggregation. Station geography/categories are joined
+at query time, so changed lookup values do not require rebuilding price summaries.
+
+Warm the cache after applying migrations and before enabling the rollout on a new
+database. For this local stack:
+
+```bash
+docker exec fuel-finder-local-postgres-1 psql -U fuelfinder -d fuelfinder \
+    -v ON_ERROR_STOP=1 -c 'SELECT refresh_reconstructed_daily(); ANALYZE reconstructed_daily_prices;'
+```
+
+The scraper refreshes newly completed days after each run. Triggers invalidate
+cached dates from the earliest affected observation onwards when prices, flags or
+corrections change. Correction endpoints refresh after saving; imports/direct SQL
+can leave invalidated dates on the slower live fallback until the next refresh.
+Rebuilds are serialized and committed atomically. No source values are overwritten.
+An old correction can require recomputing many days; plan the first warm-up outside
+peak traffic. Invalid or absent cache data is never required for API availability.
+
+Reconstruction selects each station's latest observation at each UTC hour start.
+Daily values average those hours within stations, then weight stations equally.
+Flagged latest reports create gaps rather than falling back to older clean prices.
+Corrections are applied, while historical eligibility keeps the original anomaly
+flags as in the audited implementation. Aggregate histories retain Hampel;
+single-station histories retain their existing no-Hampel policy. No-limit values
+can include old observations and closed stations. They are not confirmed pump prices.
+
+Ranges are inclusive UTC dates, capped at 90 days for read-only and 365 for other
+roles. **All data** starts at the filtered stations' first stored observation within
+those caps, not an artificial year of leading blank buckets. Station selections and
+applied filters survive reload through browser history state; single-station URLs
+also include the node ID. The current day contains only available hour-start samples. Exact age
+thresholds are included; "Recorded that day" resets at each historical midnight.
+Current-snapshot classification drives geography/category filters and group
+breakdowns, not historical station membership. Original report exports remain
+raw and include flags; they are not exports of reconstructed/smoothed averages.
+
+See `docs/API.md` for the additive response fields and current-sensitivity endpoint.
+The full-archive Hampel audit is retained in the ignored `.local/` workspace data.
+
+Frontend state/legend tests: `node --test tests/test_history_controls.js`.
+
+### Archived local comparison prototype
+
+The optional comparison view uses the frozen, verified weighting audit, not live
+queries. It covers unleaded and standard diesel from 11 August to 9 September
+2026. It is disabled unless the environment is local and an audit file is configured.
+
+Generate a new sensitivity artifact against the local snapshot (the output
+directory must not already exist):
+
+```bash
+.venv/bin/python scripts/audit_trend_weighting.py \
+    --manifest .local/production-20260910T100344Z.json \
+    --output .local/trend-age-sensitivity-20260910 --age-sensitivity
+```
+
+This uses `psycopg2-binary` and `matplotlib` in the local virtual environment,
+read-only local PostgreSQL at port 15432, and the existing local web API at 18080.
+Each age policy is checked against an independent SQL reconstruction; group
+breakdowns reconcile with national counts. Then enable the view:
+
+```bash
+FUEL_API_ID= FUEL_API_SECRET= docker compose --env-file /dev/null \
+    -f docker-compose.yml -f docker-compose.local.yml \
+    -f docker-compose.comparison.yml up -d --build --wait web
+```
+
+The frozen comparison tab is hidden when reconstructed history is enabled. To
+revisit it, set `RECONSTRUCTED_HISTORY_ENABLED=false` for the web container before
+opening http://localhost:18080/#trend-comparison. Generating the original audit
+also requires the legacy history endpoint for its parity check (flag disabled).
+The audit JSON is mounted read-only,
+never baked into an image. Fuel, date range, baseline, age policy and breakdown
+are preserved in the URL. Age options are no limit, 30/14/7 days and recorded
+today. Limits apply at each historical UTC hour; "today" starts at midnight of
+that historical day, not today's calendar date or the previous 24 hours.
+
+The view reports selected prices, differences from no age limit, fully excluded
+stations, removed station-hours, and exclusion rates by snapshot region or
+forecourt type. Partial-day stations retain equal station weight; zero eligible
+hours means no price, never a zero price. Group rates count station-days, and
+classifications describe the snapshot, not historical membership. CSV downloads
+include the selected policy, daily values or group breakdowns, and snapshot/audit
+hashes. Record age is not the last confirmation. No independent benchmark is used.
+The frozen artifacts are retained separately from the on-demand implementation.
+
 ## Architecture
 
 ```
@@ -146,10 +296,20 @@ docker compose run --rm scraper python scrape.py incremental
 
 The project includes a web dashboard at http://localhost:8080 (started via Docker Compose).
 
+Dashboard uses a single fuel selection across its charts, defaulting to E10.
+Other fuel menus support chip-based subsets; clearing all chips selects all fuels.
+Charts and outlier distributions keep each fuel separate. Multi-fuel map views
+use one neutral marker per station with separate prices and record timestamps in
+the popup; single-fuel views retain price colours. CSV/JSON downloads include the
+selected fuel subset, and current-result downloads follow all result pages.
+The archived comparison is limited to its two audited fuels.
+Trend and station-history charts default to daily averages. Hourly detail is
+fetched only when selected and applied; daily views do not preload hourly data.
+
 **Tabs:**
 - **Dashboard** — headline prices, regional chart, forecourt category chart, cheapest brands, rural/urban price comparison, most/least expensive local authorities
 - **Map** — every station on a Leaflet map, colour-coded by price, with admin district and rural/urban classification in popups; CSV/JSON download (editor+)
-- **Trends** — average price line chart with hourly granularity for ≤30 days and daily for longer ranges, filterable by region, country, and rural/urban classification; CSV/JSON download (editor+)
+- **Trends** — daily average price line chart with hourly detail on demand, filterable by region, country, and rural/urban classification; CSV/JSON download (editor+)
 - **Search** — query builder with postcode, brand, city, price range, category, local authority, constituency, country, and rural/urban filters; CSV/JSON download (editor+); click station names to view individual price trends; "View trend for selected/all results" for aggregate trend charting
 - **Anomalies** — anomaly-flagged price records and statistical outliers excluded from current-snapshot averages (with IQR bounds for transparency); price correction tool (editor+)
 - **Data** — normalisation report, brand aliases, brand categories, station overrides, postcode issues (stations with unrecognised postcodes + coordinate fix tool), postcode overrides (per-station postcode corrections with postcodes.io enrichment), and materialised view refresh (editor+)

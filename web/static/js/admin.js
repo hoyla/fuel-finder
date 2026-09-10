@@ -51,38 +51,43 @@ function switchAnomalySection(skipLoad) {
     const active = document.getElementById('anomaly-section').value;
     document.getElementById('anomaly-flagged').style.display = active === 'flagged' ? '' : 'none';
     document.getElementById('anomaly-outliers').style.display = active === 'outliers' ? '' : 'none';
-    if (active === 'outliers' && !document.getElementById('outlier-fuel').options.length) {
-        return initOutlierFuelSelect(skipLoad);
-    }
+    if (active === 'outliers' && !skipLoad) loadOutliers();
 }
 
 async function initOutlierFuelSelect(skipLoad) {
-    const fuelTypes = await apiFetch('/fuel-types');
-    const sel = document.getElementById('outlier-fuel');
-    sel.innerHTML = '<option value="">All fuel types</option>';
-    fuelTypes.forEach(ft => {
-        const o = document.createElement('option');
-        o.value = ft.fuel_type_code;
-        o.textContent = ft.fuel_name;
-        sel.appendChild(o);
-    });
+    if (!fuelTypes.length) await loadFuelTypes();
     if (!skipLoad) loadOutliers();
 }
 
-async function loadPriceDistribution(fuel) {
+let distributionRequest = 0;
+async function loadPriceDistribution(selection) {
     const wrap = document.getElementById('outlier-chart-wrap');
-    if (!fuel) {
-        wrap.style.display = 'none';
-        if (charts['chart-price-dist']) { charts['chart-price-dist'].destroy(); delete charts['chart-price-dist']; }
-        return;
+    const request = ++distributionRequest;
+    for (const id of Object.keys(charts).filter(key => key.startsWith('chart-price-dist'))) {
+        charts[id].destroy();
+        delete charts[id];
     }
+    wrap.replaceChildren();
+    wrap.style.display = '';
+    await Promise.all(selectedFuelTypes(selection).map(async type => {
+        const title = document.createElement('h4');
+        title.textContent = type.fuel_name;
+        const canvas = document.createElement('canvas');
+        canvas.id = 'chart-price-dist-' + type.fuel_type_code;
+        wrap.append(title, canvas);
+        await renderFuelDistribution(type.fuel_type_code, canvas, request);
+    }));
+}
+
+async function renderFuelDistribution(fuel, canvas, request) {
     let data;
     try {
         data = await apiFetch(`/admin/price-distribution?fuel_type=${encodeURIComponent(fuel)}`);
     } catch (e) {
-        wrap.style.display = 'none';
+        canvas.replaceWith(document.createTextNode('Distribution unavailable.'));
         return;
     }
+    if (request !== distributionRequest || !canvas.isConnected) return;
 
     const labels = data.bins.map(b => b.bin_low.toFixed(1) + 'p');
     const cleanData = data.bins.map(b => b.clean);
@@ -116,9 +121,8 @@ async function loadPriceDistribution(fuel) {
         }
     };
 
-    if (charts['chart-price-dist']) charts['chart-price-dist'].destroy();
-    const ctx = document.getElementById('chart-price-dist').getContext('2d');
-    charts['chart-price-dist'] = new Chart(ctx, {
+    const ctx = canvas.getContext('2d');
+    charts[canvas.id] = new Chart(ctx, {
         type: 'bar',
         data: {
             labels,
@@ -151,17 +155,19 @@ async function loadPriceDistribution(fuel) {
         },
         plugins: [fencePlugin]
     });
-    wrap.style.display = '';
 }
 
+let outlierRequest = 0;
 async function loadOutliers(offset = 0) {
-    const fuel = document.getElementById('outlier-fuel').value;
+    const request = ++outlierRequest;
+    const fuel = getFuelSelection('outlier-fuel');
     if (offset === 0) loadPriceDistribution(fuel);
     let url = `/outliers?limit=50&offset=${offset}`;
     if (fuel) url += `&fuel_type=${encodeURIComponent(fuel)}`;
     if (outlierSort.col) url += `&sort=${outlierSort.col}&order=${outlierSort.dir}`;
     const data = await apiFetch(url);
 
+    if (request !== outlierRequest) return;
     // Show IQR bounds summary
     const boundsDiv = document.getElementById('outlier-bounds');
     const boundsArr = Object.values(data.bounds);

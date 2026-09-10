@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir fastapi uvicorn psycopg2-binary PyJWT cryptograph
 
 COPY web/auth.py .
 COPY web/api.py .
+COPY web/price_history.py .
 COPY web/static/ static/
 COPY migrate.py .
 COPY migrations/ migrations/

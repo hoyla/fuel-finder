@@ -8,7 +8,6 @@ async function startApp() {
     await loadRegions();
     loadDistricts();
     loadConstituencies();
-    await loadDashboard();
     applyInitialHash();
 }
 

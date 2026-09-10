@@ -23,6 +23,71 @@ Read-only endpoints are accessible to all authenticated users.
 
 ---
 
+## Reconstructed History Rollout
+
+The contract below is enabled by `RECONSTRUCTED_HISTORY_ENABLED=true`. The flag
+defaults to false; the local Docker override enables it. `/auth/config` includes
+`reconstructed_history` so clients can discover the active behaviour. When false,
+the legacy endpoint behaviour documented below remains in effect.
+
+- `/api/prices/history` reconstructs latest known prices at UTC hour starts.
+  Daily values average eligible hours within each station, then average stations
+  equally. Prices carry between changes; a flagged latest record creates a gap.
+  Corrections use `COALESCE(corrected_price, original_price)`; historical eligibility
+  remains `fuel_prices.anomaly_flags IS NULL`, including for corrected records.
+- Completed station-days read exact sums/counts from the separate
+  `reconstructed_daily_prices` cache (migration 022). Invalidated dates and today's
+  partial day are calculated live. Triggers invalidate on raw/flag/correction
+  changes; scrape and correction maintenance call `refresh_reconstructed_daily()`.
+  This optimization changes neither weighting, eligibility nor Hampel behaviour.
+- Hampel remains unchanged: 7 populated daily points or 49 hourly points, median
+  replacement beyond `3 * 1.4826 * MAD`, no replacement at zero MAD. Null buckets
+  remain null. Rounding to 0.1p occurs before filtering. Range-edge behaviour is
+  unchanged and values can depend on the requested window.
+- New query parameters: `age_limit=none|30|14|7|today` (default `none`),
+  `include_sensitivity=false`, `min_price`, `max_price`. All station/geography
+  filters intersect, including explicit node IDs. Prices in min/max filters are
+  current prices used to select stations, not historical price bounds.
+- Response retains `{granularity, data}`. Each data row adds `age_price`,
+  `included_stations`, `excluded_stations`, `reference_hours`, `included_hours`,
+  `unsmoothed_avg_price`, `unsmoothed_age_price`, `hampel_avg_price_changed`, and
+  `hampel_age_price_changed`. `avg_price` is the no-age-limit series; `age_price`
+  uses the selected threshold. Both receive the same Hampel policy independently.
+  Station counts do not change when Hampel replaces an aggregate value.
+- With `include_sensitivity=true`, `groups` contains per-bucket region/forecourt
+  coverage and unsmoothed group means. National series are in `data`. No current
+  classification is presented as historical membership. Null prices are not zero.
+- Response metadata includes `method=last_reported_station_weighted`,
+  `smoothing=hampel`, `age_limit`, `range_start`, `range_end_exclusive`,
+  `range_capped`, and `classification_basis=current_snapshot`.
+- Dates are `YYYY-MM-DD`, inclusive in UTC, and future/reversed/malformed dates
+  return 422. Requested ranges are capped at 90 inclusive calendar days for
+  read-only and 365 for editor/admin. End-only starts at the filtered cohort's
+  first stored observation within the permitted range (the UI's All data option);
+  otherwise no dates defaults to 30 days. Today is partial through request time.
+  Automatic granularity is hourly below 30 inclusive dates and daily otherwise.
+- Single-station history uses the same reconstruction but does not apply Hampel,
+  matching its previous smoothing policy. It defaults to hourly and accepts the
+  same `age_limit` and `include_sensitivity` options. Raw records and
+  editor-only exports remain individual stored observations, not synthetic data.
+- Historical export station/date filters use the same selection and range caps
+  as reconstruction while retaining anomalous raw reports. Age limits are not
+  applied to raw exports; use the paired history response for sensitivity values.
+
+### `GET /api/prices/current/sensitivity`
+
+Requires authentication and the rollout flag (404 when disabled). Parameters:
+`fuel_type` (default E10) and `age_limit` (default 30, same options as history).
+Returns `{as_of, fuel_type, age_limit, data, groups}`. `data` includes `avg_price`,
+`age_price`, `stations`, `included_stations`, and `excluded_stations`; `groups`
+provides region/forecourt breakdowns. The reference population is exactly the
+Dashboard's `NOT temporary_closure AND NOT price_is_outlier` population. IQR fences
+and anomaly exclusions are not recalculated after applying the age limit. No
+Hampel or historical averaging is applied. Age is measured from `observed_at` at
+request time; `today` starts at UTC midnight. This is not source confirmation age.
+
+---
+
 ## Health check
 
 ### `GET /health`
@@ -217,6 +282,10 @@ Anomaly-flagged prices are excluded. A Hampel filter (rolling median ± 3×MAD) 
 
 Export raw individual price records matching the trend filters as a streaming download.
 Accepts the same filter parameters as `/api/prices/history`.
+Unlike the aggregate endpoint, `fuel_type` is required and accepts a code or a
+comma-separated subset (for example `E10,B7_STANDARD`). To export every fuel,
+pass all codes returned by `/api/fuel-types`. Each record retains its fuel code;
+current-price filters match the station and fuel together.
 **Requires editor or admin role.**
 
 | Parameter | Type | Default | Description |
@@ -246,7 +315,7 @@ Flexible search/filter endpoint with pagination.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `fuel_type` | string | — | Fuel type code. Omit to search across all fuel types |
+| `fuel_type` | string | — | Fuel code or comma-separated subset. Omit for all fuels |
 | `postcode` | string | — | Postcode prefix filter (e.g. `SW1`, `M`) |
 | `station` | string | — | Trading name substring filter |
 | `brand` | string | — | Brand name substring filter |
@@ -273,7 +342,7 @@ Flexible search/filter endpoint with pagination.
     {
       "node_id": "...", "trading_name": "...", "brand_name": "...",
       "city": "...", "county": "...", "postcode": "...", "region": "...",
-      "price": 149.9, "fuel_name": "Unleaded (E10)", "fuel_category": "Petrol",
+      "price": 149.9, "fuel_type": "E10", "fuel_name": "Unleaded (E10)", "fuel_category": "Petrol",
       "forecourt_type": "Supermarket",
       "admin_district": "...", "parliamentary_constituency": "...", "rural_urban": "...",
       "latitude": 51.5, "longitude": -0.1,
@@ -400,7 +469,7 @@ Prices excluded as statistical outliers from the current snapshot, with IQR boun
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `fuel_type` | string | — | Optional fuel type filter |
+| `fuel_type` | string | — | Fuel code or comma-separated subset; omit for all fuels |
 | `limit` | int | `100` | Max records (1–500) |
 
 **Response:**
@@ -453,7 +522,7 @@ Raw individual price records for a station, with any corrections and computed ef
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `fuel_type` | string | — | Optional fuel type filter |
+| `fuel_type` | string | — | Fuel code or comma-separated subset; omit for all fuels |
 | `limit` | int | `500` | Max records (1–5000) |
 
 **Response:**

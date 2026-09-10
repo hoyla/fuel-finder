@@ -30,6 +30,20 @@
 <main>
     <h2>API Reference</h2>
 
+    <div class="note info">
+        <strong>Reconstructed-history rollout:</strong> When <code>/auth/config</code> returns
+        <code>reconstructed_history: true</code>, history uses equal station weights with
+        last-known prices carried between reports. UTC hourly samples form daily station
+        averages. Hampel remains on aggregate series, not individual station histories.
+        <code>age_limit=none|30|14|7|today</code> and <code>include_sensitivity=true</code>
+        return the no-limit <code>avg_price</code> and paired <code>age_price</code>, with
+        coverage, <code>unsmoothed_avg_price</code>, <code>unsmoothed_age_price</code> and
+        <code>hampel_*_changed</code> fields. Date ranges are capped at 90/365 inclusive UTC
+        dates by role. <code>GET /api/prices/current/sensitivity</code> checks the current
+        Dashboard population with existing IQR exclusions intact; it does not use Hampel.
+        Age refers to the change record, not confirmation. This rollout is off by default.
+    </div>
+
     <p>All endpoints return JSON. Base URL: <code>/api/</code></p>
     <p><strong>Authentication</strong> (checked in order): <strong>1.</strong> API key (<code>X-Api-Key</code> header) &mdash; grants admin access. <strong>2.</strong> Cognito JWT (<code>Authorization: Bearer &lt;id_token&gt;</code>) &mdash; role determined by group membership. <strong>3.</strong> No auth when neither is configured (local dev default).</p>
 
@@ -194,6 +208,7 @@
     <div class="endpoint">
         <div class="method-path"><span class="method get">GET</span> /api/prices/history/export</div>
         <div class="desc">Export raw individual price records matching the trend filters as a streaming download. <strong>Requires editor or admin role.</strong> Accepts the same filter parameters as <code>/api/prices/history</code>.</div>
+        <p><code>fuel_type</code> is required and accepts one code or a comma-separated subset, such as <code>E10,B7_STANDARD</code>. Pass all codes from <code>/api/fuel-types</code> for an all-fuel export. Each record retains its fuel code. Aggregate history endpoints accept one fuel per request.</p>
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
@@ -226,7 +241,7 @@
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Fuel type code. Omit to search across all fuel types</td></tr>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Fuel code or comma-separated subset. Omit for all fuels.</td></tr>
                 <tr><td><code>postcode</code></td><td>string</td><td>&mdash;</td><td>Postcode prefix (e.g. SW1)</td></tr>
                 <tr><td><code>station</code></td><td>string</td><td>&mdash;</td><td>Trading name substring</td></tr>
                 <tr><td><code>brand</code></td><td>string</td><td>&mdash;</td><td>Brand substring</td></tr>
@@ -299,7 +314,7 @@
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Optional fuel type filter</td></tr>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Fuel code or comma-separated subset. Omit for all fuels.</td></tr>
                 <tr><td><code>limit</code></td><td>int</td><td>100</td><td>Max records (1&ndash;500)</td></tr>
             </tbody>
         </table>
@@ -313,7 +328,7 @@
         <table>
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Optional fuel type filter</td></tr>
+                <tr><td><code>fuel_type</code></td><td>string</td><td>&mdash;</td><td>Fuel code or comma-separated subset. Omit for all fuels.</td></tr>
                 <tr><td><code>limit</code></td><td>int</td><td>500</td><td>Max records (1&ndash;5000)</td></tr>
             </tbody>
         </table>

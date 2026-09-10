@@ -41,16 +41,22 @@ function applyPanelSection(panel, section) {
 
 function switchTab(panelName, pushState) {
     if (pushState === undefined) pushState = true;
+    if (panelName === 'trend-comparison' && document.getElementById('trend-comparison-tab').hidden) panelName = 'trends';
+    document.body.classList.toggle('comparison-active', panelName === 'trend-comparison');
     tabs.forEach(x => x.classList.remove('active'));
     panels.forEach(x => x.classList.remove('active'));
     const tab = document.querySelector(`.tab[data-panel="${panelName}"]`);
     if (tab) tab.classList.add('active');
+    if (panelName === 'trend-comparison') tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     document.getElementById('panel-' + panelName).classList.add('active');
+    if (panelName === 'station-trend') restoreStationTrend();
 
     if (!lazyLoaded[panelName]) {
         lazyLoaded[panelName] = true;
+        if (panelName === 'dashboard') loadDashboard();
         if (panelName === 'map') initMap();
         if (panelName === 'trends') loadTrends();
+        if (panelName === 'trend-comparison') loadTrendComparison();
         if (panelName === 'anomalies') loadAnomalies();
         if (panelName === 'logs') { loadScrapeHistory(); loadCorrectionsLog(); }
         if (panelName === 'data') switchDataSection();
@@ -83,8 +89,9 @@ function applyInitialHash() {
     if (hash.panel && document.getElementById('panel-' + hash.panel)) {
         applyPanelSection(hash.panel, hash.section);
         // Replace state so back button works from the initial tab
-        history.replaceState({ panel: hash.panel, section: hash.section || null }, '', location.hash || ('#' + hash.panel));
+        history.replaceState({ ...history.state, panel: hash.panel, section: hash.section || null }, '', location.hash || ('#' + hash.panel));
     } else {
+        switchTab('dashboard', false);
         history.replaceState({ panel: 'dashboard' }, '', '#dashboard');
     }
 }

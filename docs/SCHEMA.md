@@ -178,7 +178,38 @@ Pre-aggregated daily price summaries per station per fuel type. Avoids repeated 
 
 **Indexes:** `(fuel_type, price_date)` — covers aggregate trend queries
 
-Used by `/prices/history` and `/prices/station/{id}/history` when granularity is daily. Hourly queries still read directly from `fuel_prices`.
+Used by legacy history endpoints when the reconstructed-history rollout is disabled.
+
+### `reconstructed_daily_prices`
+
+Migration 022 adds a separate cache for station-weighted history. Each row is a
+station/fuel/completed-UTC-day, including unchanged carried prices. Original source
+records are not modified. The composite primary key is `(fuel_type, price_date, node_id)`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `node_id` | `TEXT` | Station identifier |
+| `fuel_type` | `TEXT` | Fuel code |
+| `price_date` | `DATE` | UTC day |
+| `price_sums` | `NUMERIC[]` | Exact sum of eligible hour-start prices for each age policy |
+| `hour_counts` | `SMALLINT[]` | Eligible sampled hours for each policy, 0-24 |
+
+Array order is **no limit, 30 days, 14 days, 7 days, recorded that day**. Divide each
+sum by its count to get a station-day mean; zero hours means no eligible price.
+Aggregate stations equally, round, then apply Hampel at query time, as before.
+
+### `reconstructed_daily_state`
+
+Single-row validity marker: `valid_from` inclusive and `valid_until` exclusive,
+both `DATE`. Null bounds mean no cache is ready. Dates outside that interval use
+live reconstruction, including today's partial day.
+
+`refresh_reconstructed_daily()` rebuilds from the first invalid day through the
+last completed UTC day. It is serialized by an advisory lock. Price and correction
+triggers invalidate affected days transactionally, including adjacent anomaly
+updates; a failed refresh never marks incomplete output valid. The scraper and
+correction endpoints run refresh maintenance. Historic imports can trigger a
+larger rebuild. Current station geography/classification is not cached here.
 
 ### `price_corrections`
 

@@ -1,0 +1,21 @@
+name: fuel-finder-local
+
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:15432:5432"
+
+  web:
+    ports: !override
+      - "127.0.0.1:18080:8000"
+    environment:
+      ENVIRONMENT: local
+      AUTH_ENABLED: "false"
+      RECONSTRUCTED_HISTORY_ENABLED: "true"
+      CORS_ORIGINS: http://localhost:18080,http://127.0.0.1:18080
+
+  scraper:
+    profiles:
+      - scrape
+    environment:
+      SKIP_S3: "true"

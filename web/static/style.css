@@ -87,6 +87,9 @@
         }
         .chart-container h3 { font-size: 1rem; margin-bottom: 0.75rem; }
         .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+        .dashboard-trend-container { display: flex; flex-direction: column; min-width: 0; }
+        .dashboard-trend-frame { position: relative; flex: 1 0 auto; aspect-ratio: 2 / 1; }
+        .dashboard-trend-frame canvas { position: absolute; inset: 0; height: 100% !important; }
         canvas { width: 100% !important; }
 
         /* Controls */
@@ -101,6 +104,9 @@
 
         /* Tom Select overrides */
         .ts-wrapper { min-width: 120px; }
+        .control:has(select[data-fuel-select]) { min-width: 190px; max-width: 100%; flex: 0 1 290px; }
+        .control:has(select[data-fuel-select]) .ts-wrapper { width: 100%; }
+        .control:has(select[data-fuel-select]) .ts-control { min-height: 34px; flex-wrap: wrap; }
         .ts-wrapper .ts-control {
             font-size: 0.85rem; border: 1px solid var(--border);
             border-radius: 5px; background: var(--card-bg); padding: 0.2rem 0.4rem;
@@ -301,6 +307,93 @@
                 flex-basis: 100%;
                 order: 3;
             }
+        }
+
+        .comparison-tab { font-family: inherit; background: none; border: 0; border-bottom: 3px solid transparent; }
+        .comparison-tab[hidden], #panel-trend-comparison [hidden] { display: none !important; }
+        .comparison-heading { display: flex; gap: 1rem; justify-content: space-between; align-items: end; margin-bottom: 0.75rem; }
+        .comparison-heading h2 { font-size: 1.35rem; line-height: 1.25; }
+        .comparison-eyebrow { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+        .comparison-meta { color: var(--muted); font-size: 0.82rem; line-height: 1.5; }
+        .comparison-caveat { border-left: 3px solid #b87808; padding: 0.6rem 0.85rem; margin: 0 0 1rem; background: #fff9e9; font-size: 0.85rem; }
+        #comparison-status { font-size: 0.85rem; color: var(--muted); }
+        #comparison-status:not(:empty) { margin-bottom: 0.75rem; }
+        .comparison-controls { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; margin: 1rem 0; min-width: 0; }
+        .comparison-controls .control { min-width: 0; }
+        .comparison-controls select, .comparison-controls input { min-height: 38px; max-width: 100%; }
+        .comparison-actions { display: flex; gap: 0.4rem; margin-left: auto; }
+        .comparison-actions button { display: inline-flex; justify-content: center; align-items: center; gap: 0.4rem; height: 38px; min-width: 38px; padding: 0 0.6rem; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--card-bg); cursor: pointer; }
+        .comparison-actions button:disabled { opacity: 0.4; cursor: default; }
+        .comparison-group-actions { margin-top: 0.75rem; }
+        .comparison-table tr[aria-current="true"] th, .comparison-table tr[aria-current="true"] td { background: #e8f3f1; font-weight: 600; }
+        .comparison-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 1rem 0; gap: 1.5rem; }
+        .comparison-metrics dt { color: var(--muted); font-size: 0.8rem; }
+        .comparison-metrics dd { font-size: 1.6rem; font-variant-numeric: tabular-nums; font-weight: 600; margin: 0.25rem 0 0; }
+        .comparison-section { min-width: 0; padding: 1.25rem 0; border-bottom: 1px solid var(--border); }
+        .comparison-section h3, .comparison-section summary { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+        .comparison-section summary { cursor: pointer; }
+        .comparison-section details, .comparison-section p { font-size: 0.85rem; }
+        .comparison-section code { overflow-wrap: anywhere; }
+        .comparison-chart { position: relative; height: 260px; width: 100%; min-width: 0; margin-top: 0.75rem; }
+        .comparison-chart-price { height: 360px; }
+        .comparison-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+        .comparison-table { overflow-x: auto; margin-top: 0.75rem; max-width: 100%; }
+        .comparison-table table { min-width: 720px; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+        .comparison-table td { text-align: right; }
+        .comparison-table tbody th { font-weight: 400; border-bottom: 1px solid var(--border); white-space: nowrap; }
+        .comparison-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+        body.comparison-active header { flex-wrap: wrap; }
+        body.comparison-active .tabs { overflow-x: auto; }
+        body.comparison-active .tab { white-space: nowrap; flex-shrink: 0; }
+        #panel-trend-comparison * { letter-spacing: 0; }
+        @media (max-width: 768px) {
+            .comparison-heading { display: block; }
+            .comparison-heading .comparison-meta { margin-top: 0.5rem; }
+            .comparison-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+            .comparison-chart-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+            .comparison-chart-price { height: 320px; }
+            .comparison-controls .control { flex: 1 1 140px; }
+            .comparison-controls select, .comparison-controls input { width: 100%; }
+            .comparison-controls .comparison-baseline { flex-basis: 100%; }
+            .comparison-actions { margin-left: 0; }
+            body.comparison-active header { padding: 0.75rem 1rem; }
+            body.comparison-active header h1 { font-size: 1.15rem; max-width: 100%; }
+        }
+
+        .sensitivity-disclosure[hidden] { display: none !important; }
+        [data-history-controls][hidden], .history-analysis[hidden] { display: none !important; }
+        .history-sensitivity-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 0.75rem; }
+        .history-compare { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 34px; font-size: 0.8rem; }
+        .filter-pending { min-width: 9rem; min-height: 1.3rem; font-size: 0.8rem; color: #8a4b00; align-self: center; }
+        button.primary:disabled { opacity: 0.5; cursor: default; }
+        .history-analysis { padding: 0.25rem 0 1rem; font-size: 0.85rem; }
+        .history-analysis h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+        .history-analysis [data-sensitivity-body] { border: 0; padding: 0; }
+        body.reconstructed-history .legacy-history-note { display: none; }
+        body.reconstructed-history .control input[readonly] { color: var(--muted); background: var(--bg); }
+        .sensitivity-disclosure { margin: 0.6rem 0 1rem; font-size: 0.85rem; }
+        .sensitivity-disclosure > summary { width: fit-content; margin-left: auto; cursor: pointer; color: var(--accent); font-weight: 600; }
+        [data-sensitivity="dashboard"] > summary { margin-left: 0; }
+        .sensitivity-disclosure[open] > summary { margin-bottom: 0.75rem; }
+        [data-sensitivity-body] { border-top: 1px solid var(--border); padding-top: 0.75rem; }
+        .sensitivity-controls { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+        .sensitivity-controls button { padding: 0.4rem 0.65rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+        .sensitivity-caveat { color: var(--muted); margin: 0.6rem 0; font-size: 0.8rem; overflow-wrap: anywhere; }
+        .sensitivity-breakdown { margin-top: 0.75rem; }
+        .sensitivity-breakdown > summary { cursor: pointer; }
+        .sensitivity-breakdown h4 { margin-top: 0.75rem; }
+        .sensitivity-table { max-width: 100%; overflow-x: auto; margin: 0.5rem 0; }
+        .sensitivity-table table { min-width: 650px; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+        .sensitivity-table td { text-align: right; }
+        body.reconstructed-history .history-chart-frame { position: relative; width: 100%; aspect-ratio: 2 / 1; min-height: 360px; min-width: 0; }
+        body.reconstructed-history header { flex-wrap: wrap; }
+        body.reconstructed-history .tabs { overflow-x: auto; }
+        body.reconstructed-history .tab { flex-shrink: 0; white-space: nowrap; }
+        @media (max-width: 768px) {
+            body.reconstructed-history header { padding: 0.75rem 1rem; }
+            body.reconstructed-history header h1 { font-size: 1.15rem; }
+            body.reconstructed-history .history-chart-frame { min-height: 420px; }
+            .sensitivity-controls select { max-width: 100%; }
         }
 
         /* Price editor */

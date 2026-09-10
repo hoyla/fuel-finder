@@ -64,6 +64,7 @@
     <div class="tab active" data-panel="dashboard">Dashboard</div>
     <div class="tab" data-panel="map">Map</div>
     <div class="tab" data-panel="trends">Trends</div>
+    <button class="tab comparison-tab" id="trend-comparison-tab" data-panel="trend-comparison" type="button" hidden>Compare trends</button>
     <div class="tab" data-panel="search">Search</div>
     <div class="tab" data-panel="anomalies">Anomalies</div>
     <div class="tab" data-panel="data">Data Cleanup</div>
@@ -81,14 +82,16 @@
         </p>
         <div class="controls" style="margin-bottom:1rem;">
             <div class="control">
-                <label>Fuel type</label>
-                <select id="dashboard-fuel" onchange="loadDashboardCharts()"></select>
+                <label for="dashboard-fuel">Fuel type</label>
+                <select id="dashboard-fuel" data-fuel-select data-default-fuel="E10" onchange="loadDashboardCharts()"></select>
             </div>
         </div>
         <div class="chart-row">
-            <div class="chart-container">
+            <div class="chart-container dashboard-trend-container">
                 <h3 id="heading-trend">Price trend</h3>
-                <canvas id="chart-dashboard-trend"></canvas>
+                <div class="dashboard-trend-frame">
+                    <canvas id="chart-dashboard-trend"></canvas>
+                </div>
                 <p style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends.</p>
             </div>
             <div class="chart-container">
@@ -127,14 +130,18 @@
                 <canvas id="chart-district-cheap"></canvas>
             </div>
         </div>
+        <details class="sensitivity-disclosure" data-sensitivity="dashboard" hidden>
+            <summary>Data coverage and sensitivity</summary>
+            <div data-sensitivity-body></div>
+        </details>
     </div>
 
     <!-- ============ MAP ============ -->
     <div class="panel" id="panel-map">
         <div class="controls">
             <div class="control">
-                <label>Fuel type</label>
-                <select id="map-fuel"></select>
+                <label for="map-fuel">Fuel type</label>
+                <select id="map-fuel" data-fuel-select data-default-fuel="E10" multiple placeholder="All fuel types"></select>
             </div>
             <div class="control">
                 <label title="From postcodes.io lookup where available, falling back to our postcode_regions seed table">Region</label>
@@ -178,8 +185,8 @@
         <div class="controls" style="display:block;">
             <div class="filter-group">
             <div class="control">
-                <label>Fuel type</label>
-                <select id="trend-fuel"></select>
+                <label for="trend-fuel">Fuel type</label>
+                <select id="trend-fuel" data-fuel-select multiple placeholder="All fuel types"></select>
             </div>
             <div class="control">
                 <label title="From postcodes.io lookup where available, falling back to the GOV.UK API 'country' field">Country</label>
@@ -238,12 +245,13 @@
             <div class="control">
                 <label>Detail</label>
                 <select id="trend-granularity">
-                    <option value="auto">Auto</option>
-                    <option value="hourly">Every scrape</option>
                     <option value="daily">Daily average</option>
+                    <option value="hourly">Hourly</option>
                 </select>
             </div>
-            <button class="primary" onclick="loadTrends()">Update</button>
+            <div class="history-sensitivity-controls" data-history-controls="trend" hidden></div>
+            <button class="primary" id="trend-apply-filters" onclick="loadTrends()">Apply filters</button>
+            <span class="filter-pending" id="trend-filter-status" role="status" aria-live="polite"></span>
             <div class="download-btns" id="trend-download-btns" style="align-items:center;">
                 <span style="font-size:0.8rem;color:var(--muted);">Download raw data for the selected filters:</span>
                 <button onclick="downloadTrendData('csv')" disabled id="trend-dl-csv">⬇ CSV</button>
@@ -254,9 +262,136 @@
         </div>
         <div class="chart-container">
             <h3 id="trend-heading">Average price</h3>
-            <canvas id="chart-trend"></canvas>
+            <div class="history-chart-frame"><canvas id="chart-trend"></canvas></div>
             <p id="trend-granularity-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
-            <p style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends. Downloads include all raw data.</p>
+            <p class="legacy-history-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">Anomaly-flagged prices are excluded. A <a href="/docs/about#outlier-methodology" style="color:var(--accent);">Hampel filter</a> (rolling median ± 3×MAD) smooths remaining outlier averages without distorting trends. Downloads include all raw data.</p>
+        </div>
+        <section class="history-analysis" data-sensitivity="trend" hidden aria-label="Trend coverage and sensitivity">
+            <h3>Coverage and sensitivity</h3>
+            <div data-sensitivity-body></div>
+        </section>
+    </div>
+
+    <div class="panel" id="panel-trend-comparison">
+        <div class="comparison-heading">
+            <div>
+                <p class="comparison-eyebrow">Local prototype / frozen snapshot</p>
+                <h2>Historical price comparison</h2>
+            </div>
+            <p id="comparison-snapshot" class="comparison-meta"></p>
+        </div>
+        <p class="comparison-caveat">Last-known prices, not independently confirmed pump prices. Age limits refer to stored price-change records, not the last confirmation. No closure cutoff; the audit's correction and anomaly rules are unchanged.</p>
+        <p id="comparison-status" role="status" aria-live="polite">Loading comparison...</p>
+        <button id="comparison-retry" type="button" class="primary" data-comparison-action="retry" hidden>Retry</button>
+        <fieldset id="comparison-controls" class="comparison-controls" disabled>
+            <legend class="comparison-sr-only">Comparison filters</legend>
+            <div class="control">
+                <label for="comparison-fuel">Fuel</label>
+                <select id="comparison-fuel" data-comparison-control data-fuel-select data-fuel-codes="E10,B7_STANDARD" data-default-fuel="E10" multiple placeholder="All audited fuel types"></select>
+            </div>
+            <div class="control">
+                <label for="comparison-from">From (UTC)</label>
+                <input type="date" id="comparison-from" data-comparison-control required>
+            </div>
+            <div class="control">
+                <label for="comparison-to">To (UTC, inclusive)</label>
+                <input type="date" id="comparison-to" data-comparison-control required>
+            </div>
+            <div class="control comparison-baseline">
+                <label for="comparison-baseline">Price comparison baseline</label>
+                <select id="comparison-baseline" data-comparison-control>
+                    <option value="no_age_limit">No age limit</option>
+                    <option value="event_weighted">Change reports (unsmoothed)</option>
+                    <option value="api_displayed">Existing chart (Hampel-filtered)</option>
+                    <option value="equal_reporting_station">Equal-weight reporting stations</option>
+                </select>
+            </div>
+            <div class="control">
+                <label for="comparison-age-limit">Change-record age limit</label>
+                <select id="comparison-age-limit" data-comparison-control>
+                    <option value="none">No age limit</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="7">Last 7 days</option>
+                    <option value="today">Recorded today</option>
+                </select>
+            </div>
+            <div class="comparison-actions">
+                <div class="control"><label for="comparison-group">Breakdown</label><select id="comparison-group" data-comparison-control><option value="region">Region</option><option value="forecourt_type">Forecourt type</option></select></div>
+                <button type="button" data-comparison-action="reset">Full audit range</button>
+                <button type="button" data-comparison-action="copy" title="Copy comparison link" aria-label="Copy comparison link">
+                    <img src="https://cdn.jsdelivr.net/npm/lucide-static@0.468.0/icons/link.svg" width="18" height="18" alt="">
+                </button>
+                <button type="button" id="comparison-download" data-comparison-action="download" title="Download daily comparison CSV" aria-label="Download daily comparison CSV">
+                    <img src="https://cdn.jsdelivr.net/npm/lucide-static@0.468.0/icons/download.svg" width="18" height="18" alt=""><span>CSV</span>
+                </button>
+            </div>
+        </fieldset>
+        <p id="comparison-age-note" class="comparison-meta"></p>
+        <div id="comparison-results" hidden>
+            <dl class="comparison-metrics">
+            <div><dt>Mean selected price</dt><dd id="comparison-price"></dd></div>
+            <div><dt>Mean difference vs no age limit</dt><dd id="comparison-age-difference"></dd></div>
+            <div><dt>Fully excluded stations / day</dt><dd id="comparison-excluded"></dd></div>
+            <div><dt>Eligible station-hours removed</dt><dd id="comparison-removed-hours"></dd></div>
+                <div><dt>Mean absolute gap</dt><dd id="comparison-gap"></dd></div>
+                <div><dt>Reporting stations / day</dt><dd id="comparison-reporters"></dd></div>
+            <div><dt>Included stations / day</dt><dd id="comparison-stations"></dd></div>
+                <div><dt>Sampled hours: record age &gt;30 days</dt><dd id="comparison-age"></dd></div>
+            </dl>
+            <section class="comparison-section">
+                <h3>Daily average price</h3>
+                <p class="comparison-meta" id="comparison-price-note"></p>
+                <div class="comparison-chart comparison-chart-price"><canvas id="chart-comparison-price" role="img" aria-label="Comparison of daily price averages; exact values in the daily data table below"></canvas></div>
+            </section>
+            <div class="comparison-chart-grid">
+                <section class="comparison-section">
+                    <h3>Station coverage</h3>
+                    <p class="comparison-meta">No-limit and age-filtered stations with at least one eligible hourly price.</p>
+                    <div class="comparison-chart"><canvas id="chart-comparison-coverage" role="img" aria-label="Daily counts of reporting and reconstructed stations"></canvas></div>
+                </section>
+                <section class="comparison-section">
+                    <h3>Age of the underlying change record</h3>
+                    <p class="comparison-meta">Share of eligible station-hours. This does not measure when a price was last confirmed.</p>
+                    <div class="comparison-chart"><canvas id="chart-comparison-age" role="img" aria-label="Share of hourly prices based on records up to 30 days, over 30 to 90 days and over 90 days old"></canvas></div>
+                </section>
+            </div>
+            <section class="comparison-section">
+                <h3>All age limits</h3>
+                <p class="comparison-meta">Selected date range. Station counts are averages per day. First-to-last movement is the difference between the first and last daily values, not a full-period return.</p>
+                <div class="comparison-table" tabindex="0" role="region" aria-label="Age limit sensitivity summary">
+                    <table><thead><tr><th scope="col">Age limit</th><th scope="col">Mean (p/l)</th><th scope="col">Vs no limit (p/l)</th><th scope="col">Included / day</th><th scope="col">Fully excluded / day</th><th scope="col">First to last (p/l)</th><th scope="col">Days without data</th></tr></thead><tbody id="comparison-age-summary"></tbody></table>
+                </div>
+            </section>
+            <section class="comparison-section">
+                <div class="comparison-heading">
+                    <div><h3>Which stations are excluded?</h3><p class="comparison-meta">Snapshot classifications, not historical membership. Rates count station-days; positive differences indicate more exclusion than the national rate. Fully excluded means no hourly price survives the age limit.</p></div>
+                </div>
+                <p class="comparison-meta" id="comparison-group-note"></p>
+                <div class="comparison-table" tabindex="0" role="region" aria-label="Exclusion breakdown by station group">
+                    <table><thead><tr><th scope="col">Group</th><th scope="col">No limit / day</th><th scope="col">Included / day</th><th scope="col">Fully excluded / day</th><th scope="col">Excluded</th><th scope="col">Vs national (pp)</th><th scope="col">Hours removed</th></tr></thead><tbody id="comparison-groups"></tbody></table>
+                </div>
+                <div class="comparison-actions comparison-group-actions"><button type="button" id="comparison-group-download" data-comparison-action="download-groups" aria-label="Download exclusion breakdown CSV" title="Download exclusion breakdown CSV"><img src="https://cdn.jsdelivr.net/npm/lucide-static@0.468.0/icons/download.svg" width="18" height="18" alt=""><span>Breakdown CSV</span></button></div>
+            </section>
+            <section class="comparison-section">
+                <h3>Daily values</h3>
+                <p class="comparison-meta">Gap = selected baseline minus reconstructed price. Positive values mean the baseline is higher.</p>
+                <div class="comparison-table" tabindex="0" role="region" aria-label="Daily comparison data">
+                    <table>
+                        <thead><tr><th scope="col">Date (UTC)</th><th scope="col" id="comparison-baseline-heading">Baseline (p/l)</th><th scope="col">Selected price (p/l)</th><th scope="col">Gap (p/l)</th><th scope="col">Vs no limit (p/l)</th><th scope="col">Included stations</th><th scope="col">Fully excluded</th><th scope="col">Eligible hours</th></tr></thead>
+                        <tbody id="comparison-body"></tbody>
+                    </table>
+                </div>
+            </section>
+            <details class="comparison-section">
+                <summary>Method and provenance</summary>
+                <p>At each UTC hour start, the reconstruction selects the latest report for each station. A flagged latest report creates a gap; it does not fall back to an older clean price. Eligible hours are averaged within each station-day, then stations are weighted equally. No Hampel smoothing or IQR exclusion is applied to this series.</p>
+                <p>Corrections are applied with the audit's original anomaly-flag eligibility rule. Age thresholds apply at each historical UTC hour; exactly 7, 14 or 30 days is included. Recorded today starts at midnight of that historical day, not the current calendar day or the last 24 hours. No cutoff falls back to an older record. Stations with partial coverage retain equal station weight; stations with no eligible hours have no price, rather than a zero price.</p>
+                <p>No age limit still uses only the latest known price per station and hour, not all past records averaged together. Possibly closed stations remain. Region and forecourt labels are from the snapshot's current-price view; unknown metadata stays in an Unknown group. The comparison is national, for two fuels over the fixed audit window. Dates beyond that window are unavailable. No external benchmark is used.</p>
+                <p id="comparison-verification"></p>
+                <p>Source snapshot SHA-256: <code id="comparison-source-hash"></code></p>
+                <p>Audit script SHA-256: <code id="comparison-audit-hash"></code></p>
+            </details>
         </div>
     </div>
 
@@ -266,8 +401,8 @@
             <!-- Fuel & Price -->
             <div class="filter-group">
                 <div class="control">
-                    <label>Fuel type</label>
-                    <select id="search-fuel"></select>
+                    <label for="search-fuel">Fuel type</label>
+                    <select id="search-fuel" data-fuel-select multiple placeholder="All fuel types"></select>
                 </div>
                 <div class="control">
                     <label title="Filters the most recent price for each station (current prices only, not historical)">Min price (p)</label>
@@ -413,8 +548,8 @@
         </div>
         <div class="controls">
             <div class="control">
-                <label>Fuel type</label>
-                <select id="st-fuel"></select>
+                <label for="st-fuel">Fuel type</label>
+                <select id="st-fuel" data-fuel-select multiple placeholder="All fuel types"></select>
             </div>
             <div class="control">
                 <label>Range</label>
@@ -440,12 +575,13 @@
             <div class="control">
                 <label>Detail</label>
                 <select id="st-granularity">
-                    <option value="auto">Auto</option>
-                    <option value="hourly">Every scrape</option>
                     <option value="daily">Daily average</option>
+                    <option value="hourly">Hourly</option>
                 </select>
             </div>
-            <button class="primary" onclick="loadStationTrend()">Update</button>
+            <div class="history-sensitivity-controls" data-history-controls="station" hidden></div>
+            <button class="primary" id="station-apply-filters" onclick="loadStationTrend()">Apply filters</button>
+            <span class="filter-pending" id="station-filter-status" role="status" aria-live="polite"></span>
             <button class="primary" id="st-edit-btn" onclick="openPriceEditor(stationTrendState.nodeId, stationTrendState.title, 'station-trend')" style="background:#505a5f;display:none;">All price records</button>
             <button class="primary" id="st-override-btn" onclick="goToOverrideStation()" style="background:#f47738;display:none;">Override station details</button>
             <div class="download-btns">
@@ -457,10 +593,14 @@
         </div>
         <div class="chart-container">
             <h3 id="st-trend-heading">Price history</h3>
-            <canvas id="chart-station-trend"></canvas>
+            <div class="history-chart-frame"><canvas id="chart-station-trend"></canvas></div>
             <p id="st-granularity-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
             <p id="st-hampel-note" style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;"></p>
         </div>
+        <section class="history-analysis" data-sensitivity="station" hidden aria-label="Station history coverage and sensitivity">
+            <h3>Coverage and sensitivity</h3>
+            <div data-sensitivity-body></div>
+        </section>
     </div>
 
     <!-- ============ ANOMALIES ============ -->
@@ -530,8 +670,8 @@
 
             <div class="controls" style="margin-bottom:1rem;">
                 <div class="control">
-                    <label>Fuel type</label>
-                    <select id="outlier-fuel" onchange="loadOutliers()"></select>
+                    <label for="outlier-fuel">Fuel type</label>
+                    <select id="outlier-fuel" data-fuel-select multiple placeholder="All fuel types" onchange="loadOutliers()"></select>
                 </div>
             </div>
 
@@ -569,8 +709,8 @@
         </div>
         <div class="controls" style="margin-bottom:1rem;">
             <div class="control">
-                <label>Fuel type</label>
-                <select id="pe-fuel" onchange="loadPriceEditorRecords()"></select>
+                <label for="pe-fuel">Fuel type</label>
+                <select id="pe-fuel" data-fuel-select multiple placeholder="All fuel types" onchange="loadPriceEditorRecords()"></select>
             </div>
         </div>
         <p style="font-size:0.8rem;color:var(--muted);margin-bottom:0.75rem;">
@@ -911,6 +1051,7 @@
 <script src="/static/js/trends.js"></script>
 <script src="/static/js/search.js"></script>
 <script src="/static/js/admin.js"></script>
+<script src="/static/js/sensitivity.js"></script>
 <script src="/static/js/app.js"></script>
 
 </body>

@@ -1,0 +1,11 @@
+services:
+  web:
+    environment:
+      TREND_COMPARISON_FILE: /data/trend-comparison.json
+    volumes:
+      - type: bind
+        source: ./.local/trend-age-sensitivity-20260910/results.json
+        target: /data/trend-comparison.json
+        read_only: true
+        bind:
+          create_host_path: false

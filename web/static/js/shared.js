@@ -11,6 +11,7 @@ let _cognitoRegion = null;
 let _cognitoClientId = null;
 let _cognitoSession = null;  // for NEW_PASSWORD_REQUIRED challenge
 let _challengeUsername = null;
+let reconstructedHistoryEnabled = false;
 
 function showEnvBanner(env) {
     if (env && env !== 'production') {
@@ -27,6 +28,9 @@ async function initAuth() {
         const cfg = await r.json();
         _authMode = cfg.mode;
         showEnvBanner(cfg.environment);
+        reconstructedHistoryEnabled = Boolean(cfg.reconstructed_history);
+        document.getElementById('trend-comparison-tab').hidden = !cfg.trend_comparison || reconstructedHistoryEnabled;
+        initialiseSensitivity();
         if (_authMode === 'cognito') {
             _cognitoRegion = cfg.region;
             _cognitoClientId = cfg.clientId;
@@ -253,12 +257,12 @@ const API = '/api';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-async function apiFetch(path) {
-    let r = await fetch(API + path, { headers: authHeaders() });
+async function apiFetch(path, options = {}) {
+    let r = await fetch(API + path, { ...options, headers: { ...authHeaders(), ...options.headers } });
     if (r.status === 401 && _authMode === 'cognito') {
         const refreshed = await refreshTokens();
         if (refreshed) {
-            r = await fetch(API + path, { headers: authHeaders() });
+            r = await fetch(API + path, { ...options, headers: { ...authHeaders(), ...options.headers } });
         }
         if (r.status === 401) { showLogin(); throw new Error('Session expired'); }
     }
@@ -280,7 +284,9 @@ document.addEventListener('click', e => {
     const link = e.target.closest('.station-link');
     if (!link) return;
     e.preventDefault();
-    openStationTrend(link.dataset.node, link.dataset.name, link.dataset.brand, link.dataset.city, link.dataset.postcode, link.dataset.category, link.dataset.rawBrand, link.dataset.lat, link.dataset.lon, link.dataset.motorway, link.dataset.supermarket, link.dataset.region, link.dataset.district);
+    const fuelSelection = link.closest('#map') ? getFuelSelection('map-fuel')
+        : link.closest('#anomaly-outliers') ? getFuelSelection('outlier-fuel') : undefined;
+    openStationTrend(link.dataset.node, link.dataset.name, link.dataset.brand, link.dataset.city, link.dataset.postcode, link.dataset.category, link.dataset.rawBrand, link.dataset.lat, link.dataset.lon, link.dataset.motorway, link.dataset.supermarket, link.dataset.region, link.dataset.district, fuelSelection);
 });
 
 // Global delegation handler for edit-prices links (avoids inline onclick apostrophe issues)
@@ -441,7 +447,7 @@ function sortTable(table, colIdx, th) {
 // Clear all search filters
 // ---------------------------------------------------------------------------
 function clearSearchFilters() {
-    document.getElementById('search-fuel').value = 'E10';
+    setFuelSelection('search-fuel', '');
     document.getElementById('search-postcode').value = '';
     document.getElementById('search-station').value = '';
     document.getElementById('search-brand').value = '';
@@ -464,8 +470,8 @@ function navigateToSearch(filters) {
     clearSearchFilters();
 
     // Set fuel type
-    if (filters.fuel_type) {
-        document.getElementById('search-fuel').value = filters.fuel_type;
+    if (filters.fuel_type != null) {
+        setFuelSelection('search-fuel', filters.fuel_type);
     }
     // Set filters by matching select options or input values
     if (filters.station) document.getElementById('search-station').value = filters.station;
@@ -521,9 +527,9 @@ function fuelLabel(code) {
  * @param {boolean} hourly - whether the data is hourly granularity
  * @returns {Promise<{datasets: Array, granularity: string, allData: Object}>}
  */
-async function fetchAllFuelTrends(urlBuilder, hourly) {
+async function fetchAllFuelTrends(urlBuilder, hourly, selection = '') {
     const results = await Promise.all(
-        fuelTypes.map(async ft => {
+        selectedFuelTypes(selection).map(async ft => {
             const resp = await apiFetch(urlBuilder(ft.fuel_type_code));
             return { code: ft.fuel_type_code, resp };
         })
@@ -559,23 +565,42 @@ async function fetchAllFuelTrends(urlBuilder, hourly) {
 
 async function loadFuelTypes() {
     fuelTypes = await apiFetch('/fuel-types');
-    for (const sel of document.querySelectorAll('#dashboard-fuel, #map-fuel, #trend-fuel, #search-fuel')) {
-        sel.innerHTML = '';
-        // Add "All fuel types" for search and trend selectors
-        const hasAll = sel.id === 'search-fuel' || sel.id === 'trend-fuel';
-        if (hasAll) {
-            const allOpt = document.createElement('option');
-            allOpt.value = ''; allOpt.textContent = 'All fuel types';
-            sel.appendChild(allOpt);
+    for (const sel of document.querySelectorAll('[data-fuel-select]')) {
+        const control = tomSelects[sel.id];
+        const options = selectedFuelTypes(sel.dataset.fuelCodes).map(type => ({value: type.fuel_type_code, text: type.fuel_name || type.fuel_type_code}));
+        if (!control) {
+            sel.replaceChildren(...options.map(({value, text}) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = text;
+                return option;
+            }));
+            sel.value = sel.dataset.defaultFuel || options[0]?.value || '';
+            continue;
         }
-        fuelTypes.forEach(ft => {
-            const o = document.createElement('option');
-            o.value = ft.fuel_type_code;
-            o.textContent = ft.fuel_name || ft.fuel_type_code;
-            if (ft.fuel_type_code === 'E10' && !hasAll) o.selected = true;
-            sel.appendChild(o);
-        });
+        control.clear(true);
+        control.clearOptions();
+        control.addOptions(options);
+        control.setValue(sel.dataset.defaultFuel ? [sel.dataset.defaultFuel] : [], true);
     }
+}
+
+function getFuelSelection(id) {
+    const control = tomSelects[id];
+    if (control) return control.getValue().join(',');
+    return Array.from(document.getElementById(id)?.selectedOptions || []).map(option => option.value).filter(Boolean).join(',');
+}
+
+function setFuelSelection(id, value) {
+    const values = Array.isArray(value) ? value : (value || '').split(',').filter(Boolean);
+    const control = tomSelects[id];
+    if (control) control.setValue(values, true);
+    else for (const option of document.getElementById(id)?.options || []) option.selected = values.includes(option.value);
+}
+
+function selectedFuelTypes(value) {
+    const selected = new Set((value || '').split(',').filter(Boolean));
+    return fuelTypes.filter(type => !selected.size || selected.has(type.fuel_type_code));
 }
 
 async function loadRegions() {
@@ -629,6 +654,7 @@ function initTomSelects() {
             plugins: ['remove_button'],
             placeholder: sel.getAttribute('placeholder') || 'All',
             hidePlaceholder: false,
+            ...(sel.hasAttribute('data-fuel-select') ? {maxItems: null, closeAfterSelect: false} : {}),
         });
     });
 }
