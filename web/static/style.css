@@ -105,6 +105,7 @@
         /* Tom Select overrides */
         .ts-wrapper { min-width: 120px; }
         .control:has(select[data-fuel-select]) { min-width: 190px; max-width: 100%; flex: 0 1 290px; }
+        #panel-trends .control:has(select[data-fuel-select]) { flex-basis: 390px; }
         .control:has(select[data-fuel-select]) .ts-wrapper { width: 100%; }
         .control:has(select[data-fuel-select]) .ts-control { min-height: 34px; flex-wrap: wrap; }
         .ts-wrapper .ts-control {
