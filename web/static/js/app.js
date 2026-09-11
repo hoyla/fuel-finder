@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 async function startApp() {
     initTomSelects();
-    await fetchUserRole();
+    if (!await fetchUserRole()) return;
     await loadFuelTypes();
     await loadRegions();
     loadDistricts();

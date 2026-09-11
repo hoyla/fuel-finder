@@ -110,7 +110,27 @@ Basic health check. Returns `{ "status": "ok" }`. No authentication required.
 
 Returns auth configuration for frontend discovery.
 
-**Response:** `{ "mode": "cognito", "region": "eu-north-1", "clientId": "..." }` or `{ "mode": "none" }`
+**Response:** Cognito mode includes the user pool and public OAuth configuration:
+
+```json
+{
+  "mode": "cognito",
+  "region": "eu-north-1",
+  "clientId": "...",
+  "oauth": {
+    "domain": "https://<prefix>.auth.eu-north-1.amazoncognito.com",
+    "provider": "GuardianGoogle",
+    "allowedDomain": "guardian.co.uk"
+  }
+}
+```
+
+The browser uses Cognito's authorization-code flow with PKCE for Google sign-in.
+The direct Cognito password flow remains available as a fallback. Federated
+tokens are accepted only when the mapped Google hosted-domain and verified
+email claims match `ALLOWED_GOOGLE_DOMAIN`. ID and refresh tokens are retained
+in memory only, not in browser storage. After a reload, an existing Google
+session is recovered through Cognito with `prompt=none`.
 
 ### `GET /auth/me`
 

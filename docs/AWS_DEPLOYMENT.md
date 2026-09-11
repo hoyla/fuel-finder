@@ -293,6 +293,9 @@ Users can also be managed from the web UI's Users tab (admin only).
 COGNITO_USER_POOL_ID=eu-north-1_xxxxx
 COGNITO_CLIENT_ID=<app-client-id>
 COGNITO_REGION=eu-north-1
+COGNITO_DOMAIN=https://<prefix>.auth.eu-north-1.amazoncognito.com
+COGNITO_OIDC_PROVIDER=GuardianGoogle
+ALLOWED_GOOGLE_DOMAIN=guardian.co.uk
 ```
 
 ## Web app deployment
@@ -306,5 +309,8 @@ DATABASE_URL=postgresql://fuelfinder:password@<rds-endpoint>:5432/fuelfinder
 COGNITO_USER_POOL_ID=eu-north-1_xxxxx
 COGNITO_CLIENT_ID=<app-client-id>
 COGNITO_REGION=eu-north-1
+COGNITO_DOMAIN=https://<prefix>.auth.eu-north-1.amazoncognito.com
+COGNITO_OIDC_PROVIDER=GuardianGoogle
+ALLOWED_GOOGLE_DOMAIN=guardian.co.uk
 API_KEY=<optional-api-key-for-programmatic-access>
 ```
