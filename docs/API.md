@@ -128,7 +128,9 @@ Returns auth configuration for frontend discovery.
 The browser uses Cognito's authorization-code flow with PKCE for Google sign-in.
 The direct Cognito password flow remains available as a fallback. Federated
 tokens are accepted only when the mapped Google hosted-domain and verified
-email claims match `ALLOWED_GOOGLE_DOMAIN`.
+email claims match `ALLOWED_GOOGLE_DOMAIN`. ID and refresh tokens are retained
+in memory only, not in browser storage. After a reload, an existing Google
+session is recovered through Cognito with `prompt=none`.
 
 ### `GET /auth/me`
 

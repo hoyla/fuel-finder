@@ -59,6 +59,10 @@ async function initAuth() {
     _cognitoDomain = cfg.oauth?.domain?.replace(/\/+$/, '') || null;
     _cognitoProvider = cfg.oauth?.provider || null;
     _allowedGoogleDomain = cfg.oauth?.allowedDomain || null;
+    _authMethod = localStorage.getItem('ff_auth_method');
+    // Remove tokens left by versions that persisted credentials in Web Storage.
+    localStorage.removeItem('ff_id_token');
+    localStorage.removeItem('ff_refresh_token');
     configureLoginOptions();
 
     try {
@@ -71,9 +75,6 @@ async function initAuth() {
         return false;
     }
 
-    _idToken = localStorage.getItem('ff_id_token');
-    _refreshToken = localStorage.getItem('ff_refresh_token');
-    _authMethod = localStorage.getItem('ff_auth_method');
     if (_idToken) {
         // Check if token is still valid by decoding exp
         try {
@@ -91,6 +92,15 @@ async function initAuth() {
             clearAuthTokens();
             showLogin();
             return false;
+        }
+    }
+    if (_authMethod === 'oauth') {
+        try {
+            await startOAuthRequest('none');
+            return false;
+        } catch (err) {
+            console.warn('Silent OAuth session recovery failed:', err);
+            clearAuthTokens();
         }
     }
     showLogin();
@@ -138,7 +148,7 @@ function oauthRedirectUri() {
     return `${window.location.origin}/`;
 }
 
-function buildOAuthAuthorizeUrl(state, nonce, challenge) {
+function buildOAuthAuthorizeUrl(state, nonce, challenge, prompt = 'select_account') {
     const url = new URL(`${_cognitoDomain}/oauth2/authorize`);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('client_id', _cognitoClientId);
@@ -149,8 +159,20 @@ function buildOAuthAuthorizeUrl(state, nonce, challenge) {
     url.searchParams.set('nonce', nonce);
     url.searchParams.set('code_challenge_method', 'S256');
     url.searchParams.set('code_challenge', challenge);
-    url.searchParams.set('prompt', 'select_account');
+    url.searchParams.set('prompt', prompt);
     return url.toString();
+}
+
+async function startOAuthRequest(prompt = 'select_account') {
+    const state = randomBase64Url();
+    const nonce = randomBase64Url();
+    const verifier = randomBase64Url(64);
+    const challenge = await pkceChallenge(verifier);
+    sessionStorage.setItem(OAUTH_STATE_KEY, state);
+    sessionStorage.setItem(OAUTH_NONCE_KEY, nonce);
+    sessionStorage.setItem(OAUTH_VERIFIER_KEY, verifier);
+    sessionStorage.setItem(OAUTH_RETURN_HASH_KEY, window.location.hash || '');
+    window.location.assign(buildOAuthAuthorizeUrl(state, nonce, challenge, prompt));
 }
 
 async function startGoogleLogin() {
@@ -164,15 +186,7 @@ async function startGoogleLogin() {
     button.textContent = 'Redirecting…';
     errEl.className = 'login-error';
     try {
-        const state = randomBase64Url();
-        const nonce = randomBase64Url();
-        const verifier = randomBase64Url(64);
-        const challenge = await pkceChallenge(verifier);
-        sessionStorage.setItem(OAUTH_STATE_KEY, state);
-        sessionStorage.setItem(OAUTH_NONCE_KEY, nonce);
-        sessionStorage.setItem(OAUTH_VERIFIER_KEY, verifier);
-        sessionStorage.setItem(OAUTH_RETURN_HASH_KEY, window.location.hash || '');
-        window.location.assign(buildOAuthAuthorizeUrl(state, nonce, challenge));
+        await startOAuthRequest();
     } catch (err) {
         button.disabled = false;
         button.textContent = 'Sign in with Guardian Google';
@@ -226,7 +240,11 @@ async function handleOAuthCallback() {
     const verifier = sessionStorage.getItem(OAUTH_VERIFIER_KEY);
     try {
         if (params.get('error')) {
-            throw new Error(params.get('error_description') || params.get('error'));
+            const oauthError = params.get('error');
+            if (oauthError === 'login_required') {
+                throw new Error('Your Google session has expired. Sign in again.');
+            }
+            throw new Error(params.get('error_description') || oauthError);
         }
         if (!expectedState || params.get('state') !== expectedState || !verifier || !expectedNonce) {
             throw new Error('Google sign-in response could not be verified');
@@ -325,8 +343,6 @@ function storeTokens(result, start = true, authMethod = _authMethod || 'password
     _idToken = result.IdToken;
     _refreshToken = result.RefreshToken || _refreshToken;
     _authMethod = authMethod;
-    localStorage.setItem('ff_id_token', _idToken);
-    if (_refreshToken) localStorage.setItem('ff_refresh_token', _refreshToken);
     localStorage.setItem('ff_auth_method', _authMethod);
     const payload = decodeJwtPayload(_idToken);
     showApp(payload.email || payload['cognito:username'] || '');
@@ -367,7 +383,6 @@ async function refreshTokens() {
             AuthParameters: { REFRESH_TOKEN: _refreshToken },
         });
         _idToken = resp.AuthenticationResult.IdToken;
-        localStorage.setItem('ff_id_token', _idToken);
         const payload = decodeJwtPayload(_idToken);
         const expiresIn = (payload.exp * 1000) - Date.now() - 300000;
         if (expiresIn > 0) setTimeout(() => refreshTokens(), expiresIn);

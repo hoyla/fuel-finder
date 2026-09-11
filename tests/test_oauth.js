@@ -16,6 +16,19 @@ function storage() {
 }
 
 function loadAuth(fetchImpl = async () => { throw new Error('unexpected fetch'); }) {
+    const elements = new Map();
+    function element(id) {
+        if (!elements.has(id)) {
+            elements.set(id, {
+                id,
+                textContent: '',
+                style: {},
+                className: '',
+                classList: {add() {}, remove() {}},
+            });
+        }
+        return elements.get(id);
+    }
     const location = {
         origin: 'https://staging-fuel.hoy.la',
         href: 'https://staging-fuel.hoy.la/',
@@ -36,7 +49,7 @@ function loadAuth(fetchImpl = async () => { throw new Error('unexpected fetch');
         console,
         document: {
             addEventListener() {},
-            getElementById() { return null; },
+            getElementById(id) { return element(id); },
             querySelectorAll() { return []; },
         },
         history: {replaceState() {}},
@@ -83,6 +96,14 @@ test('Google authorize URL uses code flow, PKCE, state, nonce and account select
     assert.equal(url.searchParams.get('prompt'), 'select_account');
 });
 
+test('silent session recovery requests prompt none', () => {
+    const context = loadAuth();
+    const url = new URL(context.buildOAuthAuthorizeUrl(
+        'state-value', 'nonce-value', 'challenge-value', 'none',
+    ));
+    assert.equal(url.searchParams.get('prompt'), 'none');
+});
+
 test('authorization code exchange sends the verifier to Cognito token endpoint', async () => {
     let request;
     const context = loadAuth(async (url, options) => {
@@ -105,4 +126,19 @@ test('authorization code exchange sends the verifier to Cognito token endpoint',
     assert.equal(body.get('code'), 'auth-code');
     assert.equal(body.get('code_verifier'), 'verifier-value');
     assert.equal(body.get('redirect_uri'), 'https://staging-fuel.hoy.la/');
+});
+
+test('Cognito tokens are kept in memory and never written to Web Storage', () => {
+    const context = loadAuth();
+    const payload = Buffer.from(JSON.stringify({
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        email: 'reporter@guardian.co.uk',
+    })).toString('base64url');
+    const idToken = `header.${payload}.signature`;
+    context.storeTokens({IdToken: idToken, RefreshToken: 'refresh-secret'}, false, 'oauth');
+    assert.equal(context.localStorage.getItem('ff_id_token'), null);
+    assert.equal(context.localStorage.getItem('ff_refresh_token'), null);
+    assert.equal(context.localStorage.getItem('ff_auth_method'), 'oauth');
+    assert.equal(vm.runInContext('_idToken', context), idToken);
+    assert.equal(vm.runInContext('_refreshToken', context), 'refresh-secret');
 });
