@@ -396,6 +396,8 @@ async function refreshTokens() {
 
 function showLogin(message = '') {
     document.getElementById('login-overlay').classList.remove('hidden');
+    document.getElementById('login-pending').hidden = true;
+    document.getElementById('login-options').hidden = false;
     document.getElementById('logout-btn').style.display = 'none';
     document.getElementById('user-email').textContent = '';
     const errEl = document.getElementById('login-error');

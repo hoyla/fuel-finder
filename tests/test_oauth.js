@@ -142,3 +142,17 @@ test('Cognito tokens are kept in memory and never written to Web Storage', () =>
     assert.equal(vm.runInContext('_idToken', context), idToken);
     assert.equal(vm.runInContext('_refreshToken', context), 'refresh-secret');
 });
+
+test('interactive login controls are hidden while startup authentication resolves', () => {
+    const html = fs.readFileSync(path.join(__dirname, '../web/static/index.html'), 'utf8');
+    assert.match(html, /id="login-pending"[^>]*>Checking sign-in…<\/p>/);
+    assert.match(html, /id="login-options" hidden/);
+});
+
+test('showLogin replaces the pending state with the configured login choices', () => {
+    const context = loadAuth();
+    context.showLogin('Please sign in');
+    assert.equal(context.document.getElementById('login-pending').hidden, true);
+    assert.equal(context.document.getElementById('login-options').hidden, false);
+    assert.equal(context.document.getElementById('login-error').textContent, 'Please sign in');
+});
