@@ -251,6 +251,17 @@
         }
         .login-box button:hover { opacity: 0.9; }
         .login-box button:disabled { opacity: 0.5; cursor: default; }
+        .login-help {
+            margin: 0.75rem 0 1.25rem; color: var(--muted);
+            font-size: 0.85rem; text-align: center;
+        }
+        .password-login {
+            border-top: 1px solid var(--border); margin-top: 1.25rem; padding-top: 1rem;
+        }
+        .password-login summary {
+            color: var(--muted); cursor: pointer; font-size: 0.85rem; text-align: center;
+        }
+        .password-login form { margin-top: 1rem; }
         .login-error {
             background: #f8d7da; color: #721c24; padding: 0.5rem 0.75rem;
             border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem; display: none;

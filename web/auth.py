@@ -41,6 +41,9 @@ logger = logging.getLogger(__name__)
 COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
 COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID", "")
 COGNITO_REGION = os.environ.get("COGNITO_REGION", os.environ.get("AWS_REGION", "eu-west-1"))
+COGNITO_DOMAIN = os.environ.get("COGNITO_DOMAIN", "").strip().rstrip("/")
+COGNITO_OIDC_PROVIDER = os.environ.get("COGNITO_OIDC_PROVIDER", "").strip()
+ALLOWED_GOOGLE_DOMAIN = os.environ.get("ALLOWED_GOOGLE_DOMAIN", "").strip().lower()
 API_KEY = os.environ.get("API_KEY", "")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "local").strip().lower()
 ALLOW_NO_AUTH = os.environ.get("ALLOW_NO_AUTH", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -148,7 +151,64 @@ def _decode_cognito_token(token: str) -> dict:
             detail="Invalid or expired token",
         )
 
+    _validate_federated_domain(claims)
     return claims
+
+
+def _federated_provider_names(claims: dict) -> set[str]:
+    """Return provider names from Cognito's ``identities`` token claim."""
+    identities = claims.get("identities", [])
+    if isinstance(identities, str):
+        try:
+            identities = json.loads(identities)
+        except (TypeError, ValueError):
+            identities = []
+    if isinstance(identities, dict):
+        identities = [identities]
+    if not isinstance(identities, list):
+        return set()
+    return {
+        identity.get("providerName")
+        for identity in identities
+        if isinstance(identity, dict) and identity.get("providerName")
+    }
+
+
+def _validate_federated_domain(claims: dict) -> None:
+    """Restrict the configured Google OIDC provider to the Guardian domain.
+
+    Native Cognito password users remain supported. Federated identities must
+    have the domain and verified email claims that Cognito mapped from Google.
+    """
+    if not COGNITO_OIDC_PROVIDER:
+        return
+
+    username = str(claims.get("cognito:username", ""))
+    is_configured_provider = (
+        COGNITO_OIDC_PROVIDER in _federated_provider_names(claims)
+        or username.startswith(f"{COGNITO_OIDC_PROVIDER}_")
+    )
+    if not is_configured_provider:
+        return
+
+    hosted_domain = str(claims.get("custom:google_hd", "")).strip().lower()
+    email = str(claims.get("email", "")).strip().lower()
+    email_verified = claims.get("email_verified") in (True, "true", "True")
+    expected_suffix = f"@{ALLOWED_GOOGLE_DOMAIN}" if ALLOWED_GOOGLE_DOMAIN else ""
+
+    if (
+        not ALLOWED_GOOGLE_DOMAIN
+        or hosted_domain != ALLOWED_GOOGLE_DOMAIN
+        or not email.endswith(expected_suffix)
+        or not email_verified
+    ):
+        logger.warning(
+            "Rejected federated Cognito identity outside the allowed Google domain"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Sign in with a verified @{ALLOWED_GOOGLE_DOMAIN} Google account",
+        )
 
 
 def _find_jwk(jwks: dict, kid: str):
@@ -349,13 +409,20 @@ def get_auth_config() -> dict:
     """Return auth configuration for the frontend."""
     env = os.environ.get("ENVIRONMENT", "local")
     if _USE_COGNITO:
-        return {
+        config = {
             "mode": "cognito",
             "region": COGNITO_REGION,
             "userPoolId": COGNITO_USER_POOL_ID,
             "clientId": COGNITO_CLIENT_ID,
             "environment": env,
         }
+        if COGNITO_DOMAIN and COGNITO_OIDC_PROVIDER:
+            config["oauth"] = {
+                "domain": COGNITO_DOMAIN,
+                "provider": COGNITO_OIDC_PROVIDER,
+                "allowedDomain": ALLOWED_GOOGLE_DOMAIN,
+            }
+        return config
     if API_KEY:
         return {"mode": "api_key", "environment": env}
     return {"mode": "none", "environment": env}

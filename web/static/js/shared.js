@@ -9,9 +9,18 @@ let _realRole = 'admin'; // actual role (never changes)
 let _roleOverride = '';  // admin-only tier preview
 let _cognitoRegion = null;
 let _cognitoClientId = null;
+let _cognitoDomain = null;
+let _cognitoProvider = null;
+let _allowedGoogleDomain = null;
+let _authMethod = null;
 let _cognitoSession = null;  // for NEW_PASSWORD_REQUIRED challenge
 let _challengeUsername = null;
 let reconstructedHistoryEnabled = false;
+
+const OAUTH_STATE_KEY = 'ff_oauth_state';
+const OAUTH_NONCE_KEY = 'ff_oauth_nonce';
+const OAUTH_VERIFIER_KEY = 'ff_oauth_verifier';
+const OAUTH_RETURN_HASH_KEY = 'ff_oauth_return_hash';
 
 function showEnvBanner(env) {
     if (env && env !== 'production') {
@@ -23,45 +32,221 @@ function showEnvBanner(env) {
 }
 
 async function initAuth() {
+    let cfg;
     try {
         const r = await fetch('/auth/config');
-        const cfg = await r.json();
-        _authMode = cfg.mode;
-        showEnvBanner(cfg.environment);
-        reconstructedHistoryEnabled = Boolean(cfg.reconstructed_history);
-        document.getElementById('trend-comparison-tab').hidden = !cfg.trend_comparison || reconstructedHistoryEnabled;
-        initialiseSensitivity();
-        if (_authMode === 'cognito') {
-            _cognitoRegion = cfg.region;
-            _cognitoClientId = cfg.clientId;
-            _idToken = localStorage.getItem('ff_id_token');
-            _refreshToken = localStorage.getItem('ff_refresh_token');
-            if (_idToken) {
-                // Check if token is still valid by decoding exp
-                try {
-                    const payload = JSON.parse(atob(_idToken.split('.')[1]));
-                    if (payload.exp * 1000 < Date.now()) {
-                        // Token expired — try refresh
-                        const refreshed = await refreshTokens();
-                        if (!refreshed) { showLogin(); return false; }
-                    }
-                    showApp(payload.email || payload['cognito:username'] || '');
-                    return true;
-                } catch (e) {
-                    console.warn('Token validation failed:', e);
-                    showLogin(); return false;
-                }
-            }
-            showLogin(); return false;
-        }
+        if (!r.ok) throw new Error('Unable to load authentication configuration');
+        cfg = await r.json();
+    } catch (err) {
+        console.warn('Authentication configuration failed:', err);
+        showLogin('Unable to load authentication configuration');
+        return false;
+    }
+
+    _authMode = cfg.mode;
+    showEnvBanner(cfg.environment);
+    reconstructedHistoryEnabled = Boolean(cfg.reconstructed_history);
+    document.getElementById('trend-comparison-tab').hidden = !cfg.trend_comparison || reconstructedHistoryEnabled;
+    initialiseSensitivity();
+    if (_authMode !== 'cognito') {
         // api-key or no-auth mode — no login needed
         showApp('');
         return true;
-    } catch {
-        // Can't reach /auth/config — assume no auth (local dev)
-        showApp('');
-        return true;
     }
+
+    _cognitoRegion = cfg.region;
+    _cognitoClientId = cfg.clientId;
+    _cognitoDomain = cfg.oauth?.domain?.replace(/\/+$/, '') || null;
+    _cognitoProvider = cfg.oauth?.provider || null;
+    _allowedGoogleDomain = cfg.oauth?.allowedDomain || null;
+    configureLoginOptions();
+
+    try {
+        const oauthResult = await handleOAuthCallback();
+        if (oauthResult) storeOAuthTokens(oauthResult, false);
+    } catch (err) {
+        console.warn('OAuth callback failed:', err);
+        clearAuthTokens();
+        showLogin(err.message || 'Google sign-in failed');
+        return false;
+    }
+
+    _idToken = localStorage.getItem('ff_id_token');
+    _refreshToken = localStorage.getItem('ff_refresh_token');
+    _authMethod = localStorage.getItem('ff_auth_method');
+    if (_idToken) {
+        // Check if token is still valid by decoding exp
+        try {
+            let payload = decodeJwtPayload(_idToken);
+            if (payload.exp * 1000 < Date.now()) {
+                // Token expired — try refresh
+                const refreshed = await refreshTokens();
+                if (!refreshed) { showLogin(); return false; }
+                payload = decodeJwtPayload(_idToken);
+            }
+            showApp(payload.email || payload['cognito:username'] || '');
+            return true;
+        } catch (e) {
+            console.warn('Token validation failed:', e);
+            clearAuthTokens();
+            showLogin();
+            return false;
+        }
+    }
+    showLogin();
+    return false;
+}
+
+function configureLoginOptions() {
+    const googleButton = document.getElementById('google-login-btn');
+    const googleHelp = document.getElementById('google-login-help');
+    const passwordLogin = document.getElementById('password-login');
+    if (!googleButton || !googleHelp || !passwordLogin) return;
+    if (_cognitoDomain && _cognitoProvider) {
+        googleButton.style.display = '';
+        googleHelp.style.display = '';
+        if (_allowedGoogleDomain) {
+            googleHelp.textContent = `Use your @${_allowedGoogleDomain} Google account.`;
+        }
+        googleButton.textContent = 'Sign in with Guardian Google';
+        passwordLogin.open = false;
+    } else {
+        googleButton.style.display = 'none';
+        googleHelp.style.display = 'none';
+        passwordLogin.open = true;
+    }
+}
+
+function base64UrlEncode(bytes) {
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function randomBase64Url(byteLength = 32) {
+    const bytes = new Uint8Array(byteLength);
+    crypto.getRandomValues(bytes);
+    return base64UrlEncode(bytes);
+}
+
+async function pkceChallenge(verifier) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+    return base64UrlEncode(new Uint8Array(digest));
+}
+
+function oauthRedirectUri() {
+    return `${window.location.origin}/`;
+}
+
+function buildOAuthAuthorizeUrl(state, nonce, challenge) {
+    const url = new URL(`${_cognitoDomain}/oauth2/authorize`);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('client_id', _cognitoClientId);
+    url.searchParams.set('redirect_uri', oauthRedirectUri());
+    url.searchParams.set('scope', 'openid email profile');
+    url.searchParams.set('identity_provider', _cognitoProvider);
+    url.searchParams.set('state', state);
+    url.searchParams.set('nonce', nonce);
+    url.searchParams.set('code_challenge_method', 'S256');
+    url.searchParams.set('code_challenge', challenge);
+    url.searchParams.set('prompt', 'select_account');
+    return url.toString();
+}
+
+async function startGoogleLogin() {
+    const button = document.getElementById('google-login-btn');
+    const errEl = document.getElementById('login-error');
+    if (!_cognitoDomain || !_cognitoProvider) {
+        showLogin('Google sign-in is not configured');
+        return;
+    }
+    button.disabled = true;
+    button.textContent = 'Redirecting…';
+    errEl.className = 'login-error';
+    try {
+        const state = randomBase64Url();
+        const nonce = randomBase64Url();
+        const verifier = randomBase64Url(64);
+        const challenge = await pkceChallenge(verifier);
+        sessionStorage.setItem(OAUTH_STATE_KEY, state);
+        sessionStorage.setItem(OAUTH_NONCE_KEY, nonce);
+        sessionStorage.setItem(OAUTH_VERIFIER_KEY, verifier);
+        sessionStorage.setItem(OAUTH_RETURN_HASH_KEY, window.location.hash || '');
+        window.location.assign(buildOAuthAuthorizeUrl(state, nonce, challenge));
+    } catch (err) {
+        button.disabled = false;
+        button.textContent = 'Sign in with Guardian Google';
+        showLogin(err.message || 'Unable to start Google sign-in');
+    }
+}
+
+function clearOAuthRequest() {
+    sessionStorage.removeItem(OAUTH_STATE_KEY);
+    sessionStorage.removeItem(OAUTH_NONCE_KEY);
+    sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
+    sessionStorage.removeItem(OAUTH_RETURN_HASH_KEY);
+}
+
+function cleanOAuthCallbackUrl(returnHash = '') {
+    const url = new URL(window.location.href);
+    for (const key of ['code', 'state', 'error', 'error_description']) {
+        url.searchParams.delete(key);
+    }
+    url.hash = returnHash;
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+async function exchangeOAuthCode(code, verifier) {
+    const body = new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: _cognitoClientId,
+        code,
+        code_verifier: verifier,
+        redirect_uri: oauthRedirectUri(),
+    });
+    const response = await fetch(`${_cognitoDomain}/oauth2/token`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body,
+    });
+    const result = await response.json();
+    if (!response.ok) {
+        throw new Error(result.error_description || result.error || 'Unable to complete Google sign-in');
+    }
+    return result;
+}
+
+async function handleOAuthCallback() {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('code') && !params.has('error')) return null;
+
+    const returnHash = sessionStorage.getItem(OAUTH_RETURN_HASH_KEY) || '';
+    const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+    const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
+    const verifier = sessionStorage.getItem(OAUTH_VERIFIER_KEY);
+    try {
+        if (params.get('error')) {
+            throw new Error(params.get('error_description') || params.get('error'));
+        }
+        if (!expectedState || params.get('state') !== expectedState || !verifier || !expectedNonce) {
+            throw new Error('Google sign-in response could not be verified');
+        }
+        const result = await exchangeOAuthCode(params.get('code'), verifier);
+        const payload = decodeJwtPayload(result.id_token);
+        if (payload.nonce !== expectedNonce) {
+            throw new Error('Google sign-in response had an invalid nonce');
+        }
+        return result;
+    } finally {
+        cleanOAuthCallbackUrl(returnHash);
+        clearOAuthRequest();
+    }
+}
+
+function decodeJwtPayload(token) {
+    const encoded = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=');
+    return JSON.parse(atob(padded));
 }
 
 async function cognitoCall(action, body) {
@@ -105,7 +290,7 @@ async function handleLogin(e) {
             });
             _cognitoSession = null;
             _challengeUsername = null;
-            storeTokens(resp.AuthenticationResult);
+            storeTokens(resp.AuthenticationResult, true, 'password');
             return;
         }
 
@@ -126,7 +311,7 @@ async function handleLogin(e) {
             return;
         }
 
-        storeTokens(resp.AuthenticationResult);
+        storeTokens(resp.AuthenticationResult, true, 'password');
     } catch (err) {
         errEl.textContent = err.message;
         errEl.className = 'login-error visible';
@@ -136,22 +321,46 @@ async function handleLogin(e) {
     return false;
 }
 
-function storeTokens(result) {
+function storeTokens(result, start = true, authMethod = _authMethod || 'password') {
     _idToken = result.IdToken;
     _refreshToken = result.RefreshToken || _refreshToken;
+    _authMethod = authMethod;
     localStorage.setItem('ff_id_token', _idToken);
     if (_refreshToken) localStorage.setItem('ff_refresh_token', _refreshToken);
-    const payload = JSON.parse(atob(_idToken.split('.')[1]));
+    localStorage.setItem('ff_auth_method', _authMethod);
+    const payload = decodeJwtPayload(_idToken);
     showApp(payload.email || payload['cognito:username'] || '');
     // Schedule token refresh ~5 min before expiry
     const expiresIn = (payload.exp * 1000) - Date.now() - 300000;
     if (expiresIn > 0) setTimeout(() => refreshTokens(), expiresIn);
-    startApp();
+    if (start) startApp();
+}
+
+function storeOAuthTokens(result, start = true) {
+    storeTokens({
+        IdToken: result.id_token,
+        RefreshToken: result.refresh_token,
+    }, start, 'oauth');
 }
 
 async function refreshTokens() {
     if (!_refreshToken) return false;
     try {
+        if (_authMethod === 'oauth' && _cognitoDomain) {
+            const response = await fetch(`${_cognitoDomain}/oauth2/token`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({
+                    grant_type: 'refresh_token',
+                    client_id: _cognitoClientId,
+                    refresh_token: _refreshToken,
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error_description || result.error || 'Token refresh failed');
+            storeOAuthTokens(result, false);
+            return true;
+        }
         const resp = await cognitoCall('InitiateAuth', {
             AuthFlow: 'REFRESH_TOKEN_AUTH',
             ClientId: _cognitoClientId,
@@ -159,24 +368,28 @@ async function refreshTokens() {
         });
         _idToken = resp.AuthenticationResult.IdToken;
         localStorage.setItem('ff_id_token', _idToken);
-        const payload = JSON.parse(atob(_idToken.split('.')[1]));
+        const payload = decodeJwtPayload(_idToken);
         const expiresIn = (payload.exp * 1000) - Date.now() - 300000;
         if (expiresIn > 0) setTimeout(() => refreshTokens(), expiresIn);
         return true;
     } catch (e) {
         console.warn('Token refresh failed:', e);
-        localStorage.removeItem('ff_id_token');
-        localStorage.removeItem('ff_refresh_token');
-        _idToken = null;
-        _refreshToken = null;
+        clearAuthTokens();
         return false;
     }
 }
 
-function showLogin() {
+function showLogin(message = '') {
     document.getElementById('login-overlay').classList.remove('hidden');
     document.getElementById('logout-btn').style.display = 'none';
     document.getElementById('user-email').textContent = '';
+    const errEl = document.getElementById('login-error');
+    if (message) {
+        errEl.textContent = message;
+        errEl.className = 'login-error visible';
+    } else {
+        errEl.className = 'login-error';
+    }
 }
 
 function showApp(email) {
@@ -194,12 +407,26 @@ async function fetchUserRole() {
             const data = await r.json();
             _userRole = data.role || 'readonly';
             _realRole = data.real_role || data.role || 'readonly';
+        } else if (_authMode === 'cognito' && (r.status === 401 || r.status === 403)) {
+            const data = await r.json().catch(() => ({}));
+            clearAuthTokens();
+            showLogin(data.detail || 'Your account is not authorised');
+            return false;
         }
-    } catch { /* no-auth mode defaults to admin */ }
+    } catch (err) {
+        if (_authMode === 'cognito') {
+            console.warn('Account verification failed:', err);
+            clearAuthTokens();
+            showLogin('Unable to verify your account');
+            return false;
+        }
+        // No-auth mode defaults to admin.
+    }
     applyRolePermissions();
     // Show tier switcher for admins
     const switcher = document.getElementById('role-switcher');
     if (switcher) switcher.style.display = _realRole === 'admin' ? '' : 'none';
+    return true;
 }
 
 function canEdit() { return _userRole === 'admin' || _userRole === 'editor'; }
@@ -227,11 +454,24 @@ function applyRolePermissions() {
     });
 }
 
-function logout() {
+function clearAuthTokens() {
     localStorage.removeItem('ff_id_token');
     localStorage.removeItem('ff_refresh_token');
+    localStorage.removeItem('ff_auth_method');
     _idToken = null;
     _refreshToken = null;
+    _authMethod = null;
+}
+
+function logout() {
+    clearAuthTokens();
+    if (_cognitoDomain && _cognitoClientId) {
+        const url = new URL(`${_cognitoDomain}/logout`);
+        url.searchParams.set('client_id', _cognitoClientId);
+        url.searchParams.set('logout_uri', oauthRedirectUri());
+        window.location.assign(url.toString());
+        return;
+    }
     location.reload();
 }
 

@@ -64,8 +64,8 @@ jobs:
           DATABASE_URL: postgresql://fuelfinder:fuelfinder@localhost:5432/fuelfinder
         run: python -m pytest tests/ -x -q --tb=short
 
-      - name: Test history controls
-        run: node --test tests/test_history_controls.js
+      - name: Test frontend controls
+        run: node --test tests/*.js
 
   # ── 2. Build Docker image + smoke test (all branches) ──────────────
   docker:
