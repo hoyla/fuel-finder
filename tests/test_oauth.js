@@ -56,7 +56,11 @@ function loadAuth(fetchImpl = async () => { throw new Error('unexpected fetch');
         localStorage: storage(),
         sessionStorage: storage(),
         location,
-        window: {location, history: {replaceState() {}}},
+        window: {
+            location,
+            history: {replaceState(state, title, url) { context.replacedUrls.push(url); }},
+        },
+        replacedUrls: [],
         setTimeout() {},
     };
     vm.createContext(context);
@@ -155,4 +159,33 @@ test('showLogin replaces the pending state with the configured login choices', (
     assert.equal(context.document.getElementById('login-pending').hidden, true);
     assert.equal(context.document.getElementById('login-options').hidden, false);
     assert.equal(context.document.getElementById('login-error').textContent, 'Please sign in');
+});
+
+test('sign-in preserves the full deep link, including the query string, across the redirect', async () => {
+    const context = loadAuth();
+    context.location.href = 'https://staging-fuel.hoy.la/?trendFuel=E10%2CE5&trendRange=all#trends';
+    context.location.search = '?trendFuel=E10%2CE5&trendRange=all';
+    context.location.hash = '#trends';
+    context.location.pathname = '/';
+    await context.startOAuthRequest('none');
+    assert.equal(
+        context.sessionStorage.getItem('ff_oauth_return_location'),
+        '?trendFuel=E10%2CE5&trendRange=all#trends',
+    );
+
+    // Cognito sends the browser back to the bare redirect URI with only its own parameters.
+    context.location.href = 'https://staging-fuel.hoy.la/?code=auth-code&state=abc';
+    context.location.search = '?code=auth-code&state=abc';
+    context.location.hash = '';
+    context.cleanOAuthCallbackUrl(context.sessionStorage.getItem('ff_oauth_return_location'));
+    assert.deepEqual(context.replacedUrls, ['/?trendFuel=E10%2CE5&trendRange=all#trends']);
+});
+
+test('callback cleanup strips Cognito parameters and lands on the home panel without a saved location', () => {
+    const context = loadAuth();
+    context.location.href = 'https://staging-fuel.hoy.la/?code=auth-code&state=abc&error=x&error_description=y';
+    context.location.search = '?code=auth-code&state=abc&error=x&error_description=y';
+    context.location.pathname = '/';
+    context.cleanOAuthCallbackUrl('');
+    assert.deepEqual(context.replacedUrls, ['/']);
 });
