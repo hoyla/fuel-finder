@@ -20,7 +20,7 @@ let reconstructedHistoryEnabled = false;
 const OAUTH_STATE_KEY = 'ff_oauth_state';
 const OAUTH_NONCE_KEY = 'ff_oauth_nonce';
 const OAUTH_VERIFIER_KEY = 'ff_oauth_verifier';
-const OAUTH_RETURN_HASH_KEY = 'ff_oauth_return_hash';
+const OAUTH_RETURN_LOCATION_KEY = 'ff_oauth_return_location';
 
 function showEnvBanner(env) {
     if (env && env !== 'production') {
@@ -171,7 +171,9 @@ async function startOAuthRequest(prompt = 'select_account') {
     sessionStorage.setItem(OAUTH_STATE_KEY, state);
     sessionStorage.setItem(OAUTH_NONCE_KEY, nonce);
     sessionStorage.setItem(OAUTH_VERIFIER_KEY, verifier);
-    sessionStorage.setItem(OAUTH_RETURN_HASH_KEY, window.location.hash || '');
+    // Save the query string as well as the hash so deep links (shared trend
+    // charts, comparison views) survive the round-trip through Cognito.
+    sessionStorage.setItem(OAUTH_RETURN_LOCATION_KEY, window.location.search + window.location.hash);
     window.location.assign(buildOAuthAuthorizeUrl(state, nonce, challenge, prompt));
 }
 
@@ -198,15 +200,16 @@ function clearOAuthRequest() {
     sessionStorage.removeItem(OAUTH_STATE_KEY);
     sessionStorage.removeItem(OAUTH_NONCE_KEY);
     sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
-    sessionStorage.removeItem(OAUTH_RETURN_HASH_KEY);
+    sessionStorage.removeItem(OAUTH_RETURN_LOCATION_KEY);
 }
 
-function cleanOAuthCallbackUrl(returnHash = '') {
-    const url = new URL(window.location.href);
+function cleanOAuthCallbackUrl(returnLocation = '') {
+    // Cognito redirects to the bare redirect URI, so rebuild the address from the
+    // location saved before sign-in rather than from the callback URL.
+    const url = new URL(window.location.pathname + returnLocation, window.location.origin);
     for (const key of ['code', 'state', 'error', 'error_description']) {
         url.searchParams.delete(key);
     }
-    url.hash = returnHash;
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
@@ -234,7 +237,7 @@ async function handleOAuthCallback() {
     const params = new URLSearchParams(window.location.search);
     if (!params.has('code') && !params.has('error')) return null;
 
-    const returnHash = sessionStorage.getItem(OAUTH_RETURN_HASH_KEY) || '';
+    const returnLocation = sessionStorage.getItem(OAUTH_RETURN_LOCATION_KEY) || '';
     const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY);
     const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
     const verifier = sessionStorage.getItem(OAUTH_VERIFIER_KEY);
@@ -256,7 +259,7 @@ async function handleOAuthCallback() {
         }
         return result;
     } finally {
-        cleanOAuthCallbackUrl(returnHash);
+        cleanOAuthCallbackUrl(returnLocation);
         clearOAuthRequest();
     }
 }
