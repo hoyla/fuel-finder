@@ -44,26 +44,29 @@
             <img src="/static/g-roundel.svg" alt="" class="brand-icon" width="24" height="24">
             <span>UK fuel price tracker</span>
         </h2>
-        <div id="login-error" class="login-error"></div>
-        <button type="button" id="google-login-btn" onclick="startGoogleLogin()" style="display:none;">
-            Sign in with Guardian Google
-        </button>
-        <p id="google-login-help" class="login-help">Use your <strong>@guardian.co.uk</strong> Google account.</p>
-        <details id="password-login" class="password-login" open>
-            <summary>Sign in with password instead</summary>
-            <form id="login-form" onsubmit="return handleLogin(event)">
-                <label for="login-email">Email</label>
-                <input id="login-email" type="email" autocomplete="username" required>
-                <label for="login-password">Password</label>
-                <input id="login-password" type="password" autocomplete="current-password" required>
-                <!-- New password fields (hidden until NEW_PASSWORD_REQUIRED) -->
-                <div id="new-password-fields" style="display:none;">
-                    <label for="login-new-password">New password</label>
-                    <input id="login-new-password" type="password" autocomplete="new-password">
-                </div>
-                <button type="submit" id="login-btn">Sign in with password</button>
-            </form>
-        </details>
+        <p id="login-pending" class="login-pending" role="status">Checking sign-in…</p>
+        <div id="login-options" hidden>
+            <div id="login-error" class="login-error"></div>
+            <button type="button" id="google-login-btn" onclick="startGoogleLogin()" style="display:none;">
+                Sign in with Guardian Google
+            </button>
+            <p id="google-login-help" class="login-help">Use your <strong>@guardian.co.uk</strong> Google account.</p>
+            <details id="password-login" class="password-login" open>
+                <summary>Sign in with password instead</summary>
+                <form id="login-form" onsubmit="return handleLogin(event)">
+                    <label for="login-email">Email</label>
+                    <input id="login-email" type="email" autocomplete="username" required>
+                    <label for="login-password">Password</label>
+                    <input id="login-password" type="password" autocomplete="current-password" required>
+                    <!-- New password fields (hidden until NEW_PASSWORD_REQUIRED) -->
+                    <div id="new-password-fields" style="display:none;">
+                        <label for="login-new-password">New password</label>
+                        <input id="login-new-password" type="password" autocomplete="new-password">
+                    </div>
+                    <button type="submit" id="login-btn">Sign in with password</button>
+                </form>
+            </details>
+        </div>
     </div>
 </div>
 
